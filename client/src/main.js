@@ -14,6 +14,8 @@ import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
 
 const store = { get: (k, d) => { try { return localStorage.getItem(`kontir.${k}`) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(`kontir.${k}`, v); } catch { /* private mode */ } } };
 const ui = new UI(), audio = new AudioEngine();
+let fireList = [], scopeK = 0;
+const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
 const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for battery/heat
 let world;
 try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'low') }); }
@@ -58,6 +60,7 @@ function receive(next) {
   const me = state.players.find(p => p.id === id);
   for (const event of state.events) if (event.id > lastEvent) { lastEvent = event.id; handleEvent(event, me); ui.event(event, id, state.players); }
   world.effects.syncSmokes?.(state.smokes);
+  if (state.fires) fireList = state.fires;
   for (const s of state.smokes) world.effects.smoke(s.id, s.x, s.y, s.z, s.radius, s.age, s.left);
   if (state.phase === 'warmup') { ui.resume(false); ui.lobby(state, id, async () => { try { await network.request('start', {}); } catch (e) { ui.toast(e.message); } }, leave); }
   else if (ui.modal.querySelector('.room-code')) { ui.modal.close(); ui.resume(!controller.locked); }
@@ -98,6 +101,8 @@ function handleEvent(e, me) {
     case 'land': audio.land({ x: e.x, y: e.y, z: e.z }, false, e.speed); break;
     case 'weaponSound': { const pos = { x: e.x, y: e.y + 1.2, z: e.z }; if (e.kind === 'reloadStart') audio.reload(pos); else if (e.kind === 'select' || e.kind === 'quick') audio.draw(pos); break; }
     case 'melee': audio.swish(e.from, e.shooter === id); break;
+    case 'pellet': world.effects.tracer(V.set(e.from.x, e.from.y - 0.1, e.from.z), e.to); if (e.wall) world.effects.impact(e.to, e.wall, 'wall'); break;
+    case 'decoy': audio.gunshot(e.weapon, e, false); break;
     case 'throw': { if (e.who !== id) { const p = playerPos(e.who); if (p) audio.throwSound(p); } break; }
     case 'bounce': audio.bounce(e); break;
     case 'detonate': {
@@ -105,6 +110,8 @@ function handleEvent(e, me) {
       if (e.grenadeType === 'he') { world.effects.explosion(e.x, e.y, e.z, 'he'); audio.explosion(e); world.shake += Math.max(0, 3 - d * 0.12); }
       else if (e.grenadeType === 'flash') { world.effects.flashPop(new THREE.Vector3(e.x, e.y + 0.3, e.z)); audio.flashbang(e); }
       else if (e.grenadeType === 'smoke') audio.smokePop(e);
+      else if (e.grenadeType === 'molotov' || e.grenadeType === 'incendiary') audio.glassBreak(e);
+      else if (e.grenadeType === 'decoy') audio.click();
       break;
     }
     case 'flash': if (e.target === id) { ui.flash(e.duration, e.full); audio.ring(Math.min(6, e.duration + 1)); } break;
@@ -198,13 +205,13 @@ document.querySelector('#settings').onclick = () => ui.settings({ quality: world
   onQuality: q => { world.setQuality(q); store.set('quality', q); }, onSensitivity: v => { controller.setSensitivity(v); store.set('sens', v); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
-document.addEventListener('pointerlockerror', () => ui.toast('Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.'));
+document.addEventListener('pointerlockerror', () => { ui.toast('Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.'); if (playing && !ui.modal.open) ui.resume(true); });
 ui.modal.addEventListener('cancel', e => { if (ui.locked) { e.preventDefault(); if (state?.phase === 'warmup') leave(); } });
 ui.modal.addEventListener('close', () => {
   if (isBuyOpen) {
     isBuyOpen = false;
-    ui.resume(false);
-    if (playing) { try { controller.lock(); } catch { /* user click fallback */ } }
+    // show the resume button first: re-capturing the mouse can be refused without a user gesture, and 'lock' hides it again
+    if (playing) { ui.resume(!controller.locked); try { controller.lock(); } catch { /* user click fallback */ } }
     return;
   }
   if (playing && state && ui.modal.querySelector) { if (!controller.locked && state.phase !== 'warmup' && !resultShown) ui.resume(true); }
@@ -251,22 +258,28 @@ function frame(nowMs) {
       const fwd = meshQ.set(0, 0, -1).applyQuaternion(world.camera.quaternion), d = world.map.collider.wallDistance(pose.eye.x, pose.eye.y, pose.eye.z, fwd.x, fwd.y, fwd.z, 1.2);
       const target = Math.max(0, Math.min(1, (0.85 - d) / 0.5)); wallPush += (target - wallPush) * Math.min(1, dt * 14);
       weapons.update(dt, controller.viewmodel, { wallPush });
+      const inv = weapons.inventory, sw = inv.weapon(), zf = inv.zoom > 0 && sw?.scope ? sw.scope[inv.zoom - 1] : 0;
+      scopeK += ((zf ? 1 : 0) - scopeK) * Math.min(1, dt * 14);
+      const targetFov = zf || 74; if (Math.abs(world.camera.fov - targetFov) > 0.05) { world.camera.fov += (targetFov - world.camera.fov) * Math.min(1, dt * 16); world.camera.updateProjectionMatrix(); }
+      controller.setZoomScale(Math.tan(THREE.MathUtils.degToRad(world.camera.fov / 2)) / Math.tan(THREE.MathUtils.degToRad(37)));
+      const scoped = scopeK > 0.7; scopeEl.classList.toggle('on', scoped); if (scoped) weapons.root.visible = false;
     } else {
       // spectate: follow a living teammate (else anyone) through their eyes; otherwise tilt the death camera
       const remote = network.remote(now), spec = remote.find(p => p.alive && p.id !== id && p.team === me?.team);
       if (spec && state.phase !== 'warmup') { world.setCamera(V.set(spec.char.x, spec.char.y + 1.62 - 0.57 * (spec.char.crouch || 0), spec.char.z), spec.char.yaw, spec.char.pitch, 0); ui.spectate(spec.name); specId = spec.id; }
       else { world.setCamera(pose.eye, controller.yaw, Math.max(-0.6, controller.pitch - 0.25), 0.25); specId = null; }
       weapons.root.visible = false;
+      scopeK = 0; scopeEl.classList.remove('on'); controller.setZoomScale(1); if (world.camera.fov !== 74) { world.camera.fov = 74; world.camera.updateProjectionMatrix(); }
     }
     world.updateActors(network.remote(now), id, me?.team, dt);
-    if (!alive && specId) { const a = world.actors.get(specId); if (a) a.visible = false; } world.updateBomb(state.bomb, dt); world.effects.syncGrenades(state.grenades, dt);
+    if (!alive && specId) { const a = world.actors.get(specId); if (a) a.visible = false; } world.updateBomb(state.bomb, dt); world.effects.syncGrenades(state.grenades, dt); world.effects.syncFires(fireList, dt);
     audio.setListener(world.camera);
     if (state.bomb.state === 'planted' && now - lastBeep > (state.bomb.remaining < 10 ? 250 : state.bomb.remaining < 20 ? 500 : 1000)) { lastBeep = now; audio.beep(state.bomb.remaining < 10); }
     // dynamic crosshair from the same inaccuracy model the server uses
     const w = weapons.inventory.weapon();
-    const spread = w?.kind === 'gun' ? inaccuracy(w, { speed: Math.hypot(prediction.char.vx, prediction.char.vz), grounded: prediction.char.grounded, crouch: prediction.char.crouch, burst: weapons.inventory.burst }) : 0.004;
+    const spread = w?.kind === 'gun' ? inaccuracy(w, { speed: Math.hypot(prediction.char.vx, prediction.char.vz), grounded: prediction.char.grounded, crouch: prediction.char.crouch, burst: weapons.inventory.burst, zoom: weapons.inventory.zoom }) : 0.004;
     const px = Math.tan(spread) * (innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(world.camera.fov / 2));
-    crossGap += (2 + px * 1.2 - crossGap) * Math.min(1, dt * 16); ui.crosshair(crossGap); ui.setCrosshairVisible(alive && w?.kind !== 'melee' && w?.kind !== 'grenade');
+    crossGap += (2 + px * 1.2 - crossGap) * Math.min(1, dt * 16); ui.crosshair(crossGap); ui.setCrosshairVisible(alive && w?.kind !== 'melee' && w?.kind !== 'grenade' && scopeK < 0.7);
     if (nowMs - lastHud > 80) {
       lastHud = nowMs; ui.update(state, id, weapons.hud(), { fps, drawCalls: world.renderer.info.render.calls });
       if (world.map?.radar && nowMs - lastRadar > 45) { lastRadar = nowMs; ui.drawRadar(state, { ...me, char: prediction.char, id }, world.map.radar, controller.yaw, world.map.sites); }

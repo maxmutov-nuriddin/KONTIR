@@ -134,6 +134,7 @@ export class AudioEngine {
     o.onended = () => { o.disconnect(); g.disconnect(); };
     o.connect(g); g.connect(this.master); o.start(t); o.stop(t + seconds + 0.1);
   }
+  glassBreak(pos) { if (!this.ctx) return; const d = this.out(pos, { reverb: 0.4 }); this.noise(d, { dur: 0.25, type: 'highpass', freq: 3500, gain: 0.55, decay: 0.22 }); this.noise(d, { start: 0.03, dur: 0.5, type: 'bandpass', freq: 5200, q: 2, gain: 0.25, decay: 0.45 }); this.noise(d, { start: 0.04, dur: 0.9, type: 'lowpass', freq: 900, sweepTo: 200, gain: 0.7, attack: 0.03, decay: 0.9 }); }
   smokePop(pos) { if (!this.ctx) return; const d = this.out(pos, { reverb: 0.5 }); this.noise(d, { dur: 0.5, type: 'lowpass', freq: 1800, sweepTo: 300, gain: 0.6, decay: 0.5 }); this.tone(d, { dur: 0.2, from: 220, to: 80, gain: 0.5 }); }
   beep(high = false) { if (!this.ctx) return; const d = this.out(null, { reverb: 0.1 }); this.tone(d, { dur: 0.09, type: 'square', from: high ? 1900 : 1300, gain: 0.08 }); }
   plant() { if (!this.ctx) return; const d = this.out(null, { reverb: 0.1 }); for (let i = 0; i < 3; i++) this.tone(d, { start: i * 0.13, dur: 0.1, type: 'square', from: 1200 + i * 200, gain: 0.08 }); }

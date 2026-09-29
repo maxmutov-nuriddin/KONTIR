@@ -56,7 +56,7 @@ export class Effects {
     // pooled lights: constant light count => no shader recompiles when effects fire
     this.lights = Array.from({ length: 3 }, () => { const l = new THREE.PointLight(0xffb060, 0, 22, 2); l.castShadow = false; scene.add(l); return { light: l, life: 0, peak: 0 }; });
     // smoke volumes
-    this.smokes = new Map();
+    this.smokes = new Map(); this.fires = new Map();
     // shell casings
     this.casingGeo = new THREE.CylinderGeometry(0.0055, 0.0055, 0.028, 8); this.casingMat = new THREE.MeshStandardMaterial({ color: 0xc09a45, metalness: 1, roughness: 0.32 });
     this.casings = Array.from({ length: 24 }, () => { const m = new THREE.Mesh(this.casingGeo, this.casingMat); m.visible = false; m.castShadow = true; scene.add(m); return { m, live: false, vel: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0, floor: 0 }; });
@@ -208,6 +208,23 @@ export class Effects {
       }
     }
   }
+  /** Incendiary pools: flame + smoke sprites plus a flickering light, driven by the snapshot list. */
+  syncFires(list, dt) {
+    const seen = new Set();
+    for (const f of list) {
+      seen.add(f.id);
+      let fx = this.fires.get(f.id);
+      if (!fx) { fx = { pos: new THREE.Vector3(f.x, f.y, f.z), radius: f.radius, acc: 0 }; this.fires.set(f.id, fx); this.flashLight(fx.pos.clone().setY(fx.pos.y + 0.6), 0xff7a2a, 26, 0.6, 16); }
+      fx.acc += dt * (f.left < 1.2 ? 0.4 : 1) * 46;
+      while (fx.acc >= 1) {
+        fx.acc -= 1;
+        const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * f.radius * 0.95, pos = new THREE.Vector3(f.x + Math.cos(a) * r, f.y + 0.1, f.z + Math.sin(a) * r);
+        this.spawnPuff(pos, { color: Math.random() < 0.5 ? 0xff7a1e : 0xffb03a, size: 0.35 + Math.random() * 0.35, grow: 0.5, life: 0.55 + Math.random() * 0.35, vel: new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.3 + Math.random() * 1.2, (Math.random() - 0.5) * 0.4), opacity: 0.9, additive: true, map: this.fire });
+        if (Math.random() < 0.12) this.spawnPuff(pos.setY(pos.y + 0.8), { color: 0x2b2926, size: 0.5, grow: 3, life: 1.6, vel: new THREE.Vector3(0.1, 1.2, 0.1), opacity: 0.35, map: this.clouds[0] });
+      }
+    }
+    for (const id of this.fires.keys()) if (!seen.has(id)) this.fires.delete(id);
+  }
   syncSmokes(list) {
     const seen = new Set(list.map(s => s.id));
     for (const [id, sm] of this.smokes) if (!seen.has(id)) {
@@ -224,7 +241,7 @@ export class Effects {
     for (const c of this.casings) { c.live = false; c.m.visible = false; }
     for (const l of this.lights) { l.life = 0; l.light.intensity = 0; }
     for (const sm of this.smokes.values()) for (const p of sm.puffs) { this.scene.remove(p.s); p.s.material.dispose(); }
-    this.smokes.clear(); this.decalCount = 0; this.decals.count = 0;
+    this.smokes.clear(); this.fires.clear(); this.decalCount = 0; this.decals.count = 0;
     for (const pr of this.projectiles.values()) disposeTree(pr.rig.group);
     this.projectiles.clear();
   }

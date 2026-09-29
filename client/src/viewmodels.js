@@ -30,6 +30,16 @@ export function weaponMaterials() {
     c4: std({ color: 0x5a5f43, roughness: 0.75, metalness: 0.1 }, null),
     tape: std({ color: 0xc9c2a6, roughness: 0.9, metalness: 0 }, null),
     wire: std({ color: 0x9d2b25, roughness: 0.6, metalness: 0 }, null),
+    olivePoly: std({ color: 0x4a5540, roughness: 1, metalness: 0 }, 'polymer', { normalScale: 0.6 }),
+    tanPoly: std({ color: 0x8a7a58, roughness: 1, metalness: 0 }, 'polymer', { normalScale: 0.6 }),
+    blackSteel: std({ color: 0x24272a, metalness: 0.9, roughness: 0.42 }, null),
+    lens: new THREE.MeshStandardMaterial({ color: 0x223a5a, metalness: 0.2, roughness: 0.05, emissive: 0x0a1a30, emissiveIntensity: 0.6 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0x9fd2c0, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.42, clearcoat: 1 }),
+    fuel: new THREE.MeshStandardMaterial({ color: 0xd8902a, roughness: 0.3, transparent: true, opacity: 0.85, emissive: 0x6a3a08, emissiveIntensity: 0.35 }),
+    rag: std({ color: 0xb8ad90, roughness: 1, metalness: 0 }, null),
+    flame: new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    decoyYellow: std({ color: 0xc8a52a, metalness: 0.4, roughness: 0.5 }, null),
+    incRed: std({ color: 0xa8321e, metalness: 0.45, roughness: 0.45 }, null),
     wireBlue: std({ color: 0x24457a, roughness: 0.6, metalness: 0 }, null),
   };
   for (const m of Object.values(shared)) m.userData.shared = true;
@@ -237,20 +247,179 @@ function buildC4(M) {
   return { group: g, muzzle: null, eject: null, parts, hands: { right: { p: [0.07, -0.03, 0.03], r: [0.2, 0.0, 0] }, left: { p: [-0.07, -0.03, 0.03], r: [0.2, 0, 0], support: true } }, length: 0.25 };
 }
 
+
+// ---------------------------------------------------------------------------------------------- new arsenal
+function buildAWP(M, { stock = M.olivePoly, scopeLen = 0.3, scopeR = 0.022, barrel = 0.66, thumbhole = true } = {}) {
+  const g = new THREE.Group(), parts = {};
+  part(g, box(0.046, 0.075, 0.34, 0.004), M.darkMetal, 0, 0.002, -0.06);                            // receiver
+  part(g, cyl(0.0105, barrel, 18), M.blackSteel, 0, 0.03, -0.23 - barrel / 2);                       // barrel
+  part(g, cyl(0.0135, 0.07, 16), M.darkMetal, 0, 0.03, -0.23 - barrel - 0.03);                       // muzzle brake
+  for (let i = 0; i < 3; i++) part(g, box(0.03, 0.004, 0.006, 0.0005), M.blackSteel, 0, 0.03, -0.23 - barrel - 0.012 - i * 0.017);
+  part(g, side([[-0.28, -0.03], [-0.02, -0.03], [0.02, -0.04], [0.05, -0.1], [0.05, -0.15], [-0.05, -0.15], [-0.28, -0.02]], 0.044, 0.004), stock, 0, 0, 0); // forestock
+  part(g, side(thumbhole ? [[0.04, 0.03], [0.14, 0.036], [0.35, 0.02], [0.4, -0.04], [0.395, -0.115], [0.3, -0.1], [0.24, -0.105], [0.19, -0.08], [0.16, -0.15], [0.1, -0.16], [0.075, -0.16], [0.06, -0.06]]
+    : [[0.04, 0.03], [0.35, 0.03], [0.4, -0.04], [0.395, -0.115], [0.16, -0.06], [0.06, -0.06]], 0.048, 0.004), stock, 0, 0, 0.0);      // stock with pistol grip
+  part(g, box(0.04, 0.085, 0.014, 0.003), M.rubber, 0, -0.045, 0.404);                               // butt pad
+  part(g, box(0.034, 0.03, 0.09, 0.004), stock, 0, 0.04, 0.24);                                       // cheek riser
+  const sc = new THREE.Group(); g.add(sc);                                                            // scope
+  part(sc, cyl(scopeR, scopeLen, 20), M.blackSteel, 0, 0.115, -0.03);
+  part(sc, cyl(scopeR * 1.45, 0.075, 20, scopeR * 1.2), M.blackSteel, 0, 0.115, -0.03 - scopeLen / 2 - 0.03);
+  part(sc, cyl(scopeR * 1.3, 0.05, 20, scopeR * 1.05), M.blackSteel, 0, 0.115, -0.03 + scopeLen / 2 + 0.02);
+  part(sc, new THREE.CircleGeometry(scopeR * 1.3, 20), M.lens, 0, 0.115, -0.03 - scopeLen / 2 - 0.068);
+  part(sc, cyl(scopeR * 0.8, 0.02, 12), M.darkMetal, 0, 0.14, -0.03);                                // turret
+  for (const z of [-0.09, 0.05]) part(sc, box(0.02, 0.05, 0.03, 0.003), M.darkMetal, 0, 0.083, z);   // rings
+  const bolt = new THREE.Group(); bolt.position.set(0.028, 0.02, 0.05); g.add(bolt); parts.bolt = bolt; // bolt handle
+  part(bolt, cylY(0.006, 0.055, 8), M.steel, 0.02, -0.02, 0, 0, 0, Math.PI / 2 * 0).rotation.z = Math.PI / 2;
+  part(bolt, new THREE.SphereGeometry(0.011, 12, 10), M.steel, 0.052, -0.02, 0);
+  part(g, box(0.034, 0.05, 0.075, 0.004), M.darkMetal, 0, -0.07, -0.05);                              // magazine
+  const tg = part(g, new THREE.TorusGeometry(0.03, 0.0035, 6, 20, Math.PI), M.darkMetal, 0, -0.062, 0.03); tg.rotation.set(0, Math.PI / 2, Math.PI);
+  part(g, box(0.004, 0.02, 0.006, 0.001), M.darkMetal, 0, -0.04, 0.038);
+  return { group: g, muzzle: marker(g, 0, 0.03, -0.23 - barrel - 0.07, 'muzzle'), eject: marker(g, 0.03, 0.03, 0.0, 'eject'), parts, hands: {}, length: 1.3 };
+}
+const buildSSG = M => buildAWP(M, { stock: M.polymer, scopeLen: 0.26, scopeR: 0.02, barrel: 0.5, thumbhole: false });
+
+function buildFamas(M) {
+  const g = new THREE.Group(), parts = {};
+  part(g, box(0.048, 0.088, 0.46, 0.006), M.olivePoly, 0, 0.0, 0.05);                                // bullpup body
+  part(g, box(0.038, 0.03, 0.34, 0.006), M.olivePoly, 0, 0.078, 0.06);                               // carry handle
+  part(g, box(0.042, 0.014, 0.05, 0.003), M.darkMetal, 0, 0.098, 0.2);                               // rear sight
+  part(g, box(0.006, 0.026, 0.004, 0.0008), M.darkMetal, 0, 0.1, -0.11);
+  part(g, cyl(0.0095, 0.32, 16), M.metal, 0, 0.022, -0.36);                                          // barrel
+  part(g, box(0.038, 0.055, 0.12, 0.006), M.olivePoly, 0, 0.005, -0.22);                             // handguard
+  part(g, cyl(0.016, 0.06, 14), M.darkMetal, 0, 0.022, -0.53);                                       // muzzle
+  part(g, box(0.01, 0.028, 0.03, 0.002), M.darkMetal, 0, 0.05, -0.15);                               // front sight
+  part(g, side([[-0.045, -0.04], [-0.005, -0.04], [0.02, -0.14], [-0.03, -0.145]], 0.03, 0.003), M.polymer, 0, 0, 0); // grip
+  const tg = part(g, new THREE.TorusGeometry(0.03, 0.0035, 6, 20, Math.PI), M.darkMetal, 0, -0.058, -0.07); tg.rotation.set(0, Math.PI / 2, Math.PI);
+  part(g, box(0.04, 0.09, 0.014, 0.003), M.rubber, 0, -0.005, 0.29);                                 // butt
+  const mag = new THREE.Group(); mag.position.set(0, -0.04, 0.115); g.add(mag); parts.mag = mag;
+  part(mag, bananaMag(0, 0, 0.018, -0.14, 0.03, 0.04, 0.03), M.polymer, 0, 0, 0);
+  part(g, box(0.006, 0.014, 0.03, 0.001), M.metal, 0.026, 0.03, 0.0, 0, 0, 0, 'bolt'); parts.bolt = g.getObjectByName('bolt');
+  return { group: g, muzzle: marker(g, 0, 0.022, -0.575, 'muzzle'), eject: marker(g, -0.028, 0.03, 0.12, 'eject'), parts, hands: {}, length: 0.9 };
+}
+
+function buildSMG(M, kind) {
+  const g = new THREE.Group(), parts = {}, mac = kind === 'mac10';
+  if (mac) {
+    part(g, box(0.05, 0.078, 0.2, 0.005), M.blackSteel, 0, 0.0, -0.06);                              // boxy receiver
+    part(g, box(0.052, 0.012, 0.2, 0.003), M.darkMetal, 0, 0.044, -0.06);
+    part(g, cyl(0.014, 0.16, 16), M.darkMetal, 0, 0.012, -0.24);                                     // barrel shroud
+    part(g, cyl(0.021, 0.11, 16), M.blackSteel, 0, 0.012, -0.36);                                    // suppressor
+    for (let i = 0; i < 4; i++) part(g, cyl(0.0215, 0.004, 16), M.darkMetal, 0, 0.012, -0.32 - i * 0.026);
+    part(g, side([[-0.02, -0.03], [0.03, -0.03], [0.05, -0.135], [0.0, -0.14]], 0.032, 0.003), M.polymer, 0, 0, 0);
+    for (const [z, y] of [[0.09, 0.03], [0.18, 0.03]]) part(g, cyl(0.004, 0.09, 6), M.steel, 0, y - 0.01, z + 0.02, 0, 0, 0);
+    part(g, box(0.018, 0.09, 0.008, 0.002), M.steel, 0, 0.0, 0.16);                                  // folded wire stock
+    part(g, box(0.028, 0.04, 0.01, 0.002), M.darkMetal, 0, -0.02, 0.2);
+    const mag = new THREE.Group(); mag.position.set(0, -0.14, 0.01); g.add(mag); parts.mag = mag; part(mag, box(0.024, 0.01, 0.036, 0.002), M.blackSteel);
+    part(g, box(0.004, 0.02, 0.006, 0.001), M.darkMetal, 0, -0.03, -0.005);
+  } else {
+    part(g, box(0.042, 0.07, 0.24, 0.006), M.polymer, 0, 0.0, -0.05);                                // polymer receiver
+    part(g, box(0.03, 0.014, 0.28, 0.002), M.darkMetal, 0, 0.042, -0.05);                            // top rail
+    for (let i = 0; i < 12; i++) part(g, box(0.032, 0.005, 0.005, 0.0005), M.darkMetal, 0, 0.05, -0.17 + i * 0.02);
+    part(g, cyl(0.0125, 0.11, 16), M.darkMetal, 0, 0.015, -0.24);                                    // shroud
+    part(g, cyl(0.0185, 0.1, 16), M.blackSteel, 0, 0.015, -0.32);                                    // suppressor
+    part(g, side([[-0.02, -0.035], [0.035, -0.035], [0.06, -0.14], [0.005, -0.145]], 0.032, 0.003), M.polymer, 0, 0, 0);
+    part(g, box(0.008, 0.014, 0.16, 0.002), M.darkMetal, 0, -0.03, -0.135);                          // foregrip rail
+    part(g, cyl(0.004, 0.16, 6), M.steel, 0, 0.0, 0.2);                                              // skeletal stock
+    part(g, box(0.03, 0.06, 0.01, 0.002), M.rubber, 0, -0.005, 0.29);
+    for (const y of [0.028, -0.028]) part(g, box(0.006, 0.006, 0.19, 0.001), M.darkMetal, 0, y, 0.19);
+    const mag = new THREE.Group(); mag.position.set(0, -0.14, 0.015); g.add(mag); parts.mag = mag; part(mag, box(0.026, 0.01, 0.038, 0.002), M.polymer);
+    part(g, box(0.004, 0.02, 0.006, 0.001), M.darkMetal, 0, -0.03, -0.005);
+  }
+  const tg = part(g, new THREE.TorusGeometry(0.026, 0.003, 6, 18, Math.PI), M.darkMetal, 0, -0.035, -0.045); tg.rotation.set(0, Math.PI / 2, Math.PI);
+  part(g, box(0.006, 0.014, 0.03, 0.001), M.metal, 0.026, 0.035, -0.02, 0, 0, 0, 'bolt'); parts.bolt = g.getObjectByName('bolt');
+  return { group: g, muzzle: marker(g, 0, 0.015, mac ? -0.42 : -0.375, 'muzzle'), eject: marker(g, 0.03, 0.035, -0.02, 'eject'), parts, hands: {}, length: 0.6 };
+}
+
+function buildNova(M) {
+  const g = new THREE.Group(), parts = {};
+  part(g, box(0.044, 0.07, 0.24, 0.005), M.darkMetal, 0, 0.0, -0.02);                                // receiver
+  part(g, cyl(0.0125, 0.62, 18), M.blackSteel, 0, 0.032, -0.44);                                     // barrel
+  part(g, cyl(0.0118, 0.56, 18), M.blackSteel, 0, 0.0, -0.4);                                        // magazine tube
+  part(g, cyl(0.0135, 0.014, 18), M.darkMetal, 0, 0.0, -0.69);                                       // tube cap
+  part(g, box(0.004, 0.016, 0.004, 0.0008), M.steel, 0, 0.056, -0.745);                              // bead
+  part(g, cyl(0.004, 0.62, 6), M.darkMetal, 0, 0.049, -0.44);                                        // rib
+  const pump = new THREE.Group(); g.add(pump); parts.pump = pump;                                    // pump forend
+  part(pump, box(0.05, 0.046, 0.19, 0.01), M.polymer, 0, 0.0, -0.31);
+  for (let i = 0; i < 9; i++) part(pump, box(0.052, 0.036, 0.003, 0.0006), M.rubber, 0, 0.0, -0.4 + i * 0.02);
+  part(g, side([[0.12, 0.03], [0.34, 0.032], [0.4, 0.0], [0.4, -0.09], [0.32, -0.06], [0.12, -0.03]], 0.04, 0.004), M.polymer, 0, 0, 0);      // straight stock
+  part(g, box(0.038, 0.092, 0.014, 0.003), M.rubber, 0, -0.03, 0.404);
+  const tg = part(g, new THREE.TorusGeometry(0.03, 0.0035, 6, 20, Math.PI), M.darkMetal, 0, -0.05, 0.03); tg.rotation.set(0, Math.PI / 2, Math.PI);
+  part(g, box(0.004, 0.02, 0.006, 0.001), M.darkMetal, 0, -0.03, 0.038);
+  part(g, box(0.008, 0.012, 0.05, 0.001), M.steel, 0.0225, 0.03, -0.02);                             // loading port
+  return { group: g, muzzle: marker(g, 0, 0.032, -0.76, 'muzzle'), eject: marker(g, 0.028, 0.03, -0.02, 'eject'), parts, hands: {}, length: 1.1 };
+}
+
+/** Pistol family sharing the Glock construction: slide length/material, frame, grip, optional suppressor / forward magazine. */
+function buildPistol(M, o = {}) {
+  const { slideLen = 0.2, slide = M.darkMetal, frame = M.polymer, top = M.metal, suppressor = false, forwardMag = false, hammer = false, sight = M.rubber } = o;
+  const g = new THREE.Group(), parts = {}, sl = new THREE.Group(); g.add(sl); parts.slide = sl;
+  part(sl, box(0.03, 0.034, slideLen, 0.004), slide, 0, 0.032, -slideLen / 2 + 0.03);
+  part(sl, box(0.03, 0.006, slideLen, 0.002), top, 0, 0.05, -slideLen / 2 + 0.03);
+  serrations(sl, M.rubber, 6, 0.0152, 0.02, -0.007, 0.001, 0.022, 0.034); serrations(sl, M.rubber, 6, -0.0152, 0.02, -0.007, 0.001, 0.022, 0.034);
+  part(sl, box(0.006, 0.01, 0.01, 0.001), sight, 0, 0.056, 0.02); part(sl, box(0.005, 0.012, 0.01, 0.001), sight, 0, 0.056, 0.03 - slideLen + 0.02);
+  if (hammer) part(sl, box(0.008, 0.016, 0.014, 0.002), M.darkMetal, 0, 0.05, 0.05);
+  part(g, box(0.027, 0.024, slideLen - 0.01, 0.003), frame, 0, 0.008, -slideLen / 2 + 0.025);
+  part(g, cyl(0.007, 0.03, 12), M.metal, 0, 0.03, 0.03 - slideLen - 0.012);
+  if (suppressor) { part(g, cyl(0.0125, 0.13, 16), M.blackSteel, 0, 0.03, 0.03 - slideLen - 0.06); for (let i = 0; i < 3; i++) part(g, cyl(0.0128, 0.004, 16), M.darkMetal, 0, 0.03, 0.03 - slideLen - 0.03 - i * 0.03); }
+  part(g, side([[0.0, 0.0], [0.05, 0.0], [0.072, -0.12], [0.02, -0.125], [0.0, -0.06]], 0.032, 0.003), frame, 0, 0, 0);
+  const tg = part(g, new THREE.TorusGeometry(0.022, 0.003, 6, 18, Math.PI), frame, 0, -0.008, -0.045); tg.rotation.set(0, Math.PI / 2, Math.PI);
+  part(g, box(0.004, 0.018, 0.005, 0.001), M.metal, 0, -0.008, -0.045);
+  const mag = new THREE.Group(); mag.position.set(0, -0.125, 0.03); g.add(mag); parts.mag = mag; part(mag, box(0.024, 0.01, 0.036, 0.002), frame);
+  if (forwardMag) { part(g, box(0.026, 0.13, 0.036, 0.003), M.blackSteel, 0, -0.07, -0.12); part(g, cyl(0.011, 0.07, 12), M.darkMetal, 0, 0.03, 0.03 - slideLen - 0.02); for (let i = 0; i < 5; i++) part(g, cylY(0.006, 0.03, 8), M.rubber, 0.0, 0.03, 0.03 - slideLen - 0.012 - i * 0.008).visible = false; }
+  const muzzleZ = suppressor ? 0.03 - slideLen - 0.13 : 0.03 - slideLen - 0.03;
+  return { group: g, muzzle: marker(g, 0, 0.034, muzzleZ, 'muzzle'), eject: marker(g, 0.018, 0.042, -0.03, 'eject'), parts, hands: {}, length: 0.3 };
+}
+const buildUSP = M => buildPistol(M, { slideLen: 0.205, slide: M.silver, top: M.steel, suppressor: true });
+const buildP250 = M => buildPistol(M, { slideLen: 0.19, slide: M.silver, frame: M.tanPoly, top: M.steel });
+const buildFiveSeven = M => buildPistol(M, { slideLen: 0.215, slide: M.blackSteel, frame: M.tanPoly, top: M.darkMetal, hammer: true });
+const buildTec9 = M => buildPistol(M, { slideLen: 0.22, slide: M.blackSteel, frame: M.polymer, top: M.darkMetal, forwardMag: true });
+
+function buildMolotov(M) {
+  const g = new THREE.Group(), parts = {};
+  const profile = [[0, 0], [0.034, 0.002], [0.04, 0.03], [0.042, 0.075], [0.032, 0.11], [0.018, 0.135], [0.014, 0.17], [0.016, 0.19], [0.012, 0.195]].map(([r, y]) => V2(r, y - 0.09));
+  part(g, project(new THREE.LatheGeometry(profile, 20), 6), M.glass, 0, 0, 0);
+  part(g, project(new THREE.LatheGeometry(profile.slice(0, 5).map(v => V2(v.x * 0.9, v.y)), 20), 6), M.fuel, 0, 0, 0);
+  part(g, cylY(0.0125, 0.06, 10), M.rag, 0, 0.115, 0).scale.set(1, 1, 1);                            // rag wick
+  const flame = new THREE.Group(); flame.position.set(0, 0.16, 0); g.add(flame); parts.flame = flame;
+  for (const [r, h, y] of [[0.022, 0.07, 0.035], [0.014, 0.05, 0.06]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), M.flame); c.position.y = y; flame.add(c); }
+  part(g, cylY(0.033, 0.004, 20), M.rag, 0, -0.06, 0);                                               // label band
+  const label = part(g, cylY(0.0425, 0.03, 20), M.rag, 0, 0.03, 0); label.scale.set(1, 1, 1);
+  return { group: g, muzzle: null, eject: null, parts, hands: {}, length: 0.28 };
+}
+function grenadeCan(M, { r, h, body, band, cap }) {
+  const g = new THREE.Group(), parts = {};
+  part(g, cylY(r, h, 24), body, 0, 0, 0);
+  part(g, cylY(r * 1.02, 0.012, 24), band, 0, h * 0.25, 0);
+  part(g, cylY(r * 0.75, 0.02, 20), cap, 0, h / 2 + 0.01, 0);
+  part(g, cylY(r * 1.02, 0.01, 24), M.rubber, 0, -h / 2 + 0.005, 0);
+  const lever = part(g, side([[0.0, 0.0], [0.012, 0.0], [0.012, -h * 0.85], [0.006, -h * 0.9], [0.0, -h * 0.8]], 0.008, 0.001), M.steel, 0, h / 2 + 0.02, r * 0.85); parts.lever = lever; lever.rotation.y = Math.PI;
+  parts.pin = part(g, new THREE.TorusGeometry(0.011, 0.0015, 6, 16), M.steel, 0.02, h / 2 + 0.014, 0, 0, Math.PI / 2, 0);
+  return { group: g, muzzle: null, eject: null, parts, hands: {}, length: 0.2 };
+}
+const buildIncendiary = M => grenadeCan(M, { r: 0.029, h: 0.135, body: M.incRed, band: M.accent, cap: M.blackSteel });
+const buildDecoy = M => grenadeCan(M, { r: 0.028, h: 0.12, body: M.decoyYellow, band: M.rubber, cap: M.darkMetal });
+
 // ---------------------------------------------------------------------------------------------- hand poses (weapon-local)
 const R = Math.PI / 2;
 // p: palm centre, r: euler (roll about the finger axis first), elbow: sleeve target, grip: finger curl preset
 const HANDS = {
   ak47: { right: { p: [0.033, -0.088, 0.088], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.62], grip: 'grip' }, left: { p: [-0.012, -0.05, -0.29], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.5], grip: 'wrap' } },
   m4a4: { right: { p: [0.033, -0.09, 0.05], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.6], grip: 'grip' }, left: { p: [-0.012, -0.035, -0.29], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.5], grip: 'wrap' } },
+  awp: { right: { p: [0.033, -0.1, 0.115], r: [0.15, 0.12, -R], elbow: [0.14, -0.42, 0.62], grip: 'grip' }, left: { p: [-0.01, -0.13, -0.17], r: [0.1, 0.1, 2.5], elbow: [-0.3, -0.38, 0.5], grip: 'wrap' } },
+  ssg08: { right: { p: [0.033, -0.09, 0.07], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.6], grip: 'grip' }, left: { p: [-0.01, -0.125, -0.16], r: [0.1, 0.1, 2.5], elbow: [-0.3, -0.38, 0.5], grip: 'wrap' } },
+  famas: { right: { p: [0.033, -0.085, -0.055], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.55], grip: 'grip' }, left: { p: [-0.012, -0.03, -0.22], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.4], grip: 'wrap' } },
+  mp9: { right: { p: [0.033, -0.085, 0.005], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.55], grip: 'grip' }, left: { p: [-0.012, -0.03, -0.15], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.45], grip: 'wrap' } },
+  mac10: { right: { p: [0.033, -0.085, 0.015], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.55], grip: 'grip' }, left: { p: [-0.012, -0.025, -0.13], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.45], grip: 'wrap' } },
+  nova: { right: { p: [0.033, -0.04, 0.09], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.6], grip: 'grip' }, left: { p: [-0.006, -0.055, -0.31], r: [0.1, 0.1, 2.5], elbow: [-0.3, -0.38, 0.4], grip: 'wrap' } },
+  molotov: { right: { p: [0.048, -0.02, 0.0], r: [0.2, 0.1, -R], elbow: [0.24, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.05, 0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
   pistol: { right: { p: [0.03, -0.075, 0.06], r: [0.2, 0.12, -R], elbow: [0.16, -0.36, 0.6], grip: 'grip' }, left: { p: [-0.035, -0.085, 0.045], r: [0.25, -0.2, R], elbow: [-0.2, -0.34, 0.55], grip: 'wrap' } },
   knife: { right: { p: [0.0, -0.005, 0.06], r: [0.1, 0, -R], elbow: [0.2, -0.32, 0.6], grip: 'grip' }, left: null },
   grenade: { right: { p: [0.03, -0.035, 0.0], r: [0.2, 0.1, -R], elbow: [0.22, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.045, -0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
   c4: { right: { p: [0.085, -0.035, 0.03], r: [0.15, 0.1, -R], elbow: [0.22, -0.34, 0.55], grip: 'wrap' }, left: { p: [-0.085, -0.035, 0.03], r: [0.15, -0.1, R], elbow: [-0.24, -0.34, 0.55], grip: 'wrap' } },
 };
-const HAND_CLASS = { ak47: 'ak47', galil: 'ak47', m4a4: 'm4a4', famas: 'm4a4', awp: 'm4a4', glock: 'pistol', usp: 'pistol', deagle: 'pistol', knife: 'knife', he: 'grenade', flash: 'grenade', smoke: 'grenade', c4: 'c4' };
+const HAND_CLASS = { ak47: 'ak47', galil: 'ak47', m4a4: 'm4a4', famas: 'famas', awp: 'awp', ssg08: 'ssg08', mp9: 'mp9', mac10: 'mac10', nova: 'nova', glock: 'pistol', usp: 'pistol', p250: 'pistol', fiveseven: 'pistol', tec9: 'pistol', deagle: 'pistol', knife: 'knife', he: 'grenade', flash: 'grenade', smoke: 'grenade', decoy: 'grenade', incendiary: 'grenade', molotov: 'molotov', c4: 'c4' };
 
-const BUILDERS = { ak47: buildAK47, m4a4: buildM4A4, deagle: buildDeagle, glock: buildGlock, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, c4: buildC4, usp: buildGlock, awp: buildM4A4, famas: buildM4A4, galil: buildAK47 };
+const BUILDERS = { ak47: buildAK47, galil: buildAK47, m4a4: buildM4A4, famas: buildFamas, awp: buildAWP, ssg08: buildSSG, mp9: M => buildSMG(M, 'mp9'), mac10: M => buildSMG(M, 'mac10'), nova: buildNova, deagle: buildDeagle, glock: buildGlock, usp: buildUSP, p250: buildP250, fiveseven: buildFiveSeven, tec9: buildTec9, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, molotov: buildMolotov, incendiary: buildIncendiary, decoy: buildDecoy, c4: buildC4 };
+export const RIG_IDS = Object.keys(BUILDERS);
 
 export function buildWeaponRig(id) {
   const M = weaponMaterials(), rig = BUILDERS[id](M);

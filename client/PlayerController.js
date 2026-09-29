@@ -66,7 +66,9 @@ export class PlayerController {
   get locked() { return this.controls.isLocked; }
   lock() { this.controls.lock(); }
   unlock() { this.controls.unlock(); }
-  setSensitivity(v) { this.controls.pointerSpeed = Number.isFinite(v) ? clamp(v, 0.15, 2) : 0.6; }
+  setSensitivity(v) { this.sens = Number.isFinite(v) ? clamp(v, 0.15, 2) : 0.6; this.controls.pointerSpeed = this.sens * (this.zoomScale || 1); }
+  /** Scales mouse speed with the field of view so a scoped aim feels the same in screen space. */
+  setZoomScale(k) { this.zoomScale = clamp(k, 0.2, 1); this.controls.pointerSpeed = (this.sens ?? 0.6) * this.zoomScale; }
   get yaw() { return this.aim.rotation.y; }
   get pitch() { return this.aim.rotation.x; }
   setAim(yaw, pitch) { this.aim.rotation.set(pitch, yaw, 0, 'YXZ'); }

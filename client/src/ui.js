@@ -10,13 +10,12 @@ const TEAM_LABEL = { TERRORIST: 'TERRORIST', COUNTER_TERRORIST: 'COUNTER-TERRORI
 const TEAM_SHORT = { TERRORIST: 'T', COUNTER_TERRORIST: 'CT' };
 const REASONS = { elimination: 'Jamoa yo‘q qilindi', exploded: 'Bomba portladi', defused: 'Bomba zararsizlantirildi', time: 'Vaqt tugadi', draw: 'Durang', match: 'Match yakuni' };
 const BUY_NAMES = { kevlar: 'KEVLAR', helmet: 'KEVLAR + DUBULG‘A', defuser: 'DEFUSE KIT' };
-const STATS = {
-  ak47: '36 DMG · 600 RPM', galil: '30 DMG · 666 RPM',
-  m4a4: '33 DMG · 666 RPM', famas: '30 DMG · 666 RPM',
-  awp: '115 DMG · 41 RPM', deagle: '63 DMG · 267 RPM',
-  glock: '30 DMG · 400 RPM', usp: '35 DMG · 352 RPM',
-  he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA',
-  kevlar: '100 ARMOR', helmet: '100 ARMOR + DUBULG‘A', defuser: '5 s DEFUSE'
+const RPM = w => Math.round(60 / w.interval);
+const GROUP_NAMES = { PISTOLS: 'PISTOLS', SMGS: 'SMG', HEAVY: 'SHOTGUN', RIFLES: 'RIFLES', GRENADES: 'GRENADES', GEAR: 'GEAR' };
+const statLine = id => {
+  const w = WEAPONS[id];
+  if (w?.kind === 'gun') return `${w.damage}${w.pellets ? ` × ${w.pellets}` : ''} DMG · ${RPM(w)} RPM${w.scope ? ' · SCOPE' : ''}`;
+  return { he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA', molotov: '7 s OLOV', incendiary: '7 s OLOV', decoy: 'SOXTA OTISH', kevlar: '100 ARMOR', helmet: '100 ARMOR + DUBULG‘A', defuser: '5 s DEFUSE' }[id] || '';
 };
 
 export class UI {
@@ -118,7 +117,7 @@ export class UI {
   }
   buy(state, me, onBuy) {
     const owned = id => me.inv && (Object.values(me.inv.slots).includes(id) || (me.inv.grenades[id] || 0) > 0);
-    const groups = ['RIFLES', 'PISTOLS', 'GRENADES', 'GEAR'];
+    const columns = [['PISTOLS'], ['SMGS', 'HEAVY'], ['RIFLES'], ['GRENADES'], ['GEAR']];
     const card = ([id, def]) => {
       // Exclude weapons belonging to the enemy team
       if (def.team && def.team !== me.team) return '';
@@ -126,10 +125,10 @@ export class UI {
       const poor = me.money < def.price && state.phase !== 'warmup';
       const own = id === 'kevlar' ? me.armor >= 100 : id === 'helmet' ? me.armor >= 100 && me.helmet : id === 'defuser' ? me.kit : owned(id);
       const label = own ? '<span class="badge-own">BOR</span>' : (state.phase === 'warmup' ? 'FREE' : `$${def.price}`);
-      return `<button data-buy="${id}" ${own ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${STATS[id] || ''}</small></span><strong>${label}</strong></button>`;
+      return `<button data-buy="${id}" ${own ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${statLine(id)}</small></span><strong>${label}</strong></button>`;
     };
     this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION · ${clock(state.remaining)}</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${me.money}</strong></div>
-      <div class="buy-cols">${groups.map(g => `<div><h4>${g}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
+      <div class="buy-cols">${columns.map(col => `<div>${col.map(g => `<h4>${GROUP_NAMES[g]}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}`).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
     document.querySelectorAll('[data-buy]:not([disabled])').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
   }
   results(state, onExit) {

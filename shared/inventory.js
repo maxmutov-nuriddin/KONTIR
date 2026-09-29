@@ -17,7 +17,7 @@ export class Inventory {
     const pistol = team === 'COUNTER_TERRORIST' ? 'usp' : 'glock';
     this.slots = { 1: null, 2: pistol, 3: 'knife', 4: null, 5: null };
     this.ammo = { [pistol]: { mag: WEAPONS[pistol].mag, reserve: WEAPONS[pistol].reserve } };
-    this.grenades = { he: 0, flash: 0, smoke: 0 };
+    this.grenades = Object.fromEntries(GRENADES.map(g => [g, 0])); this.zoom = 0;
     this.util = null;
     this.current = 2; this.previous = 3;
     this.time = 0; this.drawUntil = 0; this.nextFire = 0; this.reloadUntil = 0; this.reloading = false;
@@ -30,7 +30,7 @@ export class Inventory {
     if (slot === SLOT.UTILITY) return this.totalGrenades() > 0;
     return !!this.slots[slot];
   }
-  totalGrenades() { return this.grenades.he + this.grenades.flash + this.grenades.smoke; }
+  totalGrenades() { let n = 0; for (const g of GRENADES) n += this.grenades[g] || 0; return n; }
   weaponId(slot = this.current) {
     if (slot === SLOT.UTILITY) return this.util && this.grenades[this.util] > 0 ? this.util : null;
     return this.slots[slot] || null;
@@ -113,7 +113,7 @@ export class Inventory {
     this.drawTicks = ticks((w?.drawTime ?? 500) / 1000);
     this.drawUntil = this.time + this.drawTicks;
     this.nextFire = Math.max(this.nextFire, this.drawUntil);
-    this.reloading = false; this.pin = 0; this.shots = 0; this.burst = 0;
+    this.reloading = false; this.pin = 0; this.shots = 0; this.burst = 0; this.zoom = 0;
   }
 
   // ---- per-command step --------------------------------------------------------------------------------
@@ -149,16 +149,20 @@ export class Inventory {
       const a = this.ammo[w.id];
       const wantsReload = (cmd.reload && !this.lastReload) || (cmd.fire && a.mag === 0 && a.reserve > 0 && fireEdge);
       if (wantsReload && ready && !this.reloading && a.mag < w.mag && a.reserve > 0) {
-        this.reloading = true; this.reloadTicks = ticks(w.reload); this.reloadUntil = this.time + this.reloadTicks; this.shots = 0; this.burst = 0;
+        this.reloading = true; this.reloadTicks = ticks(w.reload); this.reloadUntil = this.time + this.reloadTicks; this.shots = 0; this.burst = 0; this.zoom = 0;
         events.push({ type: 'reloadStart', weapon: w.id });
+      } else if (w.scope && fire2Edge && ready && !this.reloading) {
+        this.zoom = (this.zoom + 1) % (w.scope.length + 1);
+        events.push({ type: 'zoom', weapon: w.id, level: this.zoom });
       } else if (cmd.fire && ctx.canFire && ready && !this.reloading && this.time >= this.nextFire && (w.auto || fireEdge)) {
         if (a.mag > 0) {
           if (this.time - this.lastShot > ticks(w.recoilDelay + 0.05)) this.burst = 0;
           const punch = samplePattern(w, this.shots);
           a.mag--;
-          events.push({ type: 'shot', weapon: w.id, index: Math.floor(this.shots), punch, burst: this.burst });
+          events.push({ type: 'shot', weapon: w.id, index: Math.floor(this.shots), punch, burst: this.burst, zoom: this.zoom });
           this.shots = Math.min(w.recoilTable.length - 1, this.shots + 1); this.burst++;
           this.lastShot = this.time; this.nextFire = this.time + ticks(w.interval);
+          if (w.unzoomOnShot) this.zoom = 0;
         } else if (fireEdge) { events.push({ type: 'dryfire', weapon: w.id }); this.nextFire = this.time + ticks(0.25); }
       }
     } else if (w.kind === 'melee') {
@@ -188,7 +192,7 @@ export class Inventory {
   /** Round start for survivors: keep the loadout, restart every timer. */
   resetTimers() {
     this.time = 0; this.drawUntil = 0; this.nextFire = 0; this.reloadUntil = 0; this.reloading = false; this.pin = 0;
-    this.lastFire = false; this.lastFire2 = false; this.lastReload = false; this.shots = 0; this.lastShot = -1e9; this.burst = 0;
+    this.lastFire = false; this.lastFire2 = false; this.lastReload = false; this.shots = 0; this.lastShot = -1e9; this.burst = 0; this.zoom = 0;
     if (!this.has(this.current)) this.current = this.fallbackSlot();
   }
 
@@ -198,7 +202,7 @@ export class Inventory {
       team: this.team, slots: { ...this.slots }, ammo: JSON.parse(JSON.stringify(this.ammo)), grenades: { ...this.grenades }, util: this.util,
       current: this.current, previous: this.previous, time: this.time, drawUntil: this.drawUntil, drawTicks: this.drawTicks || 1, nextFire: this.nextFire,
       reloadUntil: this.reloadUntil, reloadTicks: this.reloadTicks || 1, reloading: this.reloading, pin: this.pin, pinStrength: this.pinStrength,
-      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, shots: this.shots, lastShot: this.lastShot, burst: this.burst,
+      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom,
     };
   }
   load(json) { Object.assign(this, JSON.parse(JSON.stringify(json))); return this; }

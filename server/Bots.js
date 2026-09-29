@@ -23,13 +23,16 @@ export class BotBrain {
   /** Freeze-time shopping: rifle > armour > kit > grenades, within budget. */
   buy(p) {
     const room = this.room, team = p.team;
-    const rifle = team === 'TERRORIST' ? 'ak47' : 'm4a4';
-    const list = [];
-    if (p.money >= WEAPONS[rifle].price + 650) list.push(rifle, 'kevlar');
+    const T = team === 'TERRORIST', rifle = T ? 'ak47' : 'm4a4', smg = T ? 'mac10' : 'mp9', pistol = T ? 'tec9' : 'fiveseven';
+    const list = [], roll = Math.random();
+    if (p.money >= WEAPONS[rifle].price + 650) list.push(roll < 0.12 && p.money >= 4750 + 650 ? 'awp' : rifle, 'kevlar');
+    else if (p.money >= WEAPONS[smg].price + 650 && roll < 0.5) list.push(smg, 'kevlar');
+    else if (p.money >= 1050 + 650 && roll < 0.7) list.push('nova', 'kevlar');
     else if (p.money >= 1200 + 650) list.push('deagle', 'kevlar');
     else if (p.money >= 650) list.push('kevlar');
+    if (p.money >= 500 && roll > 0.85) list.push(pistol);
     if (team === 'COUNTER_TERRORIST') list.push('defuser');
-    list.push('he', 'flash', 'smoke');
+    list.push('he', 'flash', 'smoke', T ? 'molotov' : 'incendiary');
     for (const item of list) room.buy(p.id, item);
     if (p.inv.weaponId(SLOT.PRIMARY)) p.inv.select(SLOT.PRIMARY, { force: true });
   }

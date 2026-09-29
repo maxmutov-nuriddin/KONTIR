@@ -29,7 +29,7 @@ export class Room {
     this.side = { A: 'TERRORIST', B: 'COUNTER_TERRORIST' };            // which squad currently plays which side
     this.wins = { A: 0, B: 0 }; this.lossStreak = { A: 0, B: 0 };
     this.bomb = { state: 'idle', carrier: null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
-    this.grenades = []; this.smokes = []; this.nextGrenade = 1;
+    this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.nextGrenade = 1;
     this.events = []; this.eventId = 0; this.result = null; this.accumulator = 0;
     this.lag = new LagCompensator({ maxPlayers: RULES.maxPlayers });
     this.stats = { stepMs: 0, steps: 0 };
@@ -152,7 +152,7 @@ export class Room {
       this.lossStreak = { A: 0, B: 0 };
     }
     this.phase = 'buy'; this.phaseEnd = this.tick + secondsToTick(this.timing.freeze); this.result = null;
-    this.lag.reset(); this.grenades = []; this.smokes = [];
+    this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = [];
     for (const p of this.players.values()) {
       const keep = !fresh && !halftime && p.carry && p.alive;
       if (keep) { p.inv.resetTimers(); } else this.newLoadout(p);
@@ -199,7 +199,7 @@ export class Room {
   }
   resetToWarmup() {
     this.phase = 'warmup'; this.phaseEnd = this.tick + secondsToTick(this.timing.warmup); this.round = 0; this.epoch++;
-    this.wins = { A: 0, B: 0 }; this.result = null; this.grenades = []; this.smokes = [];
+    this.wins = { A: 0, B: 0 }; this.result = null; this.grenades = []; this.smokes = []; this.fires = []; this.decoys = [];
     if (this.side.A !== 'TERRORIST') this.swapSides(false);
     this.bomb = { state: 'idle', carrier: null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
     for (const p of this.players.values()) { p.alive = false; this.newLoadout(p); p.money = RULES.maxMoney; this.respawn(p); p.kills = p.deaths = p.assists = 0; }
@@ -265,28 +265,38 @@ export class Room {
 
   fireShot(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], c = p.char, origin = this.eye(p);
-    const spread = inaccuracy(w, { speed: horizontalSpeed(c), grounded: c.grounded, crouch: c.crouch, burst: ev.burst });
+    const spread = inaccuracy(w, { speed: horizontalSpeed(c), grounded: c.grounded, crouch: c.crouch, burst: ev.burst, zoom: ev.zoom || 0 });
     const random = makeRandom((this.tick * 2654435761) ^ (p.index * 40503) ^ ((p.inv.lastShot + ev.index) * 9973));
-    const dir = shotDirection(c.yaw, c.pitch, ev.punch, spread, random);
-    const wall = this.collider.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, 250);
-    let limit = wall ? wall.distance : 250, hit = null;
-    const viewTick = this.viewTickFor(p, cmd);
-    for (const t of this.players.values()) {
-      if (!t.alive || t.team === p.team || t.id === p.id) continue;
-      const pose = this.poseAt(t, viewTick);
-      if (!pose || (pose.life !== undefined && pose.life !== t.life)) continue;
-      const h = rayHitPlayer(origin, dir, pose, limit);
-      if (h && h.distance < limit) { limit = h.distance; hit = { target: t, part: h.part }; }
+    const viewTick = this.viewTickFor(p, cmd), pellets = w.pellets || 1, hits = new Map();
+    let first = null;
+    for (let i = 0; i < pellets; i++) {
+      const dir = shotDirection(c.yaw, c.pitch, ev.punch, spread + (w.pelletSpread || 0) * (pellets > 1 ? 1 : 0) * Math.sqrt(random()), random);
+      const wall = this.collider.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, 250);
+      let limit = wall ? wall.distance : 250, hit = null;
+      for (const t of this.players.values()) {
+        if (!t.alive || t.team === p.team || t.id === p.id) continue;
+        const pose = this.poseAt(t, viewTick);
+        if (!pose || (pose.life !== undefined && pose.life !== t.life)) continue;
+        const h = rayHitPlayer(origin, dir, pose, limit);
+        if (h && h.distance < limit) { limit = h.distance; hit = { target: t, part: h.part }; }
+      }
+      const to = { x: origin.x + dir.x * limit, y: origin.y + dir.y * limit, z: origin.z + dir.z * limit };
+      if (hit) {
+        const dmg = computeDamage(w, limit, hit.part, hit.target.armor, hit.target.helmet);
+        const killed = this.damage(hit.target, p, dmg.health, dmg.armor, w.id, hit.part === 'head', hit.part);
+        const acc = hits.get(hit.target.id) || { target: hit.target, part: hit.part, damage: 0, killed: false };
+        acc.damage += dmg.health; acc.killed = acc.killed || killed; if (hit.part === 'head') acc.part = 'head'; hits.set(hit.target.id, acc);
+      }
+      first = first || { to, hit: !!hit, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null };
+      if (pellets > 1 && i > 0) this.emit('pellet', { shooter: p.id, from: origin, to, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null });
     }
-    const to = { x: origin.x + dir.x * limit, y: origin.y + dir.y * limit, z: origin.z + dir.z * limit };
     let info = null;
-    if (hit) {
-      const dmg = computeDamage(w, limit, hit.part, hit.target.armor, hit.target.helmet);
-      const killed = this.damage(hit.target, p, dmg.health, dmg.armor, w.id, hit.part === 'head', hit.part);
-      info = { target: hit.target.id, part: hit.part, damage: dmg.health, killed, hp: hit.target.health };
-      this.emit('hit', { attacker: p.id, target: hit.target.id, part: hit.part, damage: dmg.health, killed, from: { x: origin.x, z: origin.z } });
+    for (const h of hits.values()) {
+      const rec = { target: h.target.id, part: h.part, damage: h.damage, killed: h.killed, hp: h.target.health };
+      info = info || rec;
+      this.emit('hit', { attacker: p.id, target: h.target.id, part: h.part, damage: h.damage, killed: h.killed, from: { x: origin.x, z: origin.z } });
     }
-    this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to, hit: info, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null });
+    this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to: first.to, hit: info, wall: first.wall });
   }
   melee(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], origin = this.eye(p), c = p.char;
@@ -340,6 +350,7 @@ export class Room {
           g.vx -= (1 + 0.45) * vn * n.x; g.vy -= (1 + 0.45) * vn * n.y; g.vz -= (1 + 0.45) * vn * n.z;
           if (n.y > 0.7) { g.vx *= 0.82; g.vz *= 0.82; }
           g.bounces++;
+          if ((g.type === 'molotov' || g.type === 'incendiary') && n.y > 0.5) g.detonate = this.tick;
           if (Math.abs(vn) > 1.5) this.emit('bounce', { x: pos.x, y: pos.y, z: pos.z, grenadeType: g.type });
         }
       }
@@ -347,9 +358,42 @@ export class Room {
     g.x = pos.x; g.y = pos.y + r; g.z = pos.z;
     if (Math.hypot(g.vx, g.vy, g.vz) < 0.5) { g.rest++; if (g.rest > 3) { g.vx = g.vy = g.vz = 0; } } else g.rest = 0;
     if (g.y < this.collider.bounds.min.y - 20) g.detonate = this.tick;
-    const pop = this.tick >= g.detonate || (g.type === 'smoke' && g.rest > secondsToTick(0.5));
+    const pop = this.tick >= g.detonate || ((g.type === 'smoke' || g.type === 'decoy') && g.rest > secondsToTick(0.5));
     if (pop) this.detonate(g);
     return pop;
+  }
+  /** Incendiary pools: burn every non-friendly player standing in them twice a second; a smoke on top puts them out. */
+  stepFires() {
+    if (!this.fires.length) return;
+    this.fires = this.fires.filter(f => {
+      if (this.tick >= f.end) return false;
+      if (this.smokes.some(s => Math.hypot(s.x - f.x, s.z - f.z) < s.radius && Math.abs(s.y - 1.2 - f.y) < s.radius)) return false;
+      if (this.tick < f.next) return true;
+      f.next = this.tick + secondsToTick(0.5);
+      const w = WEAPONS[f.type], owner = this.players.get(f.owner) || null;
+      for (const t of this.players.values()) {
+        if (!t.alive || (t.team === f.team && t.id !== f.owner)) continue;
+        const c = t.char;
+        if (Math.hypot(c.x - f.x, c.z - f.z) > f.radius || c.y - f.y > 1.5 || c.y - f.y < -1) continue;
+        const killed = this.damage(t, owner, w.damage, 0, f.type, false);
+        this.emit('hit', { attacker: f.owner, target: t.id, part: 'leg', damage: w.damage, killed, from: { x: f.x, z: f.z } });
+      }
+      return true;
+    });
+  }
+  /** Decoys replay the owner's weapon as bursts of gunfire heard at their position. */
+  stepDecoys() {
+    if (!this.decoys.length) return;
+    this.decoys = this.decoys.filter(d => {
+      if (this.tick >= d.end) return false;
+      if (this.tick < d.next) return true;
+      const w = WEAPONS[d.weapon] || WEAPONS.ak47;
+      this.emit('decoy', { x: d.x, y: d.y, z: d.z, weapon: w.id, owner: d.owner });
+      d.burst++;
+      const burstLen = w.auto ? 5 : 1;
+      d.next = this.tick + secondsToTick(d.burst % burstLen === 0 ? 0.45 + Math.random() * 0.9 : w.interval);
+      return true;
+    });
   }
   hasSight(from, to, ignoreSmoke = false) {
     const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, d = Math.hypot(dx, dy, dz);
@@ -392,6 +436,11 @@ export class Room {
         t.flashUntil = Math.max(t.flashUntil, this.tick + secondsToTick(duration));
         this.emit('flash', { target: t.id, duration, full: facing > 0.3 });
       }
+    } else if (g.type === 'molotov' || g.type === 'incendiary') {
+      this.fires.push({ id: g.id, type: g.type, owner: g.owner, team: g.team, x: g.x, y: g.y, z: g.z, radius: w.radius, start: this.tick, end: this.tick + secondsToTick(w.fire), next: this.tick });
+    } else if (g.type === 'decoy') {
+      const o = this.players.get(g.owner), weapon = o?.inv.weaponId(SLOT.PRIMARY) || o?.inv.weaponId(SLOT.SECONDARY) || 'ak47';
+      this.decoys.push({ id: g.id, owner: g.owner, x: g.x, y: g.y + 0.1, z: g.z, weapon, end: this.tick + secondsToTick(w.decoy), next: this.tick + secondsToTick(0.3), burst: 0 });
     } else if (g.type === 'smoke') {
       this.smokes.push({ id: g.id, x: g.x, y: g.y + 1.2, z: g.z, radius: w.radius, start: this.tick, end: this.tick + secondsToTick(w.duration) });
     }
@@ -532,6 +581,7 @@ export class Room {
     this.stepDroppedBomb();
     for (let i = this.grenades.length - 1; i >= 0; i--) if (this.stepGrenade(this.grenades[i])) this.grenades.splice(i, 1);
     this.smokes = this.smokes.filter(s => this.tick < s.end);
+    this.stepFires(); this.stepDecoys();
     this.lag.record(this.tick, [...this.players.values()].filter(p => p.alive));
 
     // ---- round end conditions
@@ -565,6 +615,7 @@ export class Room {
       scores: this.scores, side: this.side, half: this.round > RULES.halfRounds ? 2 : 1, result: this.result, practice: this.practice,
       bomb: { state: this.bomb.state, carrier: this.bomb.carrier, x: this.bomb.x, y: this.bomb.y, z: this.bomb.z, site: this.bomb.site, remaining: this.bomb.state === 'planted' ? Math.max(0, (this.bomb.explodeTick - this.tick) / TICK_RATE) : 0 },
       grenades: this.grenades.map(g => ({ id: g.id, type: g.type, x: +g.x.toFixed(2), y: +g.y.toFixed(2), z: +g.z.toFixed(2) })),
+      fires: this.fires.map(f => ({ id: f.id, type: f.type, x: f.x, y: f.y, z: f.z, radius: f.radius, age: (this.tick - f.start) / TICK_RATE, left: (f.end - this.tick) / TICK_RATE })),
       smokes: this.smokes.map(s => ({ id: s.id, x: s.x, y: s.y, z: s.z, radius: s.radius, age: (this.tick - s.start) / TICK_RATE, left: (s.end - this.tick) / TICK_RATE })),
       events,
       players: [...this.players.values()].map(p => {

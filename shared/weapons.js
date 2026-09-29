@@ -23,6 +23,10 @@ function cumulative(increments) {
   return out;
 }
 
+const scaled = (pattern, k) => pattern.map(([y, p]) => [y * k, p * k]);
+const SHOTGUN_PATTERN = [[0, 0], [0.05, 1.6], [-0.05, 1.8]];
+const SCOUT_PATTERN = [[0, 0], [0.02, 1.5]];
+
 const gun = (o) => Object.freeze({ kind: 'gun', melee: false, ...o, recoilTable: cumulative(o.recoil) });
 
 export const WEAPONS = Object.freeze({
@@ -50,22 +54,51 @@ export const WEAPONS = Object.freeze({
   galil: gun({ id: 'galil', name: 'GALIL AR', slot: 1, team: 'TERRORIST', price: 2000, kill: 300, damage: 30, armorRatio: 1.55, range: 0.98, interval: 0.09, auto: true,
     mag: 35, reserve: 90, reload: 3.0, drawTime: 900, recoil: AK47_PATTERN, recoilDelay: 0.22, recoilRate: 7, viewKick: 1,
     spread: { stand: 0.0018, crouch: 0.0011, move: 0.013, air: 0.05, burst: 0.0005, burstMax: 0.005 }, model: 'galil' }),
+  mp9: gun({ id: 'mp9', name: 'MP9', slot: 1, team: 'COUNTER_TERRORIST', price: 1250, kill: 600, damage: 26, armorRatio: 1.2, range: 0.87, interval: 0.07, auto: true,
+    mag: 30, reserve: 120, reload: 2.1, drawTime: 700, recoil: scaled(M4A4_PATTERN, 0.8), recoilDelay: 0.16, recoilRate: 8.5, viewKick: 0.9,
+    spread: { stand: 0.0018, crouch: 0.001, move: 0.008, air: 0.04, burst: 0.0004, burstMax: 0.004 }, model: 'mp9' }),
+  mac10: gun({ id: 'mac10', name: 'MAC-10', slot: 1, team: 'TERRORIST', price: 1050, kill: 600, damage: 29, armorRatio: 1.15, range: 0.82, interval: 0.075, auto: true,
+    mag: 30, reserve: 100, reload: 2.4, drawTime: 700, recoil: scaled(AK47_PATTERN, 0.75), recoilDelay: 0.16, recoilRate: 8.5, viewKick: 1,
+    spread: { stand: 0.002, crouch: 0.0012, move: 0.009, air: 0.04, burst: 0.0005, burstMax: 0.005 }, model: 'mac10' }),
+  nova: gun({ id: 'nova', name: 'NOVA', slot: 1, team: null, price: 1050, kill: 900, damage: 26, pellets: 9, pelletSpread: 0.028, armorRatio: 1.0, range: 0.7, interval: 0.88, auto: false,
+    mag: 8, reserve: 32, reload: 3.4, drawTime: 900, recoil: SHOTGUN_PATTERN, recoilDelay: 0.4, recoilRate: 3, viewKick: 1.6,
+    spread: { stand: 0.001, crouch: 0.0007, move: 0.012, air: 0.04, burst: 0.001, burstMax: 0.004 }, model: 'nova' }),
+  ssg08: gun({ id: 'ssg08', name: 'SSG 08', slot: 1, team: null, price: 1700, kill: 300, damage: 88, armorRatio: 1.7, range: 0.99, interval: 1.25, auto: false,
+    mag: 10, reserve: 90, reload: 3.7, drawTime: 900, recoil: SCOUT_PATTERN, recoilDelay: 0.2, recoilRate: 3, viewKick: 1.5, scope: [40], unscoped: 0.06, unzoomOnShot: true,
+    spread: { stand: 0.0004, crouch: 0.0002, move: 0.08, air: 0.4, burst: 0.0002, burstMax: 0.0002 }, model: 'ssg08' }),
+  p250: gun({ id: 'p250', name: 'P250', slot: 2, team: null, price: 300, kill: 300, damage: 38, armorRatio: 1.28, range: 0.83, interval: 0.15, auto: false,
+    mag: 13, reserve: 26, reload: 2.2, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.2, recoilRate: 6, viewKick: 1,
+    spread: { stand: 0.0016, crouch: 0.0009, move: 0.012, air: 0.045, burst: 0.0012, burstMax: 0.007 }, model: 'p250' }),
+  fiveseven: gun({ id: 'fiveseven', name: 'FIVE-SEVEN', slot: 2, team: 'COUNTER_TERRORIST', price: 500, kill: 300, damage: 32, armorRatio: 1.5, range: 0.85, interval: 0.15, auto: false,
+    mag: 20, reserve: 100, reload: 2.2, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.2, recoilRate: 6, viewKick: 1,
+    spread: { stand: 0.0016, crouch: 0.0009, move: 0.012, air: 0.045, burst: 0.0012, burstMax: 0.007 }, model: 'fiveseven' }),
+  tec9: gun({ id: 'tec9', name: 'TEC-9', slot: 2, team: 'TERRORIST', price: 500, kill: 300, damage: 33, armorRatio: 1.8, range: 0.79, interval: 0.1, auto: false,
+    mag: 24, reserve: 120, reload: 2.4, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.18, recoilRate: 7, viewKick: 1,
+    spread: { stand: 0.0018, crouch: 0.001, move: 0.014, air: 0.05, burst: 0.0015, burstMax: 0.009 }, model: 'tec9' }),
   knife: Object.freeze({ id: 'knife', kind: 'melee', melee: true, name: 'KNIFE', slot: 3, team: null, price: 0, kill: 1500, damage: 40, stabDamage: 65, backstab: 180,
     range: 1.7, interval: 0.5, stabInterval: 1.1, drawTime: 400, model: 'knife', recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1, mag: 0, reserve: 0 }),
   he: Object.freeze({ id: 'he', kind: 'grenade', melee: false, name: 'HE GRENADE', slot: 4, team: null, price: 300, kill: 300, damage: 98, radius: 8.5, fuse: 1.6, max: 1, drawTime: 600, model: 'he', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
   flash: Object.freeze({ id: 'flash', kind: 'grenade', melee: false, name: 'FLASHBANG', slot: 4, team: null, price: 200, kill: 0, damage: 0, radius: 24, fuse: 1.5, max: 2, drawTime: 600, model: 'flash', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
   smoke: Object.freeze({ id: 'smoke', kind: 'grenade', melee: false, name: 'SMOKE GRENADE', slot: 4, team: null, price: 300, kill: 0, damage: 0, radius: 4.6, fuse: 2.2, max: 1, duration: 18, drawTime: 600, model: 'smoke', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
+  molotov: Object.freeze({ id: 'molotov', kind: 'grenade', melee: false, name: 'MOLOTOV', slot: 4, team: 'TERRORIST', price: 400, kill: 300, damage: 8, radius: 2.6, fuse: 2.2, max: 1, fire: 7, drawTime: 600, model: 'molotov', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
+  incendiary: Object.freeze({ id: 'incendiary', kind: 'grenade', melee: false, name: 'INCENDIARY', slot: 4, team: 'COUNTER_TERRORIST', price: 500, kill: 300, damage: 8, radius: 2.6, fuse: 2.2, max: 1, fire: 7, drawTime: 600, model: 'incendiary', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
+  decoy: Object.freeze({ id: 'decoy', kind: 'grenade', melee: false, name: 'DECOY', slot: 4, team: null, price: 50, kill: 0, damage: 0, radius: 0, fuse: 2.0, max: 1, decoy: 12, drawTime: 600, model: 'decoy', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
   c4: Object.freeze({ id: 'c4', kind: 'objective', melee: false, name: 'C4 EXPLOSIVE', slot: 5, team: 'TERRORIST', price: 0, kill: 0, damage: 0, drawTime: 800, model: 'c4', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
 });
-export const GRENADES = Object.freeze(['he', 'flash', 'smoke']);
+export const GRENADES = Object.freeze(['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy']);
 export const MAX_GRENADES = 4;
 
 export const BUY_ITEMS = Object.freeze({
-  ak47: { price: 2700, team: 'TERRORIST', group: 'RIFLES' }, galil: { price: 2000, team: 'TERRORIST', group: 'RIFLES' },
-  m4a4: { price: 3100, team: 'COUNTER_TERRORIST', group: 'RIFLES' }, famas: { price: 2050, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
-  awp: { price: 4750, group: 'RIFLES' },
-  deagle: { price: 700, group: 'PISTOLS' }, glock: { price: 200, team: 'TERRORIST', group: 'PISTOLS' }, usp: { price: 200, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
-  he: { price: 300, group: 'GRENADES' }, flash: { price: 200, group: 'GRENADES' }, smoke: { price: 300, group: 'GRENADES' },
+  glock: { price: 200, team: 'TERRORIST', group: 'PISTOLS' }, usp: { price: 200, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
+  p250: { price: 300, group: 'PISTOLS' }, tec9: { price: 500, team: 'TERRORIST', group: 'PISTOLS' }, fiveseven: { price: 500, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
+  deagle: { price: 700, group: 'PISTOLS' },
+  mac10: { price: 1050, team: 'TERRORIST', group: 'SMGS' }, mp9: { price: 1250, team: 'COUNTER_TERRORIST', group: 'SMGS' },
+  nova: { price: 1050, group: 'HEAVY' },
+  galil: { price: 2000, team: 'TERRORIST', group: 'RIFLES' }, famas: { price: 2050, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
+  ak47: { price: 2700, team: 'TERRORIST', group: 'RIFLES' }, m4a4: { price: 3100, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
+  ssg08: { price: 1700, group: 'RIFLES' }, awp: { price: 4750, group: 'RIFLES' },
+  decoy: { price: 50, group: 'GRENADES' }, flash: { price: 200, group: 'GRENADES' }, he: { price: 300, group: 'GRENADES' }, smoke: { price: 300, group: 'GRENADES' },
+  molotov: { price: 400, team: 'TERRORIST', group: 'GRENADES' }, incendiary: { price: 500, team: 'COUNTER_TERRORIST', group: 'GRENADES' },
   kevlar: { price: 650, group: 'GEAR', name: 'KEVLAR' }, helmet: { price: 1000, group: 'GEAR', name: 'KEVLAR + HELMET' },
   defuser: { price: 400, team: 'COUNTER_TERRORIST', group: 'GEAR', name: 'DEFUSE KIT' },
 });
@@ -78,9 +111,10 @@ export function samplePattern(weapon, shots) {
 }
 
 /** Random cone half-angle (radians) for the current stance / motion / burst length. */
-export function inaccuracy(weapon, { speed = 0, grounded = true, crouch = 0, burst = 0 }) {
+export function inaccuracy(weapon, { speed = 0, grounded = true, crouch = 0, burst = 0, zoom = 0 }) {
   const s = weapon.spread;
   if (!s) return 0;
+  if (weapon.scope && !zoom) return weapon.unscoped ?? 0.05;
   const base = s.stand + (s.crouch - s.stand) * crouch;
   const move = grounded ? s.move * Math.min(1, speed / (250 * UNIT)) : s.air;
   return base + move + Math.min(s.burstMax, burst * s.burst);
