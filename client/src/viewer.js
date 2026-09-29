@@ -7,6 +7,11 @@ import { ViewmodelDynamics } from '../PlayerController.js';
 import { animateOperator, buildOperator, holdWeapon } from './characters.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { WEAPONS } from '../../shared/weapons.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { models } from './models.js';
+
+models.init(new GLTFLoader()).then(() => models.preload()).then(main);
+function main() {
 
 const q = new URLSearchParams(location.search);
 const id = q.get('w') || 'ak47', team = q.get('team') === 'CT' ? 'COUNTER_TERRORIST' : 'TERRORIST', mode = q.get('mode') || 'fp';
@@ -79,3 +84,4 @@ let last = performance.now(), time = 0, frames = 0;
 renderer.setAnimationLoop(now => { const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; time += dt; tick(dt, time); if (++frames === 3) window.__viewerReady = true; });
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 window.__viewer = { WEAPONS, buildWeaponRig };
+}

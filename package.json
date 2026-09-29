@@ -4,17 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node tools/build-maps.mjs --if-missing",
+    "predev": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "dev": "concurrently -k -n server,client -c yellow,cyan \"node server/server.js\" \"vite --host 0.0.0.0\"",
-    "prestart": "node tools/build-maps.mjs --if-missing",
+    "prestart": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "start": "node server/server.js",
     "maps": "node tools/build-maps.mjs",
-    "prebuild": "node tools/build-maps.mjs --if-missing",
+    "prebuild": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "build": "vite build",
-    "pretest": "node tools/build-maps.mjs --if-missing",
+    "pretest": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "test": "node --test tests/*.test.js",
     "test:browser": "node tests/browser-smoke.mjs",
-    "test:browser:local": "node tests/run-browser.mjs"
+    "test:browser:local": "node tests/run-browser.mjs",
+    "models": "node tools/scan-models.mjs && node tools/build-maps.mjs"
   },
   "dependencies": {
     "gsap": "^3.13.0",

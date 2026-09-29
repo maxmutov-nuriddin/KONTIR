@@ -12,6 +12,7 @@ import { loadProfile, saveProfile, recordMatch, rankOf, levelOf } from './profil
 import { FINISHES, applyFinish } from './finishes.js';
 import { weaponIcon } from './icons.js';
 import { weaponMaterials } from './viewmodels.js';
+import { models } from './models.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { DT, TICK_RATE } from '../../shared/constants.js';
 import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
@@ -404,6 +405,8 @@ world.renderer.setAnimationLoop(frame);
 // ---------------------------------------------------------------------------------------------- boot
 (async () => {
   try {
+    await models.init(world.gltf);
+    if (models.count()) { ui.setLoading(0.05, '3D modellar'); await models.preload(f => ui.setLoading(0.05 + f * 0.3, '3D modellar')); }
     const manifest = await (await fetch('/maps/manifest.json')).json();
     maps = manifest.maps.filter(m => m.valid !== false); selectedMap = maps.find(m => m.id === selectedMap)?.id || maps[0].id;
     for (const id of [...pool]) if (!maps.some(m => m.id === id)) pool.delete(id);

@@ -23,6 +23,7 @@ import { applyPBR, recipeFor } from './src/materials.js';
 import { Effects } from './src/effects.js';
 import { animateOperator, buildOperator, holdWeapon } from './src/characters.js';
 import { RIG_IDS, buildWeaponRigTP, buildWeaponRig } from './src/viewmodels.js';
+import { models } from './src/models.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -64,7 +65,7 @@ function patchMacro(material) {
   material.customProgramCacheKey = () => `kontir-macro-v2-${material.defines?.CSM_CASCADES || 0}`;
 }
 const CHUNK = 28;
-const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
+const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpM = new THREE.Matrix4();
 
 export class WorldEngine {
   constructor(canvas, { quality = 'medium' } = {}) {
@@ -228,12 +229,36 @@ export class WorldEngine {
     const group = this.mapGroup = new THREE.Group(); group.name = `map_${meta.id}`;
     this.processScene(gltf.scene, group);
     this.scene.add(group);
+    progress(0.8, 'Obyektlar');
+    await this.placeProps(gltf.scene, group);
     progress(0.9, 'Materiallar');
     this.buildSiteMarkers(data);
     data.radar = this.buildRadar(data);
     this.resize();
     progress(1, 'Tayyor');
     return data;
+  }
+  /**
+   * Instantiates real prop models (client/public/models/props) at the map's prop_<key>_<n> markers. One InstancedMesh
+   * per model part, so a street full of crates costs a handful of draw calls. Collision comes from the map's clip boxes.
+   */
+  async placeProps(scene, group) {
+    const byKey = new Map();
+    scene.updateMatrixWorld(true);
+    scene.traverse(o => { const m = /^prop_(.+)_\d+$/.exec(o.name); if (m) { if (!byKey.has(m[1])) byKey.set(m[1], []); byKey.get(m[1]).push(o.matrixWorld.clone()); } });
+    for (const [key, matrices] of byKey) {
+      const path = models.propPath(key); if (!path) continue;
+      const gltf = await models.load(path); if (!gltf) continue;
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse(o => {
+        if (!o.isMesh) return;
+        const inst = new THREE.InstancedMesh(o.geometry, o.material, matrices.length), local = o.matrixWorld;
+        matrices.forEach((m, i) => inst.setMatrixAt(i, tmpM.multiplyMatrices(m, local)));
+        inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; inst.computeBoundingSphere();
+        for (const mat of [].concat(o.material)) if (!this.materials.has(mat)) { this.materials.add(mat); this.prepareMaterial(mat); }
+        group.add(inst);
+      });
+    }
   }
   releaseTree(root) {
     disposeTree(root, m => { this.materials.delete(m); this.csm?.shaders.delete(m); });

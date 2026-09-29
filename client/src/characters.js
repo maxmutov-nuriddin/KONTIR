@@ -3,6 +3,42 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { buildArms, buildWeaponRigTP, poseArms } from './viewmodels.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { models } from './models.js';
+
+// ---------------------------------------------------------------------------------------------- skinned (real model) path
+const CLIPS = { idle: /idle|stand/i, walk: /walk/i, run: /run|jog|sprint/i, crouch: /crouch.*idle|crouch(?!.*walk)|squat/i, crouch_walk: /crouch.*walk|sneak/i, jump: /jump/i, death: /death|die|dying/i };
+function buildSkinned(team, gltf) {
+  const root = new THREE.Group(), body = cloneSkinned(gltf.scene);
+  body.rotation.y = Math.PI;                                              // assets face +Z; operators face -Z
+  root.add(body); body.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(body), h = box.max.y - box.min.y;
+  if (h > 0.2) { const k = 1.8 / h; body.scale.multiplyScalar(k); body.position.y = -box.min.y * k; }
+  body.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const bone = re => { let hit = null; body.traverse(o => { if (!hit && (o.isBone || o.type === 'Bone') && re.test(o.name)) hit = o; }); return hit; };
+  const mixer = new THREE.AnimationMixer(body), actions = {};
+  for (const [state, re] of Object.entries(CLIPS)) { const clip = gltf.animations.find(c => re.test(c.name)); if (clip) actions[state] = mixer.clipAction(clip); }
+  if (!Object.keys(actions).length && gltf.animations.length) actions.idle = actions.walk = mixer.clipAction(gltf.animations[0]);   // unnamed clips
+  if (actions.death) { actions.death.setLoop(THREE.LoopOnce); actions.death.clampWhenFinished = true; }
+  const first = actions.idle || Object.values(actions)[0]; first?.play();
+  const hand = body.getObjectByName('weapon_socket') || bone(/righthand$|right_hand|hand_r$|r_hand|RightHand/i);
+  const socket = new THREE.Object3D(); if (hand) { hand.add(socket); const ws = new THREE.Vector3(); hand.getWorldScale(ws); socket.scale.setScalar(1 / (ws.x || 1)); socket.rotation.set(-Math.PI / 2, 0, Math.PI / 2); }
+  root.userData = { skinned: true, team, body, mixer, actions, current: first, spine: bone(/spine2|spine_02|spine1|spine_01|^spine$|Spine/i), head: bone(/head$/i), socket, weapon: null, weaponId: null, rigs: new Map(), fall: 0, phase: 0 };
+  return root;
+}
+function animateSkinned(actor, { speed, yaw, pitch, crouch, alive, dt }) {
+  const u = actor.userData, a = u.actions;
+  const state = !alive ? 'death' : crouch > 0.5 ? (speed > 0.4 ? 'crouch_walk' : 'crouch') : speed > 3.6 ? 'run' : speed > 0.4 ? 'walk' : 'idle';
+  const next = a[state] || (state === 'crouch_walk' ? a.crouch || a.walk : state === 'run' ? a.walk : null) || a.idle;
+  if (next && next !== u.current) { next.reset().fadeIn(0.18).play(); u.current?.fadeOut(0.18); u.current = next; }
+  if (next && (state === 'walk' || state === 'run')) next.timeScale = Math.max(0.6, Math.min(1.6, speed / (state === 'run' ? 5.5 : 2.2)));
+  u.mixer.update(dt);
+  actor.rotation.y = yaw;
+  if (u.spine && alive) u.spine.rotation.x += -pitch * 0.6;              // aim offset on top of the clip
+  if (!a.death) { u.fall += ((alive ? 0 : 1) - u.fall) * Math.min(1, dt * 7); actor.rotation.x = -u.fall * (Math.PI / 2 - 0.05); }
+  if (u.weapon) u.weapon.visible = alive;
+}
+
 
 const skinTones = [0xd7a982, 0xb07d58, 0x8a5a3c, 0xe2b896, 0x6e4a33];
 
@@ -23,6 +59,8 @@ function mesh(parent, geo, mat, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(
 const pivot = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
 
 export function buildOperator(team, seed = 0) {
+  const model = models.character(team);
+  if (model) return buildSkinned(team, model);
   const M = materialsFor(team, seed), root = new THREE.Group();
   const hip = pivot(root, 0, 0.94, 0), spine = pivot(hip, 0, 0.06, 0), head = pivot(spine, 0, 0.58, 0);
   // torso + plate carrier
@@ -85,6 +123,11 @@ export function holdWeapon(actor, weaponId) {
   if (u.weapon) u.weapon.visible = false;
   u.weaponId = weaponId; u.arms = null;
   if (!weaponId) { u.weapon = null; return; }
+  if (u.skinned) {
+    let rig = u.rigs.get(weaponId);
+    if (!rig) { rig = buildWeaponRigTP(weaponId); u.socket.add(rig.group); u.rigs.set(weaponId, rig); }
+    u.weapon = rig.group; rig.group.visible = true; return;
+  }
   let rig = u.rigs.get(weaponId);
   if (!rig) {
     rig = buildWeaponRigTP(weaponId);
@@ -129,6 +172,7 @@ function poseArmsIK(u) {
 /** Animates locomotion, crouch, aim and death for one frame. `speed` in m/s, angles in radians. */
 export function animateOperator(actor, { speed, yaw, pitch, crouch, alive, dt, moveYaw }) {
   const u = actor.userData;
+  if (u.skinned) return animateSkinned(actor, { speed, yaw, pitch, crouch, alive, dt });
   u.fall += ((alive ? 0 : 1) - u.fall) * Math.min(1, dt * 7);
   actor.rotation.y = yaw;
   const stride = Math.min(1, speed / 6.4);

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { applyPBR } from './materials.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { models } from './models.js';
 import { buildArms as makeArms, poseArms as placeArms } from './hands.js';
 
 const V2 = (x, y) => new THREE.Vector2(x, y);
@@ -594,7 +595,22 @@ const HAND_CLASS = { ak47: 'ak47', galil: 'ak47', sg553: 'ak47', m4a4: 'm4a4', m
 const BUILDERS = { ak47: buildAK47, galil: buildAK47, m4a4: buildM4A4, famas: buildFamas, awp: buildAWP, ssg08: buildSSG, mp9: M => buildSMG(M, 'mp9'), mac10: M => buildSMG(M, 'mac10'), nova: buildNova, xm1014: M => buildShotgunFamily(M, 'xm1014'), mag7: M => buildShotgunFamily(M, 'mag7'), sawedoff: M => buildShotgunFamily(M, 'sawedoff'), negev: buildNegev, m4a1s: buildM4A1S, aug: buildAUG, sg553: buildSG553, ump45: buildUMP, p90: buildP90, mp7: buildMP7, cz75: buildCZ75, r8: buildR8, deagle: buildDeagle, glock: buildGlock, usp: buildUSP, p250: buildP250, fiveseven: buildFiveSeven, tec9: buildTec9, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, molotov: buildMolotov, incendiary: buildIncendiary, decoy: buildDecoy, c4: buildC4 };
 export const RIG_IDS = Object.keys(BUILDERS);
 
+/** Rig from a real GLB (see models.js conventions); hands come from hand_right / hand_left empties when present. */
+function rigFromModel(id, gltf) {
+  const group = gltf.scene.clone(true), find = n => group.getObjectByName(n) || null;
+  const parts = {}; for (const n of ['mag', 'bolt', 'slide', 'pump', 'cylinder']) { const o = find(n); if (o) parts[n] = o; }
+  const hands = { ...(HANDS[HAND_CLASS[id] || 'ak47'] || {}) };
+  for (const [key, node] of [['right', 'hand_right'], ['left', 'hand_left']]) {
+    const o = find(node); if (!o) continue;
+    hands[key] = { ...(hands[key] || {}), p: o.position.toArray(), r: [o.rotation.x, o.rotation.y, o.rotation.z], grip: o.userData?.grip || (key === 'right' ? 'grip' : 'wrap') };
+  }
+  const box = new THREE.Box3().setFromObject(group);
+  return { group, muzzle: find('muzzle') || marker(group, 0, 0.03, box.min.z, 'muzzle'), eject: find('eject'), parts, hands, length: box.max.z - box.min.z, fromModel: true };
+}
+
 export function buildWeaponRig(id) {
+  const model = models.weapon(id);
+  if (model) { const rig = rigFromModel(id, model); rig.id = id; rig.group.name = `weapon_${id}`; return rig; }
   const M = weaponMaterials(), rig = BUILDERS[id](M);
   rig.id = id; rig.group.name = `weapon_${id}`;
   rig.hands = HANDS[HAND_CLASS[id] || 'ak47'];
@@ -604,6 +620,8 @@ export function buildWeaponRig(id) {
 /** Third-person weapon: the same rig baked into one static mesh per material (cached geometry, shared by every operator). */
 const tpCache = new Map();
 export function buildWeaponRigTP(id) {
+  const model = models.weapon(id);
+  if (model) { const rig = rigFromModel(id, model); rig.group.traverse(o => { if (o.isMesh) o.castShadow = true; }); return { group: rig.group, hands: rig.hands, muzzle: rig.muzzle, id }; }
   let c = tpCache.get(id);
   if (!c) {
     const full = buildWeaponRig(id); full.group.updateMatrixWorld(true);

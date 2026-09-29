@@ -2,6 +2,25 @@
 // (b) non-colliding decor meshes, merged per material, plus spawn/site marker nodes for the GLB.
 import { boxMesh, cylMesh, mergeMeshes, rampMesh } from '../../shared/geometry.js';
 import { makeRandom } from '../../shared/weapons.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+/** Props that have a real model in client/public/models/props replace the procedural version (collision stays a clip box). */
+function propModels() {
+  try { return new Set(Object.keys(JSON.parse(readFileSync(fileURLToPath(new URL('../../client/public/models/models.json', import.meta.url)), 'utf8')).props || {})); } catch { return new Set(); }
+}
+// grid char -> prop model name, plus the nominal collision of that model (metres, model origin on the floor, length along +X)
+const PROPS = {
+  c: { key: 'crate', boxes: [[1.5, 1.5, 1.5, 0]] },
+  C: { key: 'crate_stack', boxes: [[3.0, 1.5, 1.5, 0], [1.5, 1.5, 1.5, 1.5]] },
+  b: { key: 'barrels', boxes: [[1.9, 0.95, 1.8, 0]] },
+  k: { key: 'car', boxes: [[4.2, 1.05, 1.8, 0.25], [2.1, 0.5, 1.6, 1.05]] },
+  w: { key: 'well', boxes: [[2.0, 0.95, 2.0, 0]] },
+  T: { key: 'palm', boxes: [[0.45, 3.1, 0.45, 0]] },
+  K: { key: 'container', boxes: [[6.0, 2.6, 2.5, 0]], run: true },
+  L: { key: 'container', boxes: [[6.0, 5.2, 2.5, 0]], run: true, stack: true },
+  p: { key: 'pillar', boxes: [[0.9, 4.2, 0.9, 0]] },
+};
 
 // glTF baseColorFactor is *linear*; the palette below is authored as sRGB hex.
 const toLinear = c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
@@ -68,7 +87,7 @@ export class GridMap {
     this.levels = Array.from({ length: rows }, () => Array(cols).fill(0));
     this.rand = makeRandom(seed);
     this.wallMaterials = wallMaterials || ['sand_wall'];
-    this.solid = []; this.decor = []; this.markers = [];
+    this.solid = []; this.decor = []; this.clip = []; this.markers = []; this.props = propModels(); this.propCount = 0;
     this.x0 = -cols * cell / 2; this.z0 = -rows * cell / 2;
   }
   set(c, r, ch) { if (c >= 0 && r >= 0 && c < this.cols && r < this.rows) this.grid[r][c] = ch; return this; }
@@ -124,6 +143,8 @@ export class GridMap {
         const same = k => this.at(k, r) === ch && (this.isSolid(ch) ? this.wallMat(k, r) === this.wallMat(c, r) && this.wallBase(k, r) === this.wallBase(c, r) : this.lv(k, r) === this.lv(c, r));
         if (mergeable) while (end + 1 < cols && end - c + 1 < maxRun && same(end + 1)) end++;
         const xa = this.x0 + c * cell, xb = this.x0 + (end + 1) * cell, za = this.z0 + r * cell, zb = za + cell, y = this.base(c, r);
+        const prop = PROPS[ch];
+        if (prop && this.props.has(prop.key)) { this.placeProp(prop, prop.run ? (xa + xb) / 2 : this.cx(c), y, this.cz(r)); c = end + 1; continue; }
         if (this.isSolid(ch)) this.addSolid(this.wallMat(c, r), xa, 0, za, xb, SOLID[ch] + this.wallBase(c, r), zb);
         else if (ch === 'R') { this.addSolid('concrete', xa, y + 3.9, za, xb, y + 4.4, zb); this.addDecor('metal', xa, y + 3.5, za + cell * 0.45, xb, y + 3.9, za + cell * 0.55); }
         else if (ch === 'H') { this.addSolid('stone_base', xa, y, za + cell * 0.3, xb, y + 1.3, zb - cell * 0.3, 2); this.addDecor('sandbag', xa, y + 1.3, za + cell * 0.25, xb, y + 1.45, zb - cell * 0.25, 1); }
@@ -153,6 +174,18 @@ export class GridMap {
     }
     this.dress();
     return this.output();
+  }
+
+  /** Real-model prop: invisible clip boxes for physics + a `prop_<key>_<n>` marker the client instantiates the model at. */
+  placeProp(prop, x, y, z) {
+    const yaw = prop.run ? 0 : Math.floor(this.rand() * 4) * Math.PI / 2;
+    const alongX = Math.abs(Math.sin(yaw)) < 0.5;
+    for (const [lx, h, lz, y0] of prop.boxes) {
+      const hx = (alongX ? lx : lz) / 2, hz = (alongX ? lz : lx) / 2;
+      this.clip.push(boxMesh('clip', 'concrete', x, y + y0 + h / 2, z, hx * 2, h, hz * 2, 1));
+    }
+    this.markers.push({ name: `prop_${prop.key}_${this.propCount++}`, x, y, z, yaw: yaw || 0.00001 });
+    if (prop.stack) this.markers.push({ name: `prop_${prop.key}_${this.propCount++}`, x, y: y + 2.6, z, yaw: 0.00001 });
   }
 
   /** Stone lip on every edge where this raised cell drops to a lower, open neighbour. */
@@ -328,6 +361,7 @@ export class GridMap {
     const push = (kind, m) => { const key = `${kind}_${m.material}`; if (!groups.has(key)) groups.set(key, { kind, material: m.material, list: [] }); groups.get(key).list.push(m); };
     for (const m of this.solid) push('world', m);
     for (const m of this.decor) push('decor', m);
+    for (const m of this.clip) push('clip', m);
     const meshes = [...groups.values()].map(g => mergeMeshes(`${g.kind}_${g.material}`, g.material, g.list));
     const used = new Set(meshes.map(m => m.material));
     return { meshes, materials: [...used].map(name => ({ name, ...MATERIALS[name] })), markers: this.markers };
@@ -348,6 +382,7 @@ export function finalizeMarkers(map, out) {
   const yaw = map.spawnYaw || { T: 0, CT: Math.PI };
   pick(t, 10).forEach((p, i) => markers.push({ name: `spawn_T_${i + 1}`, x: p.x, y: p.y, z: p.z, yaw: yaw.T }));
   pick(x, 10).forEach((p, i) => markers.push({ name: `spawn_CT_${i + 1}`, x: p.x, y: p.y, z: p.z, yaw: yaw.CT }));
+  markers.push(...out.markers.filter(m => m.name.startsWith('prop_')));
   // sites: centroid of all A / B cells with a radius covering them
   for (const id of ['A', 'B']) {
     const cells = out.markers.filter(m => m.name === `site_${id}`);

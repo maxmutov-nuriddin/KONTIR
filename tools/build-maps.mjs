@@ -19,7 +19,7 @@ await mkdir(out, { recursive: true });
 if (process.argv.includes('--if-missing')) {
   const { stat } = await import('node:fs/promises');
   const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), 'maps');
-  const newestSource = Math.max(...await Promise.all([...(await readdir(srcDir)).map(f => resolve(srcDir, f)), fileURLToPath(import.meta.url), resolve(dirname(fileURLToPath(import.meta.url)), '../shared/geometry.js')].map(async f => (await stat(f)).mtimeMs)));
+  const newestSource = Math.max(...await Promise.all([...(await readdir(srcDir)).map(f => resolve(srcDir, f)), fileURLToPath(import.meta.url), resolve(dirname(fileURLToPath(import.meta.url)), '../shared/geometry.js'), resolve(out, '../models/models.json')].map(async f => (await stat(f).catch(() => ({ mtimeMs: 0 }))).mtimeMs)));
   const ids = ['sarob', 'changtepa', 'qishloq', 'ombor', 'sahara', 'harbor'];
   const fresh = await Promise.all([...ids.map(id => resolve(out, `${id}.glb`)), resolve(out, 'manifest.json')].map(async f => { try { return (await stat(f)).mtimeMs >= newestSource; } catch { return false; } }));
   if (fresh.every(Boolean)) { console.log('maps: up to date'); process.exit(0); }

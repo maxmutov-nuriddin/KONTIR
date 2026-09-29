@@ -76,6 +76,8 @@ export function applyFinish(root, id, baseMaterials) {
     if (!o.isMesh) return;
     o.userData.baseMaterial ??= o.material;
     const base = o.userData.baseMaterial, name = names.get(base.uuid);
-    o.material = id && id !== 'standard' && FINISHES[id] && painted.has(name) ? finishMaterial(base, id) : base;
+    // procedural rigs: known painted materials; real models: materials named paint / body / receiver / frame / stock / furniture
+    const paintable = painted.has(name) || /paint|body|receiver|frame|stock|furniture|skin/i.test(base.name || '');
+    o.material = id && id !== 'standard' && FINISHES[id] && paintable ? finishMaterial(base, id) : base;
   });
 }
