@@ -3,13 +3,14 @@ import { FramePacer } from './frame-pacer.js';
 import * as THREE from 'three';
 import { UI } from './ui.js';
 import { WorldEngine } from '../WorldEngine.js';
-import { PlayerController } from '../PlayerController.js';
+import { PlayerController, DEFAULT_BINDS, DEFAULT_MOUSE, keyLabel } from '../PlayerController.js';
 import { WeaponManager } from '../WeaponManager.js';
 import { Network } from './network.js';
 import { Prediction } from './prediction.js';
 import { AudioEngine } from './audio.js';
 import { loadProfile, saveProfile, recordMatch, rankOf, levelOf, adopt, getToken, setToken } from './profile.js';
 import { startI18n, setLang, getLang } from './i18n.js';
+import { Friends } from './friends.js';
 import { FINISHES, applyFinish } from './finishes.js';
 import { weaponIcon } from './icons.js';
 import { weaponMaterials } from './viewmodels.js';
@@ -28,10 +29,16 @@ const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for b
 let world;
 try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') }); }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
+// GPU reset / memory pressure: three.js keeps the page alive and re-uploads everything on restore (no reload needed)
+world.renderer.domElement.addEventListener('webglcontextlost', () => ui.toast('Grafika xotirasi tiklanmoqda…'));
+world.renderer.domElement.addEventListener('webglcontextrestored', () => ui.toast('Grafika tiklandi.'));
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
 weapons.finishFor = id => profile.finishes[id];
-controller.setSensitivity(Number(store.get('sens', 0.6))); audio.setVolume(Number(store.get('volume', 0.8)));
+const readJSON = (k, d) => { try { return JSON.parse(store.get(k, '') || 'null') ?? d; } catch { return d; } };
+controller.setBinds(readJSON('binds', DEFAULT_BINDS));
+controller.setMouse({ ...DEFAULT_MOUSE, sensitivity: Number(store.get('sens', 0.6)), ...readJSON('mouse', {}) });
+audio.setVolume(Number(store.get('volume', 0.8)));
 
 let maps = [], selectedMap = 'sahara', team = 'TERRORIST', loadedMap = null;
 let playing = false, joining = false, generation = 0;
@@ -41,7 +48,10 @@ const network = new Network(receive, reason => { if (playing) { leave(); ui.toas
 // ---- accounts: the socket re-binds the session on every (re)connect before any join / queue request
 let serverGains = null;
 const AUTH_ERRORS = { username: 'Nom noto‘g‘ri: 3–16 ta lotin harf, raqam yoki _.', password: 'Parol 6–64 belgidan iborat bo‘lsin.', taken: 'Bu nom band. Boshqasini tanlang.', credentials: 'Nom yoki parol noto‘g‘ri.', slow: 'Juda ko‘p urinish. Bir daqiqa kuting.' };
-network.socket.on('connect', () => { const tk = getToken(); if (tk && !profile.demo) network.socket.emit('auth:resume', tk, r => { if (r?.error) signOut(false); }); });
+network.socket.on('connect', () => { const tk = getToken(); if (tk && !profile.demo) network.socket.emit('auth:resume', tk, r => { if (r?.error) signOut(false); else friends.refresh(); }); });
+const friends = new Friends({ network, profile, toast: t => ui.toast(t), openAuth: () => openAuth(), sound: () => audio.click?.(), inGame: () => playing });
+// keep the account online for friends: reconnect after an unexpected drop (the server re-binds on auth:resume)
+network.socket.on('disconnect', reason => { if (reason !== 'io client disconnect' && !profile.demo) setTimeout(() => { if (!network.socket.connected) network.connect().catch(() => {}); }, 3000); });
 network.socket.on('account:match', r => { if (profile.demo || !r?.profile) return; serverGains = r.gains; adopt(profile, r.profile); refreshLobby(); });
 async function authSubmit(mode, username, password) {
   try {
@@ -52,7 +62,7 @@ async function authSubmit(mode, username, password) {
     return null;
   } catch (e) { return AUTH_ERRORS[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'; }
 }
-function applyAccount() { for (const w of Object.keys(WEAPONS)) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); }
+function applyAccount() { for (const w of Object.keys(WEAPONS)) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); friends.hangup(true); friends.chatWith = null; friends.refresh(); }
 function signOut(notify = true) {
   const tk = getToken(); if (tk && network.socket.connected) network.socket.emit('auth:logout', tk);
   setToken(null); adopt(profile, loadProfile()); applyAccount(); if (notify) ui.toast('Akkauntdan chiqildi.');
@@ -216,12 +226,12 @@ async function enter(result, my) {
     world.setShowcase(null);
     prediction = new Prediction(world.map.collider, weapons);
     state = network.latest || state;
-    playing = true; lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
+    playing = true; friends.applyMic(); lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
     ui.showGame(world.map.name); ui.hideBusy(); receive(state);
   if (state.phase !== 'warmup') ui.resume(true);
 }
 function leave() {
-  generation++; joining = false; playing = false; controller.unlock(); network.leave();
+  generation++; joining = false; playing = false; friends.applyMic(); controller.unlock(); network.leave();
   state = null; id = null; prediction = null; controller.clearInput(); world.clearActors(); world.effects.clear(); world.bombRig.group.visible = false; world.bombLight.intensity = 0;
   weapons.inventory.reset('TERRORIST'); weapons.setActive(null); ui.showMenu(); ui.resume(false);
   ui.showView('home'); updateShowcase(); refreshLobby();
@@ -255,6 +265,7 @@ function openBuy() {
 
 // ---------------------------------------------------------------------------------------------- comms: chat (Y / U), radio (Z), ping (X / middle mouse)
 const RADIO = ['Hujumga!', 'Orqaga chekinamiz', 'Meni yopib turing', 'Dushman ko‘rindi!', 'Hudud toza', 'Yordam kerak!', 'Tushunarli', 'Yo‘q', 'Bombani A ga olib boramiz', 'Bombani B ga olib boramiz'].slice(0, 9);
+controller.on('voice', down => friends.setPTT(down));
 controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, text => network.socket.emit('chat', { text, team: teamOnly }), () => {}); })
   .on('radio', () => { if (!playing) return; controller.radioOpen = !controller.radioOpen; ui.radioMenu(controller.radioOpen ? RADIO : null); })
   .on('radioPick', n => { controller.radioOpen = false; ui.radioMenu(null); if (RADIO[n - 1]) network.socket.emit('radio', n - 1); })
@@ -336,7 +347,7 @@ function updateShowcase() {
   nameEl.oninput = () => { if (!profile.demo) return; profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
   ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
   ui.botSettings(botCfg, cfg => store.set('bots', JSON.stringify(cfg)));
-  ui.renderFriends(['NOVA', 'GHOST', 'ATLAS', 'VIPER']);
+  friends.renderRail();
   document.querySelectorAll('.tb-nav [data-view]').forEach(b => b.onclick = () => { ui.showView(ui.view === b.dataset.view ? 'home' : b.dataset.view); refreshLobby(); });
   document.querySelector('#nav-home').onclick = () => ui.showView('home');
   document.querySelector('#fullscreen').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => {}); };
@@ -360,8 +371,14 @@ document.querySelector('#online').onclick = () => {
 };
 document.querySelector('#guide-nav').onclick = () => ui.controls();
 document.querySelector('#team').onclick = e => { team = team === 'TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'; e.target.textContent = `${team === 'TERRORIST' ? 'TERRORIST' : 'COUNTER-TERRORIST'} ⇄`; updateShowcase(); };
-document.querySelector('#settings').onclick = () => ui.settings({ quality: world.qualityName, sensitivity: controller.controls.pointerSpeed, volume: audio.volume, fpsLimit: pacer.limit, onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
-  onQuality: q => { world.setQuality(q); store.set('quality', q); }, onSensitivity: v => { controller.setSensitivity(v); store.set('sens', v); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
+document.querySelector('#settings').onclick = () => ui.settings({ quality: world.qualityName, volume: audio.volume, fpsLimit: pacer.limit, mouse: controller.mouseOpts,
+  binds: structuredClone(controller.binds), getBinds: () => structuredClone(controller.binds), keyLabel,
+  capture: fn => { controller.capture = code => { controller.capture = null; fn(code); }; },
+  onBinds: b => { controller.setBinds(b || DEFAULT_BINDS); store.set('binds', JSON.stringify(controller.binds)); },
+  onMouse: m => { controller.setMouse(m); store.set('mouse', JSON.stringify(controller.mouseOpts)); store.set('sens', controller.mouseOpts.sensitivity); },
+  onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
+  onQuality: q => { world.setQuality(q); store.set('quality', q); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
+ui.modal.addEventListener('close', () => { controller.capture = null; });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
 document.addEventListener('pointerlockerror', () => { ui.toast('Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.'); if (playing && !ui.modal.open) ui.resume(true); });

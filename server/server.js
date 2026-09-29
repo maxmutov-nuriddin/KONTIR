@@ -14,6 +14,8 @@ import { MatchQueue } from './Queue.js';
 import { Accounts } from './Accounts.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+// No input for 2 minutes -> kicked (a hidden browser tab stops sending, so this must outlast a quick alt-tab).
+const AFK_TICKS = 64 * 120;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.txt': 'text/plain' };
 const normalizeTeam = value => (value === 'CT' || value === 'COUNTER_TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST');
 
@@ -151,6 +153,30 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       if (r) s.emit('account:match', r);
     }
   }
+  // ---- presence: account key -> connected sockets; friends get 'friends:update' whenever someone's state changes
+  const online = new Map();
+  function statusOf(key) {
+    let st = null;
+    for (const s of online.get(key) || []) { const v = s.data.room ? 'game' : s.data.queued ? 'search' : 'lobby'; if (!st || v === 'game' || (v === 'search' && st === 'lobby')) st = v; }
+    return st || 'offline';
+  }
+  function friendList(key) {
+    const u = accounts.users[key]; accounts.rel(u);
+    return { friends: u.friends.filter(k => accounts.users[k]).map(k => ({ name: accounts.users[k].name, status: statusOf(k) })), incoming: u.requests.filter(k => accounts.users[k]).map(k => accounts.users[k].name) };
+  }
+  function notifyFriends(key) {
+    for (const s of online.get(key) || []) s.emit('friends:update');
+    for (const k of accounts.users[key]?.friends || []) for (const s of online.get(k) || []) s.emit('friends:update');
+  }
+  function bindAccount(socket, key) {
+    const prev = socket.data.account;
+    if (prev) { const set = online.get(prev); set?.delete(socket); if (set && !set.size) online.delete(prev); }
+    socket.data.account = key;
+    if (key) { if (!online.has(key)) online.set(key, new Set()); online.get(key).add(socket); }
+    if (prev && prev !== key) notifyFriends(prev);
+    if (key) notifyFriends(key);
+  }
+  const presence = socket => { if (socket.data.account) notifyFriends(socket.data.account); };
   function leave(socket) {
     const code = socket.data.room, room = rooms.get(code);
     socket.data.joinVersion = (socket.data.joinVersion || 0) + 1;
@@ -169,10 +195,10 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const name = playerName(socket, request.name);
       const maps = Array.isArray(request.maps) ? request.maps.filter(m => typeof m === 'string').slice(0, 16) : null;
       const e = queue.join(socket.id, { name, maps, mode: request.mode === 'casual' ? 'casual' : 'competitive' });
-      socket.data.queued = true; socket.data.loadout = request.loadout;
+      socket.data.queued = true; socket.data.loadout = request.loadout; presence(socket);
       ack({ ok: true, ...queue.status(socket.id), maps: [...e.maps] });
     });
-    socket.on('queue:leave', () => { queue.leave(socket.id); socket.data.queued = false; });
+    socket.on('queue:leave', () => { queue.leave(socket.id); socket.data.queued = false; presence(socket); });
     socket.on('queue:accept', matchId => { const m = queue.accept(socket.id, String(matchId)); if (m) for (const p of m.players) io.to(p).emit('queue:accepted', { matchId: m.id, accepted: m.accepted.size, total: m.players.length }); });
     socket.on('queue:decline', matchId => queue.decline(socket.id, String(matchId)));
     socket.on('maps', (_, ack) => typeof ack === 'function' && ack({ maps: library.list().map(({ id, name, subtitle }) => ({ id, name, subtitle })) }));
@@ -219,7 +245,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
           if (counts) counts[player.team] = Math.max(1, counts[player.team]);   // the human counts toward their side
           room.fillBots(counts); room.start();
         }
-        socket.data.room = room.code; socket.join(room.code);
+        socket.data.room = room.code; socket.join(room.code); presence(socket);
         ack({ ok: true, id: socket.id, code: room.code, team: player.team, snapshot: room.snapshot(socket.id) });
       } catch (error) { if (!quiet) console.error('Join failed:', error); ack({ error: 'Xonaga ulanib bo‘lmadi.' }); }
       finally { if (ownsJoin) socket.data.joining = false; }
@@ -250,7 +276,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('ping', pt => { if (pt && typeof pt === 'object') rooms.get(socket.data.room)?.ping(socket.id, +pt.x, +pt.y, +pt.z); });
     // ---- accounts: username + password (no e-mail); guests play the demo profile
     const authOk = () => { const t = performance.now(); if (t - (socket.data.authAt ?? -1e9) > 60000) { socket.data.authAt = t; socket.data.authN = 0; } return ++socket.data.authN <= 8; };
-    const signIn = (ack, r) => { socket.data.account = r.profile.name.toLowerCase(); ack({ ok: true, ...r }); };
+    const signIn = (ack, r) => { bindAccount(socket, r.profile.name.toLowerCase()); ack({ ok: true, ...r }); };
     const authError = e => ({ error: ['username', 'password', 'taken', 'credentials'].includes(e.message) ? e.message : 'server' });
     socket.on('auth:register', async (req, ack) => {
       if (typeof ack !== 'function') return; if (!authOk()) return ack({ error: 'slow' });
@@ -263,16 +289,31 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('auth:resume', (token, ack) => {
       if (typeof ack !== 'function') return;
       const r = accounts.resume(token); if (!r) return ack({ error: 'expired' });
-      socket.data.account = r.key; ack({ ok: true, profile: r.profile });
+      bindAccount(socket, r.key); ack({ ok: true, profile: r.profile });
     });
-    socket.on('auth:logout', token => { accounts.logout(token); socket.data.account = null; });
+    socket.on('auth:logout', token => { accounts.logout(token); bindAccount(socket, null); });
     socket.on('account:update', (choices, ack) => { const key = socket.data.account; const p = key && accounts.update(key, choices); if (typeof ack === 'function') ack(p ? { ok: true, profile: p } : { error: 'auth' }); });
     socket.on('account:buy', (finish, ack) => {
       if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' });
       try { ack({ ok: true, profile: accounts.buy(key, String(finish)) }); } catch (e) { ack({ error: e.message }); }
     });
-    socket.on('leave', () => leave(socket));
-    socket.on('disconnect', () => { queue.leave(socket.id); leave(socket); });
+    // ---- friends: search, requests, list with presence, direct messages, WebRTC voice signalling (friends only)
+    const acct = (ack, fn) => { if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' }); try { ack({ ok: true, ...fn(key) }); } catch (e) { ack({ error: e.message }); } };
+    const limited = () => { const t = performance.now(); if (t - (socket.data.fAt ?? -1e9) > 10000) { socket.data.fAt = t; socket.data.fN = 0; } return ++socket.data.fN > 40; };
+    socket.on('friends:list', (_, ack) => acct(ack, key => friendList(key)));
+    socket.on('friends:search', (q, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const u = accounts.users[key]; return { users: accounts.search(key, q).map(name => ({ name, friend: accounts.areFriends(key, name.toLowerCase()), pending: accounts.users[name.toLowerCase()]?.requests?.includes(key) || false, online: online.has(name.toLowerCase()) })) }; }));
+    socket.on('friends:request', (name, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const tk = accounts.request(key, name); notifyFriends(tk); notifyFriends(key); return {}; }));
+    socket.on('friends:respond', (req, ack) => acct(ack, key => { const tk = accounts.respond(key, req?.name, req?.accept === true); notifyFriends(tk); notifyFriends(key); return {}; }));
+    socket.on('friends:remove', (name, ack) => acct(ack, key => { const tk = accounts.unfriend(key, name); notifyFriends(tk); notifyFriends(key); return {}; }));
+    socket.on('dm:send', (req, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const { to, msg } = accounts.message(key, req?.to, req?.text); for (const k of [to, key]) for (const s of online.get(k) || []) s.emit('dm', { with: k === to ? msg.from : accounts.users[to].name, msg }); return {}; }));
+    socket.on('dm:history', (name, ack) => acct(ack, key => ({ messages: accounts.history(key, name) })));
+    socket.on('rtc:signal', req => {
+      const key = socket.data.account, tk = String(req?.to ?? '').toLowerCase();
+      if (!key || !accounts.areFriends(key, tk) || JSON.stringify(req?.data ?? null).length > 16000) return;
+      for (const s of online.get(tk) || []) if (!req.sid || s.id === req.sid) s.emit('rtc:signal', { from: accounts.users[key].name, sid: socket.id, data: req.data });
+    });
+    socket.on('leave', () => { leave(socket); presence(socket); });
+    socket.on('disconnect', () => { queue.leave(socket.id); leave(socket); bindAccount(socket, null); });
   });
 
   // ---- 64 Hz fixed-step loop (setInterval drives, an accumulator keeps simulation time exact)
@@ -295,7 +336,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         if (room.phase === 'matchEnd') { if (!room.awarded) { room.awarded = true; awardMatch(room); } } else room.awarded = false;
         serverStats.ticks++; serverStats.worstMs = Math.max(serverStats.worstMs * 0.999, performance.now() - t0);
         if (room.tick % RULES.snapshotEvery === 0) for (const p of room.players.values()) if (!p.bot) io.to(p.id).volatile.emit('snapshot', room.snapshot(p.id));
-        for (const p of room.humans()) if (room.tick - p.lastCommandTick > 64 * 30 && room.tick - p.joinedTick > 64 * 30) { io.to(p.id).emit('kicked', { reason: 'AFK' }); io.sockets.sockets.get(p.id)?.disconnect(true); }
+        for (const p of room.humans()) if (room.tick - p.lastCommandTick > AFK_TICKS && room.tick - p.joinedTick > AFK_TICKS) { io.to(p.id).emit('kicked', { reason: 'AFK' }); io.sockets.sockets.get(p.id)?.disconnect(true); }
       }
       if (room.humans().length === 0) { room.emptySince ??= room.tick; if (room.tick - room.emptySince > 64 * 20) matchmaker.remove(code); }
     }
@@ -317,7 +358,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const player = room.add(s.id, e, i % 2 ? 'COUNTER_TERRORIST' : 'TERRORIST');
       if (!player) return;
       applyLoadout(room, player, s.data.loadout);
-      s.data.room = room.code; s.data.queued = false; s.join(room.code);
+      s.data.room = room.code; s.data.queued = false; s.join(room.code); presence(s);
     });
     room.fillBots(); room.start();
     for (const s of order) {

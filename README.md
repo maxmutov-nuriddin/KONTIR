@@ -97,6 +97,14 @@ Birinchi ochilishda uchta tanlov: **KIRISH**, **RO‘YXATDAN O‘TISH** yoki **D
 
 Til: yuqori paneldagi **UZ / RU / EN** tanlovi (brauzerda eslab qolinadi).
 
+### Do‘stlar, yozishma, ovozli qo‘ng‘iroq
+
+Chap paneldagi **👥** — do‘stlar oynasi (akkaunt kerak): foydalanuvchi nomi bo‘yicha qidirish, **QO‘SHISH** (so‘rov), **QABUL / RAD**, holat (lobbida / o‘yin qidirmoqda / o‘yinda / oflayn), shaxsiy xabarlar (oxirgi 50 tasi serverda saqlanadi) va **🎙 ovozli qo‘ng‘iroq**. Ovoz WebRTC orqali to‘g‘ridan-to‘g‘ri (P2P) boradi, server faqat ulanish signalini uzatadi; lobbida mikrofon ochiq (MIC tugmasi bilan o‘chiriladi), o‘yin ichida **V** ni ushlab gapiriladi. Ba’zi qat’iy NAT/korporativ tarmoqlarda TURN server bo‘lmasa ulanmasligi mumkin.
+
+### Sozlamalar
+
+⚙ → **UMUMIY** (grafika, FPS, ovoz), **SICHQONCHA** (sezgirlik, scope sezgirligi, Y teskari, raw input, g‘ildirak bilan qurol almashtirish, cho‘kishni bosib yoqish), **KLAVIATURA** — har bir amal uchun 2 ta tugma: katakni bosing → istalgan tugma yoki sichqoncha tugmasini bosing (Esc — bekor, Backspace — tozalash, “Standart holatga qaytarish”).
+
 Keyingi bosqich uchun tavsiyalar ro‘yxati: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### Haqiqiy 3D modellar

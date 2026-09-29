@@ -52,7 +52,8 @@ export class Network {
     // Volatile packets may be dropped, so the authoritative ack (not lastSent) owns retirement.
     this.socket.volatile.emit('commands', pending.slice(0, 32));
   }
-  leave() { this.socket.emit('leave'); this.socket.disconnect(); this.id = null; this.latest = null; this.frames = []; }
+  // the socket stays open after a match: it also carries the account session, friends presence, messages and call signalling
+  leave() { if (this.socket.connected) this.socket.emit('leave'); this.id = null; this.latest = null; this.frames = []; }
   /** Estimated authoritative tick of the world as currently *rendered* (interpolation delay included). Sent as viewTick for lag compensation. */
   viewTick(now) {
     if (!this.latest) return 0;

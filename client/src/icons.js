@@ -16,6 +16,13 @@ function setup() {
   const camera = new THREE.OrthographicCamera(-1, 1, 0.5, -0.5, 0.01, 20);
   return { renderer, scene, camera };
 }
+// A second WebGL context costs GPU memory for as long as it lives (mobile Safari reloads memory-hungry tabs), so it is
+// dropped once a batch of icons is done; icons stay cached as data URLs.
+let idle = 0;
+function release() {
+  clearTimeout(idle);
+  idle = setTimeout(() => { if (!ctx) return; ctx.scene.environment?.dispose(); ctx.renderer.dispose(); ctx.renderer.forceContextLoss(); ctx = null; }, 1500);
+}
 /** Data-URL icon; the weapon's muzzle points right. */
 export function weaponIcon(id, finish = 'standard') {
   const k = `${id}:${finish}`;
@@ -33,6 +40,7 @@ export function weaponIcon(id, finish = 'standard') {
     const url = renderer.domElement.toDataURL('image/png');
     scene.remove(rig.group);
     cache.set(k, url);
+    release();
     return url;
   } catch { return ''; }
 }

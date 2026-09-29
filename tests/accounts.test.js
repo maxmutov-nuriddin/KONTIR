@@ -40,3 +40,24 @@ test('server owns coins and skins; clients only equip owned finishes', async () 
   const { gains, profile } = a.award(key, { won: true, kills: 20, deaths: 10, rounds: 20 });
   assert.equal(profile.matches, 1); assert.equal(profile.wins, 1); assert.ok(gains.xp > 0 && gains.coins > 0);
 });
+
+test('friends: search, request, accept, messages only between friends, unfriend', async () => {
+  const a = await fresh();
+  await a.register('Lochin', 'secret1'); await a.register('Burgut', 'secret1'); await a.register('Burgut2', 'secret1');
+  assert.deepEqual(a.search('lochin', 'bur'), ['Burgut', 'Burgut2']);
+  assert.deepEqual(a.search('lochin', 'b'), [], 'at least two characters');
+  assert.throws(() => a.message('lochin', 'Burgut', 'salom'), /notfriend/);
+  a.request('lochin', 'Burgut');
+  assert.deepEqual(a.users.burgut.requests, ['lochin']);
+  assert.throws(() => a.request('lochin', 'lochin'), /self/);
+  a.respond('burgut', 'Lochin', true);
+  assert.ok(a.areFriends('lochin', 'burgut') && a.areFriends('burgut', 'lochin'));
+  assert.deepEqual(a.users.burgut.requests, []);
+  a.request('burgut2', 'Lochin'); a.request('lochin', 'Burgut2');   // crossing requests become a friendship
+  assert.ok(a.areFriends('lochin', 'burgut2'));
+  const { msg } = a.message('lochin', 'Burgut', '  salom  ');
+  assert.equal(msg.text, 'salom'); assert.equal(a.history('burgut', 'Lochin').length, 1);
+  assert.equal(a.public(a.users.lochin).friends, undefined, 'friend lists are not part of the public profile');
+  a.unfriend('burgut', 'Lochin');
+  assert.ok(!a.areFriends('lochin', 'burgut')); assert.deepEqual(a.history('lochin', 'Burgut'), []);
+});

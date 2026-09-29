@@ -38,7 +38,7 @@ const D = {
   'Qurolni aylantirib ko‘rish (inspect)': ['Осмотр оружия', 'Inspect weapon'], 'Qo‘ldagi qurolni (yoki C4 ni) tashlash': ['Выбросить оружие (или C4)', 'Drop weapon (or C4)'],
   'Plant (5-slot, A/B hududida ushlab turing)': ['Установка (слот 5, удерживать на A/B)', 'Plant (slot 5, hold on A/B)'],
   'Asosiy · Pistolet · Pichoq · Granata · C4': ['Основное · Пистолет · Нож · Граната · C4', 'Primary · Pistol · Knife · Grenade · C4'],
-  'Grafika': ['Графика', 'Graphics'], 'FPS limiti': ['Лимит FPS', 'FPS limit'], 'OVOZ': ['ЗВУК', 'VOLUME'], 'SICHQONCHA SEZGIRLIGI': ['ЧУВСТВИТЕЛЬНОСТЬ МЫШИ', 'MOUSE SENSITIVITY'],
+  'Grafika': ['Графика', 'Graphics'], 'FPS limiti': ['Лимит FPS', 'FPS limit'], 'OVOZ': ['ЗВУК', 'VOLUME'], 'SICHQONCHA SEZGIRLIGI': ['ЧУВСТВИТЕЛЬНОСТЬ МЫШИ', 'MOUSE SENSITIVITY'], 'SICHQONCHA SEZGIRLIGI ': ['ЧУВСТВИТЕЛЬНОСТЬ МЫШИ ', 'MOUSE SENSITIVITY '],
   'TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.':
     ['БЫСТРО: без теней. СРЕДНЕ (рекомендуется): чётко (MSAA), один каскад теней раз в 2 кадра — устройство не греется. ВЫСОКО: тени 2 × 1024. УЛЬТРА: GTAO + bloom, тени 3 × 2048. Меню 30 FPS; в скрытой вкладке рендер останавливается.', 'FAST: no shadows. MEDIUM (recommended): sharp (MSAA), one shadow cascade every 2nd frame — stays cool. HIGH: 2 × 1024 shadows. ULTRA: GTAO + bloom, 3 × 2048 shadows. Menu runs at 30 FPS; hidden tabs stop rendering.'],
   'YUQORI': ['ВЫСОКО', 'HIGH'], 'ULTRA': ['УЛЬТРА', 'ULTRA'],
@@ -62,6 +62,26 @@ const D = {
   'Harakatsizlik uchun chetlatildingiz.': ['Вы исключены за бездействие.', 'Kicked for inactivity.'],
   'Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.': ['Захват мыши заблокирован. Активируйте окно и нажмите снова.', 'Pointer lock was blocked. Focus the window and click again.'],
   'MATCHNI BOSHLASH': ['НАЧАТЬ МАТЧ', 'START MATCH'], 'XONAGA KIRISH': ['ВОЙТИ В КОМНАТУ', 'JOIN ROOM'],
+  // settings
+  'UMUMIY': ['ОБЩИЕ', 'GENERAL'], 'SICHQONCHA': ['МЫШЬ', 'MOUSE'], 'KLAVIATURA': ['КЛАВИАТУРА', 'KEYBOARD'], 'SCOPE SEZGIRLIGI': ['ЧУВСТВИТЕЛЬНОСТЬ В ПРИЦЕЛЕ', 'SCOPED SENSITIVITY'],
+  'Y o‘qini teskari qilish': ['Инвертировать ось Y', 'Invert Y axis'], 'Raw input (OS tezlashtirishsiz)': ['Raw input (без ускорения ОС)', 'Raw input (no OS acceleration)'],
+  'G‘ildirak bilan qurol almashtirish': ['Смена оружия колесом', 'Mouse wheel switches weapons'], 'Cho‘kish — bosib yoqish/o‘chirish': ['Присед — переключение', 'Toggle crouch'],
+  'Oldinga': ['Вперёд', 'Forward'], 'Orqaga': ['Назад', 'Back'], 'Chapga': ['Влево', 'Left'], 'O‘ngga': ['Вправо', 'Right'], 'Sakrash': ['Прыжок', 'Jump'], 'Cho‘kish': ['Присесть', 'Crouch'], 'Jimgina yurish': ['Тихий шаг', 'Walk'],
+  'Otish': ['Огонь', 'Fire'], 'Ikkinchi otish / scope': ['Альт. огонь / прицел', 'Secondary fire / scope'], 'Olish / defuse': ['Подобрать / разминировать', 'Use / defuse'], 'Oxirgi qurol': ['Прошлое оружие', 'Last weapon'],
+  'Qurolni tashlash': ['Выбросить оружие', 'Drop weapon'], 'Qurol ko‘rigi': ['Осмотр оружия', 'Inspect weapon'], 'Asosiy qurol': ['Основное оружие', 'Primary'], 'Pistolet': ['Пистолет', 'Pistol'], 'Pichoq': ['Нож', 'Knife'], 'Granata': ['Граната', 'Grenade'],
+  'Umumiy chat': ['Общий чат', 'All chat'], 'Jamoa chati': ['Командный чат', 'Team chat'], 'Radio': ['Радио', 'Radio'], 'Ping': ['Пинг', 'Ping'], 'Ovozli gapirish (ushlab turing)': ['Голосовой чат (удерживать)', 'Push to talk (hold)'],
+  'Katakni bosing, keyin tugma yoki sichqoncha tugmasini bosing. Esc — bekor, Backspace — tozalash.': ['Нажмите на ячейку, затем клавишу или кнопку мыши. Esc — отмена, Backspace — очистить.', 'Click a cell, then press a key or mouse button. Esc cancels, Backspace clears.'],
+  'Standart holatga qaytarish': ['Сбросить по умолчанию', 'Reset to defaults'], 'Grafika xotirasi tiklanmoqda…': ['Восстановление графики…', 'Restoring graphics…'], 'Grafika tiklandi.': ['Графика восстановлена.', 'Graphics restored.'],
+  // friends / voice
+  'Do‘stlar': ['Друзья', 'Friends'], 'DO‘STLAR': ['ДРУЗЬЯ', 'FRIENDS'], 'SO‘ROVLAR': ['ЗАЯВКИ', 'REQUESTS'], 'QABUL': ['ПРИНЯТЬ', 'ACCEPT'], 'RAD': ['ОТКЛОНИТЬ', 'DECLINE'], 'QO‘SHISH': ['ДОБАВИТЬ', 'ADD'],
+  'DO‘ST': ['ДРУГ', 'FRIEND'], 'YUBORILGAN': ['ОТПРАВЛЕНО', 'SENT'], 'LOBBIDA': ['В ЛОББИ', 'IN LOBBY'], 'O‘YIN QIDIRMOQDA': ['ИЩЕТ ИГРУ', 'SEARCHING'], 'O‘YINDA': ['В ИГРЕ', 'IN GAME'], 'OFLAYN': ['НЕ В СЕТИ', 'OFFLINE'],
+  'Foydalanuvchi nomini qidiring': ['Поиск по имени пользователя', 'Search by username'], 'Xabar yozing…': ['Напишите сообщение…', 'Type a message…'], 'Xabar': ['Сообщение', 'Message'], 'Ovozli qo‘ng‘iroq': ['Голосовой звонок', 'Voice call'], 'O‘chirish': ['Удалить', 'Remove'],
+  'Hali do‘stlar yo‘q. Yuqorida nom bo‘yicha qidiring.': ['Пока нет друзей. Найдите игрока по имени выше.', 'No friends yet. Search by username above.'], 'Hech kim topilmadi.': ['Никого не найдено.', 'Nobody found.'],
+  'Do‘stlar, yozishma va ovozli qo‘ng‘iroq uchun akkaunt kerak.': ['Для друзей, сообщений и голосовых звонков нужен аккаунт.', 'Friends, messages and voice calls need an account.'],
+  'So‘rov yuborildi.': ['Заявка отправлена.', 'Request sent.'], 'Do‘st qo‘shildi.': ['Друг добавлен.', 'Friend added.'], 'Bunday o‘yinchi topilmadi.': ['Игрок не найден.', 'Player not found.'], 'Allaqachon do‘stingiz.': ['Уже в друзьях.', 'Already friends.'],
+  'O‘zingizni qo‘sha olmaysiz.': ['Нельзя добавить себя.', 'You cannot add yourself.'], 'Faqat do‘stlarga yozish mumkin.': ['Писать можно только друзьям.', 'You can only message friends.'],
+  'Mikrofonga ruxsat berilmadi.': ['Нет доступа к микрофону.', 'Microphone access denied.'], 'Qo‘ng‘iroq tugadi.': ['Звонок завершён.', 'Call ended.'], 'Ovozli ulanish o‘rnatilmadi (tarmoq/NAT).': ['Не удалось установить голосовую связь (сеть/NAT).', 'Voice connection failed (network/NAT).'],
+  'MIC': ['МИК', 'MIC'], 'MIC O‘CHIQ': ['МИК ВЫКЛ', 'MIC OFF'], 'TUGATISH': ['ЗАВЕРШИТЬ', 'HANG UP'],
   // accounts
   'KIRISH': ['ВХОД', 'SIGN IN'], 'RO‘YXATDAN O‘TISH': ['РЕГИСТРАЦИЯ', 'REGISTER'], 'DEMO BILAN O‘YNASH': ['ИГРАТЬ В ДЕМО', 'PLAY AS DEMO'], 'CHIQISH': ['ВЫЙТИ', 'SIGN OUT'],
   'Foydalanuvchi nomi': ['Имя пользователя', 'Username'], 'Parol': ['Пароль', 'Password'], 'Parolni takrorlang': ['Повторите пароль', 'Repeat password'],
@@ -81,6 +101,8 @@ const D = {
 const P = [
   [/^RAUND (\d+) · (\d+)-YARIM$/, ['РАУНД $1 · $2-Я ПОЛОВИНА', 'ROUND $1 · HALF $2']], [/^RAUND (\d+)$/, ['РАУНД $1', 'ROUND $1']], [/^DARAJA (\d+)$/, ['УРОВЕНЬ $1', 'LEVEL $1']], [/^DARAJA (\d+) · (.+)$/, ['УРОВЕНЬ $1 · $2', 'LEVEL $1 · $2']],
   [/^(.+) — RAUND SIZNIKI$/, ['$1 — РАУНД ВАШ', '$1 WIN THE ROUND']], [/^JIHOZLANING · B$/, ['ЗАКУПКА · B', 'BUY · B']], [/^(\d+) REYTING$/, ['$1 РЕЙТИНГ', '$1 RATING']],
+  [/^(\d+) \/ (\d+) ONLAYN$/, ['$1 / $2 В СЕТИ', '$1 / $2 ONLINE']], [/^📞 (.+) qo‘ng‘iroq qilmoqda$/, ['📞 $1 звонит', '📞 $1 is calling']], [/^📞 (.+) — chaqirilmoqda…$/, ['📞 $1 — вызов…', '📞 $1 — calling…']], [/^🎙 (.+) — ulanmoqda…$/, ['🎙 $1 — подключение…', '🎙 $1 — connecting…']],
+  [/^(.+) javob bermadi\.$/, ['$1 не отвечает.', '$1 did not answer.']], [/^(.+) band\.$/, ['$1 занят(а).', '$1 is busy.']], [/^(.+) qo‘ng‘iroqni rad etdi\.$/, ['$1 отклонил(а) звонок.', '$1 declined the call.']],
   [/^(.+) — sotib olindi\. INVENTARdan qurolga qo‘ying\.$/, ['$1 — куплено. Поставьте в ИНВЕНТАРЕ.', '$1 — purchased. Equip it in INVENTORY.']],
 ];
 

@@ -4,8 +4,21 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { MOVEMENT as M, clamp, lerp, smoothstep, neutralInput } from '../shared/constants.js';
 
-const KEY_SLOTS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'KeyF', 'KeyY', 'KeyU', 'KeyZ', 'KeyX', 'Tab', ...Object.keys(KEY_SLOTS)]);
+// Rebindable controls: action -> up to two inputs (KeyboardEvent.code, or Mouse0..Mouse4 for mouse buttons).
+export const DEFAULT_BINDS = Object.freeze({
+  forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
+  jump: ['Space'], crouch: ['ControlLeft', 'KeyC'], walk: ['ShiftLeft'], attack: ['Mouse0'], attack2: ['Mouse2'],
+  reload: ['KeyR'], use: ['KeyE'], quick: ['KeyQ'], drop: ['KeyG'], inspect: ['KeyF'], buy: ['KeyB'], scoreboard: ['Tab'],
+  chat: ['KeyY'], teamchat: ['KeyU'], radio: ['KeyZ'], ping: ['KeyX', 'Mouse1'], voice: ['KeyV'],
+  slot1: ['Digit1', 'Numpad1'], slot2: ['Digit2', 'Numpad2'], slot3: ['Digit3', 'Numpad3'], slot4: ['Digit4', 'Numpad4'], slot5: ['Digit5', 'Numpad5'],
+});
+export const DEFAULT_MOUSE = Object.freeze({ sensitivity: 0.6, invertY: false, zoomSensitivity: 1, rawInput: true, wheelSwitch: true, toggleCrouch: false });
+/** Human label for an input code. */
+export function keyLabel(code) {
+  if (!code) return '—';
+  if (code.startsWith('Mouse')) return ['LMB', 'MMB', 'RMB', 'MOUSE4', 'MOUSE5'][Number(code.slice(5))] || code;
+  return code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'NUM ').replace('Left', ' L').replace('Right', ' R').replace(/^Arrow(.*)/, '↑$1').replace('Control', 'CTRL').replace('Shift', 'SHIFT').replace('Space', 'SPACE').toUpperCase();
+}
 
 /**
  * Procedural weapon motion.
@@ -54,21 +67,44 @@ export class PlayerController {
     this.aim = new THREE.Object3D(); this.aim.rotation.order = 'YXZ';
     this.controls = new PointerLockControls(this.aim, domElement);
     this.controls.pointerSpeed = 0.6; this.controls.minPolarAngle = 0.03; this.controls.maxPolarAngle = Math.PI - 0.03;
+    // route look input through a wrapper so "invert Y" can flip the vertical axis
+    { const doc = domElement.ownerDocument, inner = this.controls._onMouseMove;
+      doc.removeEventListener('mousemove', inner);
+      this.controls._onMouseMove = e => inner(this.mouseOpts?.invertY ? { movementX: e.movementX, movementY: -e.movementY } : e);
+      doc.addEventListener('mousemove', this.controls._onMouseMove); }
     this.keys = new Set(); this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 };
     this.fire = false; this.fire2 = false; this.firePressed = false; this.enabled = true;
     this.mouse = { dx: 0, dy: 0 }; this.viewmodel = new ViewmodelDynamics();
     this.crouchFactor = 0; this.stepOffset = new THREE.Vector3(); this.landDip = 0; this.vLandDip = 0; this.roll = 0;
     this.eye = new THREE.Vector3(); this.callbacks = {};
-    this.toggleCrouch = false;
+    this.toggleCrouch = false; this.crouchLatched = false;
+    this.mouseOpts = { ...DEFAULT_MOUSE };
+    this.setBinds(DEFAULT_BINDS);
     this.bind();
   }
   on(name, fn) { this.callbacks[name] = fn; return this; }
+  setBinds(binds) {
+    this.binds = {}; for (const [a, def] of Object.entries(DEFAULT_BINDS)) this.binds[a] = Array.isArray(binds?.[a]) ? binds[a].slice(0, 2) : def.slice();
+    this.byCode = new Map(); for (const [a, codes] of Object.entries(this.binds)) for (const c of codes) if (c) { if (!this.byCode.has(c)) this.byCode.set(c, []); this.byCode.get(c).push(a); }
+    this.gameCodes = new Set(this.byCode.keys());
+  }
+  setMouse(opts) { Object.assign(this.mouseOpts, opts); this.setSensitivity(this.mouseOpts.sensitivity); this.toggleCrouch = !!this.mouseOpts.toggleCrouch; }
+  /** Held state of an action (any of its bound inputs is down). */
+  held(a) { return this.binds[a].some(c => c && this.keys.has(c)); }
   get locked() { return this.controls.isLocked; }
-  lock() { this.controls.lock(); }
+  /** Raw input (unadjustedMovement) exists only in Chromium on Windows / macOS / ChromeOS; elsewhere it errors, so skip it. */
+  get rawSupported() { const ua = navigator.userAgentData; return !this.rawFailed && !!ua && !/linux|android/i.test(ua.platform || navigator.platform || ''); }
+  lock() {
+    if (this.mouseOpts.rawInput && this.rawSupported) {
+      const r = this.dom.requestPointerLock?.({ unadjustedMovement: true });
+      if (r?.catch) { r.catch(e => { if (e?.name === 'NotSupportedError') { this.rawFailed = true; this.controls.lock(); } }); return; }
+    }
+    this.controls.lock();
+  }
   unlock() { this.controls.unlock(); }
   setSensitivity(v) { this.sens = Number.isFinite(v) ? clamp(v, 0.15, 2) : 0.6; this.controls.pointerSpeed = this.sens * (this.zoomScale || 1); }
   /** Scales mouse speed with the field of view so a scoped aim feels the same in screen space. */
-  setZoomScale(k) { this.zoomScale = clamp(k, 0.2, 1); this.controls.pointerSpeed = (this.sens ?? 0.6) * this.zoomScale; }
+  setZoomScale(k) { this.zoomScale = clamp(k, 0.2, 1) * (k < 1 ? this.mouseOpts.zoomSensitivity : 1); this.controls.pointerSpeed = (this.sens ?? 0.6) * this.zoomScale; }
   get yaw() { return this.aim.rotation.y; }
   get pitch() { return this.aim.rotation.x; }
   setAim(yaw, pitch) { this.aim.rotation.set(pitch, yaw, 0, 'YXZ'); }
@@ -78,30 +114,20 @@ export class PlayerController {
     this.handlers = {
       keydown: e => {
         if (e.code === 'Escape' && this.locked) { this.unlock(); return; }
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-        if (GAME_KEYS.has(e.code) && (this.locked || e.code === 'Tab')) e.preventDefault();
-        if (!this.locked) { if (e.code === 'KeyB' && !e.repeat) this.callbacks.buy?.(); if (e.code === 'Tab') this.callbacks.scoreboard?.(true); return; }
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+        if (this.capture) { e.preventDefault(); this.capture(e.code); return; }
+        const acts = this.byCode.get(e.code) || [];
+        if (this.gameCodes.has(e.code) && (this.locked || acts.includes('scoreboard'))) e.preventDefault();
+        if (!this.locked) { if (!e.repeat && acts.includes('buy')) this.callbacks.buy?.(); if (acts.includes('scoreboard')) this.callbacks.scoreboard?.(true); return; }
         if (e.repeat) return;
-        // comms: Y all-chat, U team chat, Z radio menu (digits pick a call while it is open), X ping at the crosshair
-        if (e.code === 'KeyY' || e.code === 'KeyU') { e.preventDefault(); this.clearInput(); this.callbacks.chat?.(e.code === 'KeyU'); return; }
-        if (e.code === 'KeyZ') { this.callbacks.radio?.(); return; }
-        if (e.code === 'KeyX') { this.callbacks.ping?.(); return; }
         if (this.radioOpen && /^Digit[1-9]$/.test(e.code)) { this.callbacks.radioPick?.(Number(e.code.slice(5))); return; }
-        this.keys.add(e.code);
-        if (e.code === 'Space') this.edges.jump = true;
-        if (e.code === 'KeyQ') this.edges.quick = true;
-        if (e.code === 'KeyG') this.edges.drop = true;
-        if (e.code === 'KeyF') this.callbacks.inspect?.();
-        if (e.code === 'KeyR') this.edges.reload = true;
-        if (KEY_SLOTS[e.code]) this.edges.slot = KEY_SLOTS[e.code];
-        if (e.code === 'KeyB') this.callbacks.buy?.();
-        if (e.code === 'Tab') this.callbacks.scoreboard?.(true);
+        this.press(e.code, e);
       },
-      keyup: e => { this.keys.delete(e.code); if (e.code === 'Tab') this.callbacks.scoreboard?.(false); },
-      mousedown: e => { if (!this.locked) return; if (e.button === 0) { this.fire = true; this.firePressed = true; } if (e.button === 2) this.fire2 = true; if (e.button === 1) { e.preventDefault(); this.callbacks.ping?.(); } },
-      mouseup: e => { if (e.button === 0) this.fire = false; if (e.button === 2) this.fire2 = false; },
-      mousemove: e => { if (this.locked) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY; } },
-      wheel: e => { if (this.locked) { this.edges.wheel = Math.sign(e.deltaY); e.preventDefault(); } },
+      keyup: e => this.release(e.code),
+      mousedown: e => { if (this.capture) { e.preventDefault(); this.capture(`Mouse${e.button}`); return; } if (!this.locked) return; if (e.button === 1) e.preventDefault(); this.press(`Mouse${e.button}`, e); },
+      mouseup: e => this.release(`Mouse${e.button}`),
+      mousemove: e => { if (this.locked) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY * (this.mouseOpts.invertY ? -1 : 1); } },
+      wheel: e => { if (this.locked) { if (this.mouseOpts.wheelSwitch) this.edges.wheel = Math.sign(e.deltaY); e.preventDefault(); } },
       contextmenu: e => { if (this.locked) e.preventDefault(); },
       blur: () => this.clearInput(),
       lock: () => { this.clearInput(); this.callbacks.lock?.(); },
@@ -111,6 +137,37 @@ export class PlayerController {
     addEventListener('keydown', h.keydown); addEventListener('keyup', h.keyup); addEventListener('mousedown', h.mousedown); addEventListener('mouseup', h.mouseup);
     addEventListener('mousemove', h.mousemove); addEventListener('wheel', h.wheel, { passive: false }); addEventListener('contextmenu', h.contextmenu); addEventListener('blur', h.blur);
     this.controls.addEventListener('lock', h.lock); this.controls.addEventListener('unlock', h.unlock);
+  }
+  /** Input went down: held state plus the one-shot actions bound to it. */
+  press(code, e) {
+    const acts = this.byCode.get(code) || [];
+    // comms first: opening chat must not leave movement keys stuck
+    if (acts.includes('chat') || acts.includes('teamchat')) { e?.preventDefault?.(); this.clearInput(); this.callbacks.chat?.(acts.includes('teamchat') && !acts.includes('chat')); return; }
+    this.keys.add(code);
+    for (const a of acts) {
+      if (a === 'attack') { this.fire = true; this.firePressed = true; }
+      else if (a === 'attack2') this.fire2 = true;
+      else if (a === 'jump') this.edges.jump = true;
+      else if (a === 'quick') this.edges.quick = true;
+      else if (a === 'drop') this.edges.drop = true;
+      else if (a === 'reload') this.edges.reload = true;
+      else if (a === 'inspect') this.callbacks.inspect?.();
+      else if (a === 'buy') this.callbacks.buy?.();
+      else if (a === 'scoreboard') this.callbacks.scoreboard?.(true);
+      else if (a === 'radio') this.callbacks.radio?.();
+      else if (a === 'ping') this.callbacks.ping?.();
+      else if (a === 'voice') this.callbacks.voice?.(true);
+      else if (a === 'crouch' && this.toggleCrouch) this.crouchLatched = !this.crouchLatched;
+      else if (a.startsWith('slot')) this.edges.slot = Number(a.slice(4));
+    }
+  }
+  release(code) {
+    this.keys.delete(code);
+    const acts = this.byCode.get(code) || [];
+    if (acts.includes('scoreboard')) this.callbacks.scoreboard?.(false);
+    if (acts.includes('voice') && !this.held('voice')) this.callbacks.voice?.(false);
+    if (acts.includes('attack') && !this.held('attack')) this.fire = false;
+    if (acts.includes('attack2') && !this.held('attack2')) this.fire2 = false;
   }
   dispose() {
     const h = this.handlers;
@@ -125,13 +182,13 @@ export class PlayerController {
     c.yaw = this.yaw; c.pitch = this.pitch;
     if (!this.locked || !this.enabled) { this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false; return c; }
     const k = this.keys, e = this.edges;
-    c.forward = Number(k.has('KeyW') || k.has('ArrowUp')) - Number(k.has('KeyS') || k.has('ArrowDown'));
-    c.right = Number(k.has('KeyD') || k.has('ArrowRight')) - Number(k.has('KeyA') || k.has('ArrowLeft'));
-    c.jump = k.has('Space') || e.jump;
-    c.crouch = k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC');
-    c.walk = k.has('ShiftLeft') || k.has('ShiftRight');
+    c.forward = Number(this.held('forward')) - Number(this.held('back'));
+    c.right = Number(this.held('right')) - Number(this.held('left'));
+    c.jump = this.held('jump') || e.jump;
+    c.crouch = this.toggleCrouch ? this.crouchLatched : this.held('crouch');
+    c.walk = this.held('walk');
     c.fire = this.fire || this.firePressed; c.fire2 = this.fire2;
-    c.reload = k.has('KeyR') || e.reload; c.interact = k.has('KeyE');
+    c.reload = this.held('reload') || e.reload; c.interact = this.held('use');
     c.slot = e.slot; c.quick = e.quick; c.drop = !!e.drop;
     if (e.wheel && this.callbacks.wheel) { const s = this.callbacks.wheel(e.wheel); if (s) c.slot = s; }
     this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false;

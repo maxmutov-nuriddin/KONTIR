@@ -272,16 +272,51 @@ export class UI {
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
       <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>Y / U</kbd><span>Chat: hammaga / faqat jamoaga</span><kbd>Z</kbd><span>Radio buyruqlari (keyin 1–9)</span><kbd>X / G‘ildirak tugmasi</kbd><span>Nishonga olingan joyni jamoaga belgilash (ping)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
-  settings({ quality, sensitivity, volume, fpsLimit, onFpsLimit, onQuality, onSensitivity, onVolume }) {
+  /**
+   * Settings with tabs: general (graphics / FPS / volume), mouse (sensitivity, zoom, invert, raw input, wheel, crouch
+   * toggle) and keyboard (two bindings per action; click a cell, press a key or mouse button — Esc cancels, Backspace clears).
+   */
+  settings(o) {
+    const ACTS = [['forward', 'Oldinga'], ['back', 'Orqaga'], ['left', 'Chapga'], ['right', 'O‘ngga'], ['jump', 'Sakrash'], ['crouch', 'Cho‘kish'], ['walk', 'Jimgina yurish'],
+      ['attack', 'Otish'], ['attack2', 'Ikkinchi otish / scope'], ['reload', 'Qayta o‘qlash'], ['use', 'Olish / defuse'], ['quick', 'Oxirgi qurol'], ['drop', 'Qurolni tashlash'], ['inspect', 'Qurol ko‘rigi'],
+      ['slot1', 'Asosiy qurol'], ['slot2', 'Pistolet'], ['slot3', 'Pichoq'], ['slot4', 'Granata'], ['slot5', 'C4'], ['buy', 'Xarid menyusi'], ['scoreboard', 'Natijalar'],
+      ['chat', 'Umumiy chat'], ['teamchat', 'Jamoa chati'], ['radio', 'Radio'], ['ping', 'Ping'], ['voice', 'Ovozli gapirish (ushlab turing)']];
+    const m = o.mouse, tab = this.settingsTab || 'general';
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
-      <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
-      <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[30, 60, 90, 120].map(v => `<button data-fps="${v}" class="${v === fpsLimit ? 'on' : ''}">${v}</button>`).join('')}</div></div>
-      <label for="sensitivity">SICHQONCHA SEZGIRLIGI</label><input id="sensitivity" type="range" min="0.15" max="2" step="0.05" value="${sensitivity}">
-      <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${volume}">
-      <p class="note">TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p>`);
-    document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); onQuality(b.dataset.q); });
-    document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); onFpsLimit(Number(b.dataset.fps)); });
-    $('#sensitivity').oninput = e => onSensitivity(Number(e.target.value)); $('#volume').oninput = e => onVolume(Number(e.target.value));
+      <div class="set-tabs">${[['general', 'UMUMIY'], ['mouse', 'SICHQONCHA'], ['keys', 'KLAVIATURA']].map(([k, l]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="set-page" data-page="general">
+        <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
+        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[30, 60, 90, 120].map(v => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${v}</button>`).join('')}</div></div>
+        <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
+        <p class="note">TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p></div>
+      <div class="set-page" data-page="mouse">
+        <label for="sensitivity">SICHQONCHA SEZGIRLIGI <b id="sens-val">${m.sensitivity.toFixed(2)}</b></label><input id="sensitivity" type="range" min="0.15" max="2" step="0.01" value="${m.sensitivity}">
+        <label for="zoom-sens">SCOPE SEZGIRLIGI <b id="zoom-val">${m.zoomSensitivity.toFixed(2)}</b></label><input id="zoom-sens" type="range" min="0.3" max="1.5" step="0.05" value="${m.zoomSensitivity}">
+        ${[['invertY', 'Y o‘qini teskari qilish'], ['rawInput', 'Raw input (OS tezlashtirishsiz)'], ['wheelSwitch', 'G‘ildirak bilan qurol almashtirish'], ['toggleCrouch', 'Cho‘kish — bosib yoqish/o‘chirish']].map(([k, l]) => `<label class="check-row"><input type="checkbox" data-mo="${k}" ${m[k] ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+      <div class="set-page" data-page="keys"><div class="bind-grid">${ACTS.map(([a, l]) => `<span>${l}</span>${[0, 1].map(i => `<button class="bind" data-bind="${a}" data-i="${i}">${esc(o.keyLabel(o.binds[a]?.[i]))}</button>`).join('')}`).join('')}</div>
+        <p class="note">Katakni bosing, keyin tugma yoki sichqoncha tugmasini bosing. Esc — bekor, Backspace — tozalash.</p><button id="binds-reset" class="text-button">Standart holatga qaytarish</button></div>`);
+    const show = t => { this.settingsTab = t; document.querySelectorAll('[data-st]').forEach(b => b.classList.toggle('on', b.dataset.st === t)); document.querySelectorAll('.set-page').forEach(p => { p.hidden = p.dataset.page !== t; }); };
+    document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => show(b.dataset.st)); show(tab);
+    document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); o.onQuality(b.dataset.q); });
+    document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); o.onFpsLimit(Number(b.dataset.fps)); });
+    $('#volume').oninput = e => o.onVolume(Number(e.target.value));
+    $('#sensitivity').oninput = e => { $('#sens-val').textContent = Number(e.target.value).toFixed(2); o.onMouse({ sensitivity: Number(e.target.value) }); };
+    $('#zoom-sens').oninput = e => { $('#zoom-val').textContent = Number(e.target.value).toFixed(2); o.onMouse({ zoomSensitivity: Number(e.target.value) }); };
+    document.querySelectorAll('[data-mo]').forEach(c => c.onchange = () => o.onMouse({ [c.dataset.mo]: c.checked }));
+    document.querySelectorAll('.bind').forEach(b => b.onclick = e => {
+      e.stopPropagation(); document.querySelectorAll('.bind').forEach(x => x.classList.remove('wait')); b.classList.add('wait'); b.textContent = '…';
+      // ignore the click that opened capture mode; the next key / button press is the binding
+      setTimeout(() => o.capture(code => {
+        const a = b.dataset.bind, i = Number(b.dataset.i), binds = o.binds;
+        if (code !== 'Escape') {
+          const next = code === 'Backspace' ? null : code;
+          if (next) for (const k of Object.keys(binds)) binds[k] = binds[k].map(c => (c === next ? null : c)); // one input -> one action
+          binds[a][i] = next; o.onBinds(binds);
+        }
+        document.querySelectorAll('.bind').forEach(x => { x.classList.remove('wait'); x.textContent = o.keyLabel(binds[x.dataset.bind]?.[Number(x.dataset.i)]); });
+      }), 0);
+    });
+    $('#binds-reset').onclick = () => { o.onBinds(null); this.settings({ ...o, binds: o.getBinds() }); };
   }
   lobby(state, id, start, leave) {
     const list = t => state.players.filter(p => p.team === t).map(p => `<div><span>${esc(p.name)}${p.id === id ? ' (siz)' : ''}${p.bot ? ' · BOT' : ''}</span><b>${p.id === state.host ? 'HOST' : ''}</b></div>`).join('') || '<div><span>—</span></div>';

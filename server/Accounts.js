@@ -13,9 +13,9 @@ const sha = s => createHash('sha256').update(s).digest('hex');
 export const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 
 export class Accounts {
-  constructor(file, { now = () => Date.now() } = {}) { this.file = file; this.now = now; this.users = {}; this.tokens = {}; this.saving = null; this.dirty = false; }
+  constructor(file, { now = () => Date.now() } = {}) { this.file = file; this.now = now; this.users = {}; this.tokens = {}; this.messages = {}; this.saving = null; this.dirty = false; }
   async load() {
-    try { const d = JSON.parse(await readFile(this.file, 'utf8')); this.users = d.users || {}; this.tokens = d.tokens || {}; } catch { /* first run */ }
+    try { const d = JSON.parse(await readFile(this.file, 'utf8')); this.users = d.users || {}; this.tokens = d.tokens || {}; this.messages = d.messages || {}; } catch { /* first run */ }
     return this;
   }
   /** Atomic, coalesced write (tmp file + rename). */
@@ -27,13 +27,13 @@ export class Accounts {
         this.dirty = false;
         const t = this.now(); for (const [k, v] of Object.entries(this.tokens)) if (v.exp < t) delete this.tokens[k];
         await mkdir(dirname(this.file), { recursive: true });
-        await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens }));
+        await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens, messages: this.messages }));
         await rename(this.file + '.tmp', this.file);
       }
     })().finally(() => { this.saving = null; });
     return this.saving;
   }
-  public(u) { const { salt, hash, ...rest } = u; return { ...rest, demo: false }; }
+  public(u) { const { salt, hash, friends, requests, ...rest } = u; return { ...rest, demo: false }; }
   issue(key) { const token = randomBytes(32).toString('hex'); this.tokens[sha(token)] = { user: key, exp: this.now() + TOKEN_TTL }; this.save(); return token; }
 
   async register(username, password) {
@@ -69,4 +69,50 @@ export class Accounts {
     return this.public(u);
   }
   award(key, stats) { const u = this.users[key]; if (!u) return null; const gains = applyMatch(u, stats); this.save(); return { gains, profile: this.public(u) }; }
+
+  // ---- friends: requests (incoming list on the target), mutual friend lists, direct messages (last 50 per pair)
+  rel(u) { u.friends ||= []; u.requests ||= []; return u; }
+  search(key, q) {
+    q = String(q ?? '').trim().toLowerCase(); if (q.length < 2) return [];
+    const out = [];
+    for (const [k, u] of Object.entries(this.users)) { if (k !== key && k.includes(q)) out.push(u.name); if (out.length >= 10) break; }
+    return out.sort((a, b) => a.toLowerCase().indexOf(q) - b.toLowerCase().indexOf(q));
+  }
+  /** Sends a request, or accepts at once when the other side already asked. Returns the target key. */
+  request(key, name) {
+    const tk = String(name ?? '').trim().toLowerCase(), me = this.users[key], them = this.users[tk];
+    if (!me || !them) throw new Error('nouser');
+    if (tk === key) throw new Error('self');
+    this.rel(me); this.rel(them);
+    if (me.friends.includes(tk)) throw new Error('already');
+    if (me.requests.includes(tk)) return this.respond(key, them.name, true);
+    if (!them.requests.includes(key)) { if (them.requests.length >= 100) throw new Error('full'); them.requests.push(key); }
+    this.save(); return tk;
+  }
+  respond(key, name, accept) {
+    const tk = String(name ?? '').trim().toLowerCase(), me = this.users[key], them = this.users[tk];
+    if (!me || !them) throw new Error('nouser');
+    this.rel(me); this.rel(them);
+    me.requests = me.requests.filter(k => k !== tk);
+    if (accept) { if (!me.friends.includes(tk)) me.friends.push(tk); if (!them.friends.includes(key)) them.friends.push(key); them.requests = them.requests.filter(k => k !== key); }
+    this.save(); return tk;
+  }
+  unfriend(key, name) {
+    const tk = String(name ?? '').trim().toLowerCase(), me = this.users[key], them = this.users[tk];
+    if (!me || !them) throw new Error('nouser');
+    this.rel(me).friends = me.friends.filter(k => k !== tk); this.rel(them).friends = them.friends.filter(k => k !== key);
+    this.save(); return tk;
+  }
+  areFriends(a, b) { return !!this.users[a]?.friends?.includes(b); }
+  pair(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+  message(key, name, text) {
+    const tk = String(name ?? '').trim().toLowerCase();
+    text = String(text ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300);
+    if (!text) throw new Error('empty');
+    if (!this.areFriends(key, tk)) throw new Error('notfriend');
+    const list = (this.messages[this.pair(key, tk)] ||= []), msg = { from: this.users[key].name, text, at: this.now() };
+    list.push(msg); if (list.length > 50) list.splice(0, list.length - 50);
+    this.save(); return { to: tk, msg };
+  }
+  history(key, name) { const tk = String(name ?? '').trim().toLowerCase(); return this.areFriends(key, tk) ? (this.messages[this.pair(key, tk)] || []) : []; }
 }
