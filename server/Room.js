@@ -138,11 +138,15 @@ export class Room {
     if (!viewer.alive) return true;                                             // dead players spectate
     const last = target.seenBy.get(viewer.id);
     if (last !== undefined && last === this.tick) return true;
-    const e = this.eye(viewer), c = target.char, lead = 0.12;
+    // generous by design: an enemy stepping out of cover must be sent BEFORE its edge is on screen (lead for both
+    // movements + latency, peek offsets for the viewer, shoulder / edge points on the target), else they "pop in"
+    const e = this.eye(viewer), c = target.char, lead = 0.25;
     const tx = c.x + c.vx * lead, tz = c.z + c.vz * lead, vx = viewer.char.vx * lead, vz = viewer.char.vz * lead;
-    const side = { x: Math.cos(viewer.char.yaw) * 0.45, z: -Math.sin(viewer.char.yaw) * 0.45 };
+    const side = { x: Math.cos(viewer.char.yaw) * 0.6, z: -Math.sin(viewer.char.yaw) * 0.6 };
     const eyes = [{ x: e.x + vx, y: e.y, z: e.z + vz }, { x: e.x + side.x, y: e.y, z: e.z + side.z }, { x: e.x - side.x, y: e.y, z: e.z - side.z }];
-    const pts = [1.62, 1.1, 0.35].map(h => ({ x: tx, y: c.y + h * (1 - 0.33 * (c.crouch || 0)), z: tz }));
+    const dx = tx - e.x, dz = tz - e.z, dl = Math.hypot(dx, dz) || 1, px = -dz / dl * 0.45, pz = dx / dl * 0.45, k = 1 - 0.33 * (c.crouch || 0);
+    const pts = [1.62, 1.1, 0.35].map(h => ({ x: tx, y: c.y + h * k, z: tz }));
+    for (const s of [1, -1]) for (const h of [1.5, 0.8]) pts.push({ x: tx + px * s, y: c.y + h * k, z: tz + pz * s });
     for (const a of eyes) for (const b of pts) if (this.hasSight(a, b)) { target.seenBy.set(viewer.id, this.tick); return true; }
     return false;
   }

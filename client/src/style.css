@@ -391,3 +391,6 @@ dialog.auth-modal { width: min(440px, 94vw); padding: 28px 30px 24px; }
 .party-slots { position: relative; } .party-slots i.member { position: relative; background: #2d4a3f; color: #fff; font-style: normal; font-weight: 800; } .party-slots i.member em { position: absolute; top: -6px; right: -4px; color: var(--gold); font-size: 10px; font-style: normal; }
 .party-slots i.add { cursor: pointer; } .party-slots i.add:hover { border-color: var(--gold); color: var(--gold); }
 .party-leave { margin-left: 6px; width: 26px; height: 26px; border: 1px solid #e04a3a88; border-radius: 50%; color: #ff8a7a; }
+.pw { position: relative; } .pw input { padding-right: 44px !important; }
+.pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 34px; border-radius: 3px; font-size: 16px; opacity: .7; }
+.pw-eye:hover, .pw-eye.on { opacity: 1; background: #ffffff12; }

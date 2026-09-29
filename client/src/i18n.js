@@ -88,6 +88,7 @@ const D = {
   'Partiya lideriga qo‘shilmoqda…': ['Присоединение к лидеру пати…', 'Joining your party leader…'], 'Partiyadan chiqish': ['Покинуть пати', 'Leave party'], 'Do‘st taklif qilish': ['Пригласить друга', 'Invite a friend'],
   'PAUZA · ESC — davom etish': ['ПАУЗА · ESC — продолжить', 'PAUSED · ESC — resume'], 'O‘yin to‘xtatildi': ['Игра на паузе', 'Game paused'], 'DAVOM ETISH': ['ПРОДОЛЖИТЬ', 'RESUME'],
   'Sichqonchani yoqish uchun ekranni bosing.': ['Нажмите на экран, чтобы захватить мышь.', 'Click the screen to capture the mouse.'],
+  'Parolni ko‘rsatish': ['Показать пароль', 'Show password'],
   // accounts
   'KIRISH': ['ВХОД', 'SIGN IN'], 'RO‘YXATDAN O‘TISH': ['РЕГИСТРАЦИЯ', 'REGISTER'], 'DEMO BILAN O‘YNASH': ['ИГРАТЬ В ДЕМО', 'PLAY AS DEMO'], 'CHIQISH': ['ВЫЙТИ', 'SIGN OUT'],
   'Foydalanuvchi nomi': ['Имя пользователя', 'Username'], 'Parol': ['Пароль', 'Password'], 'Parolni takrorlang': ['Повторите пароль', 'Repeat password'],

@@ -219,8 +219,8 @@ export class UI {
     this.dialog(`<div class="auth-brand"><b>◩</b> KONTIR</div><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
       <div class="auth-tabs"><button data-am="login" class="on">KIRISH</button><button data-am="register">RO‘YXATDAN O‘TISH</button></div>
       <form id="auth-form"><label for="auth-user">Foydalanuvchi nomi</label><input id="auth-user" maxlength="16" autocomplete="username" spellcheck="false" required>
-        <label for="auth-pass">Parol</label><input id="auth-pass" type="password" maxlength="64" autocomplete="current-password" required>
-        <div id="auth-rep" hidden><label for="auth-pass2">Parolni takrorlang</label><input id="auth-pass2" type="password" maxlength="64" autocomplete="new-password"></div>
+        <label for="auth-pass">Parol</label><div class="pw"><input id="auth-pass" type="password" maxlength="64" autocomplete="current-password" required><button type="button" class="pw-eye" data-eye="auth-pass" title="Parolni ko‘rsatish" aria-label="Parolni ko‘rsatish">👁</button></div>
+        <div id="auth-rep" hidden><label for="auth-pass2">Parolni takrorlang</label><div class="pw"><input id="auth-pass2" type="password" maxlength="64" autocomplete="new-password"><button type="button" class="pw-eye" data-eye="auth-pass2" title="Parolni ko‘rsatish" aria-label="Parolni ko‘rsatish">👁</button></div></div>
         <small class="auth-hint">Nom: 3–16 ta lotin harf, raqam yoki _ . Parol: kamida 6 belgi. E-mail kerak emas.</small>
         <div id="auth-error" role="alert"></div><button id="auth-submit" class="primary full">KIRISH</button></form>
       <div class="auth-or"><span>yoki</span></div><button id="auth-demo" class="secondary full">DEMO BILAN O‘YNASH</button>`, !canClose);
@@ -233,6 +233,7 @@ export class UI {
       $('#auth-submit').textContent = m === 'register' ? 'RO‘YXATDAN O‘TISH' : 'KIRISH'; $('#auth-error').textContent = '';
     };
     document.querySelectorAll('[data-am]').forEach(b => b.onclick = () => setMode(b.dataset.am));
+    document.querySelectorAll('.pw-eye').forEach(b => b.onclick = () => { const i = $(`#${b.dataset.eye}`), show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.classList.toggle('on', show); b.textContent = show ? '🙈' : '👁'; i.focus(); });
     $('#auth-demo').onclick = () => { this.locked = false; this.modal.close(); onDemo(); };
     $('#auth-form').onsubmit = async e => {
       e.preventDefault();
