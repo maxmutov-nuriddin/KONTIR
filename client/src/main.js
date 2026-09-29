@@ -136,7 +136,7 @@ weapons.on('shot', e => {
 });
 weapons.on('reload', () => audio.reload(null, true)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
 controller.on('inspect', () => { if (weapons.inspect()) audio.draw(null, true); }).on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
-controller.on('lock', () => { audio.unlock(); audio.warmShots(['ak47', 'm4a4', 'glock', 'usp', 'deagle', 'awp']); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
+controller.on('lock', () => { audio.unlock(); audio.warmShots([weapons.inventory.weaponId(1), weapons.inventory.weaponId(2)].filter(Boolean)); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
 
 // ---------------------------------------------------------------------------------------------- join / leave
 async function join(options) {
@@ -151,6 +151,9 @@ async function join(options) {
     if (!network.socket.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
     if (my !== generation) { network.leave(); return; }
     weapons.setTeam(result.team);
+    ui.showBusy('GRAFIKA TAYYORLANMOQDA…');
+    await world.prewarm(weapons).catch(() => {});
+    if (my !== generation) { network.leave(); return; }
     prediction = new Prediction(world.map.collider, weapons);
     state = network.latest || state;
     playing = true; lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;

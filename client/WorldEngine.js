@@ -22,7 +22,7 @@ import { buildMapData } from '../shared/maps.js';
 import { applyPBR, recipeFor } from './src/materials.js';
 import { Effects } from './src/effects.js';
 import { animateOperator, buildOperator, holdWeapon } from './src/characters.js';
-import { buildWeaponRigTP, buildWeaponRig } from './src/viewmodels.js';
+import { RIG_IDS, buildWeaponRigTP, buildWeaponRig } from './src/viewmodels.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -386,6 +386,36 @@ export class WorldEngine {
       if (score > bestScore) { best = d; bestScore = score; }
     }
     return best;
+  }
+
+  /**
+   * Compiles every weapon / operator shader variant for the loaded map's lighting before the match starts, so the
+   * first time a weapon is drawn, dropped or seen in someone's hands does not stall the frame on a shader compile.
+   */
+  async prewarm(weapons = null) {
+    const r = this.renderer, group = new THREE.Group(), f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    group.position.copy(this.camera.position).addScaledVector(f, 4);
+    const add = obj => { obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; for (const m of [].concat(o.material)) if (!this.materials.has(m)) { this.materials.add(m); this.prepareMaterial(m); } } }); group.add(obj); };
+    for (const id of RIG_IDS) add(buildWeaponRigTP(id).group);
+    for (const team of ['TERRORIST', 'COUNTER_TERRORIST']) { const op = buildOperator(team, 1); add(op); op.userData.dispose = true; }
+    this.scene.add(group);
+    // three.js only compiles visible objects: reveal pooled effects (tracers, decals, puffs, flashes) for the compile pass
+    const hidden = [], reveal = root => root.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    reveal(this.scene);
+    try { await r.compileAsync(this.scene, this.camera); } catch { r.compile(this.scene, this.camera); }
+    for (const o of hidden) o.visible = false; hidden.length = 0;
+    group.removeFromParent();
+    group.traverse(o => { if (o.userData.dispose) this.releaseTree?.(o); });
+    if (weapons) {
+      const shown = [];
+      for (const id of RIG_IDS) { const rig = weapons.rig(id); shown.push([rig.group, rig.group.visible]); rig.group.visible = true; }
+      const rootVisible = weapons.root.visible; weapons.root.visible = true;
+      reveal(this.viewScene);
+      try { await r.compileAsync(this.viewScene, this.viewCamera); } catch { r.compile(this.viewScene, this.viewCamera); }
+      for (const o of hidden) o.visible = false;
+      for (const [g, v] of shown) g.visible = v;
+      weapons.root.visible = rootVisible;
+    }
   }
 
   // ------------------------------------------------------------------------------------------ actors

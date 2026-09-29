@@ -41,8 +41,9 @@ export class AudioEngine {
     dry.voiceNodes = [dry]; dry.voices = 0;
     if (pos && this.listenerPos) {
       const dist = Math.hypot(pos.x - this.listenerPos.x, pos.y - this.listenerPos.y, pos.z - this.listenerPos.z);
+      this.spatial = (this.spatial || 0) + 1; dry.spatial = true;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cutoff ?? Math.max(700, 16000 - dist * 260);
-      const pan = ctx.createPanner(); pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 3; pan.rolloffFactor = 1.15; pan.maxDistance = 220;
+      const pan = ctx.createPanner(); pan.panningModel = dist < 22 && (this.hrtfVoices || 0) < 8 ? 'HRTF' : 'equalpower'; if (pan.panningModel === 'HRTF') { this.hrtfVoices = (this.hrtfVoices || 0) + 1; dry.hrtf = true; } pan.distanceModel = 'inverse'; pan.refDistance = 3; pan.rolloffFactor = 1.15; pan.maxDistance = 220;
       if (pan.positionX) { pan.positionX.value = pos.x; pan.positionY.value = pos.y; pan.positionZ.value = pos.z; } else pan.setPosition(pos.x, pos.y, pos.z);
       dry.connect(lp); lp.connect(pan); pan.connect(this.master); dry.voiceNodes.push(lp, pan);
       if (reverb) { const send = ctx.createGain(); send.gain.value = reverb * Math.min(1, 0.4 + dist / 60); lp.connect(send); send.connect(this.reverb); dry.voiceNodes.push(send); }
@@ -56,7 +57,7 @@ export class AudioEngine {
     dest.voices++;
     source.onended = () => {
       for (const node of [source, ...nodes]) node.disconnect();
-      if (--dest.voices === 0) for (const node of dest.voiceNodes) node.disconnect();
+      if (--dest.voices === 0) { for (const node of dest.voiceNodes) node.disconnect(); if (dest.spatial) this.spatial--; if (dest.hrtf) this.hrtfVoices--; }
     };
   }
   noise(dest, { start = 0, dur = 0.1, type = 'lowpass', freq = 1000, q = 0.7, gain = 0.5, attack = 0.002, decay = null, sweepTo = null }) {
@@ -74,24 +75,47 @@ export class AudioEngine {
   }
 
   // ------------------------------------------------------------------------------------------- voices
-  /** Baked shot variants (3 per weapon, stereo) — rendered lazily on first use so start-up stays instant. */
-  shotBuffers(weapon) {
-    const key = SHOT_PROFILES[weapon] ? weapon : 'ak47';
-    let list = this.shots.get(key);
-    if (!list) {
-      const sr = this.ctx.sampleRate; list = [];
-      for (let v = 0; v < 3; v++) { const s = synthShot(key, sr, 11 + v * 17), buf = this.ctx.createBuffer(2, s.left.length, sr); buf.copyToChannel(s.left, 0); buf.copyToChannel(s.right, 1); list.push(buf); }
-      this.shots.set(key, list);
-    }
-    return list;
+  /**
+   * Baked shot variants (3 per weapon, stereo). They are rendered in a Web Worker as soon as audio unlocks, loadout first;
+   * a shot whose bank is not ready yet uses a cheap procedural fallback instead of blocking the frame.
+   */
+  startBaking(priority = []) {
+    if (!this.ctx || this.baker !== undefined) return;
+    const order = [...new Set([...priority, 'ak47', 'm4a4', 'glock', 'usp', ...Object.keys(SHOT_PROFILES)])].filter(n => SHOT_PROFILES[n]);
+    const receive = (name, variants) => {
+      const sr = this.ctx.sampleRate;
+      this.shots.set(name, variants.map(([l, r]) => { const buf = this.ctx.createBuffer(2, l.length, sr); buf.copyToChannel(l, 0); buf.copyToChannel(r, 1); return buf; }));
+    };
+    try {
+      this.baker = new Worker(new URL('./gunsynth.worker.js', import.meta.url), { type: 'module' });
+      this.baker.onmessage = e => receive(e.data.name, e.data.variants);
+      this.baker.onerror = () => { this.baker = null; this.bakeIdle(order, receive); };
+      for (const name of order) this.baker.postMessage({ name, sampleRate: this.ctx.sampleRate, seeds: [11, 28, 45] });
+    } catch { this.baker = null; this.bakeIdle(order, receive); }
   }
-  /** Pre-bakes the loadout so the first shot of a weapon never hitches. */
-  warmShots(ids) { if (!this.ctx) return; ids.forEach((id, i) => setTimeout(() => this.ctx && this.shotBuffers(id), 250 + i * 120)); }
+  /** Fallback when workers are unavailable: one variant per idle slice so no single frame pays for a whole bank. */
+  bakeIdle(order, receive) {
+    const queue = order.filter(n => !this.shots.has(n)), step = () => {
+      const name = queue.shift(); if (!name || !this.ctx) return;
+      const v = [11, 28, 45].map(seed => { const s = synthShot(name, this.ctx.sampleRate, seed); return [s.left, s.right]; });
+      receive(name, v); (window.requestIdleCallback || setTimeout)(step, 60);
+    };
+    setTimeout(step, 300);
+  }
+  warmShots(ids) { this.startBaking(ids); }
   gunshot(weapon, pos, own = false) {
     if (!this.ctx) return;
-    const list = this.shotBuffers(weapon), buf = list[(Math.random() * list.length) | 0];
+    this.startBaking();
+    if (!own && (this.spatial || 0) > 36) return;   // voice cap: a firefight must not flood the audio graph
+    const key = SHOT_PROFILES[weapon] ? weapon : 'ak47', list = this.shots.get(key) || this.shots.get('ak47');
     const long = SHOT_PROFILES[weapon]?.length > 1.1;
     const d = this.out(own ? null : pos, { reverb: own ? 0.1 : (long ? 0.32 : 0.22) });
+    if (!list) { // bank not baked yet: short procedural crack + body (no DSP on the main thread)
+      this.noise(d, { dur: 0.03, type: 'highpass', freq: 3000, gain: 0.8, decay: 0.028 });
+      this.noise(d, { dur: 0.16, type: 'lowpass', freq: 1400, sweepTo: 200, gain: 0.9, decay: 0.16 });
+      return;
+    }
+    const buf = list[(Math.random() * list.length) | 0];
     const src = this.ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = 0.975 + Math.random() * 0.05;
     const g = this.ctx.createGain(); g.gain.value = own ? 1 : 0.9; src.connect(g); g.connect(d);
     this.releaseVoice(src, d, [g]); src.start();
