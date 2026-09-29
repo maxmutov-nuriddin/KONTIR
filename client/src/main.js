@@ -398,6 +398,7 @@ addEventListener('keydown', e => {
   if (e.code !== 'Escape' || !playing || controller.locked || ui.modal.open || $paused()) return;
   e.preventDefault(); ui.resume(false); try { controller.lock(); } catch { /* next click locks */ }
 });
+document.querySelector('#pause-settings').onclick = () => document.querySelector('#settings').click(); // settings from the pause menu
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
 document.addEventListener('pointerlockerror', () => { if (playing && !ui.modal.open) ui.toast('Sichqonchani yoqish uchun ekranni bosing.'); });
 ui.modal.addEventListener('cancel', e => { if (ui.locked) { e.preventDefault(); if (state?.phase === 'warmup') leave(); } });

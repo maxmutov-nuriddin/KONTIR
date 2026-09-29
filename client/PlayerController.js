@@ -96,7 +96,7 @@ export class PlayerController {
     this.byCode = new Map(); for (const [a, codes] of Object.entries(this.binds)) for (const c of codes) if (c) { if (!this.byCode.has(c)) this.byCode.set(c, []); this.byCode.get(c).push(a); }
     this.gameCodes = new Set(this.byCode.keys());
   }
-  setMouse(opts) { Object.assign(this.mouseOpts, opts); this.setSensitivity(this.mouseOpts.sensitivity); this.toggleCrouch = !!this.mouseOpts.toggleCrouch; }
+  setMouse(opts) { Object.assign(this.mouseOpts, opts); this.sens = null; this.setSensitivity(Number(this.mouseOpts.sensitivity)); this.toggleCrouch = !!this.mouseOpts.toggleCrouch; }
   /** Held state of an action (any of its bound inputs is down). */
   held(a) { return this.binds[a].some(c => c && this.keys.has(c)); }
   get locked() { return this.controls.isLocked; }

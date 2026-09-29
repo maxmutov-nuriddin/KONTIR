@@ -86,7 +86,7 @@ export class UI {
             <div class="ammo"><small id="weapon-name"></small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status"></small></div></div></div>
         <div class="telemetry"><span id="fps">60 FPS</span><span id="drawcalls">0 DC</span><span id="tickinfo">64 TICK</span></div>
         <div id="scoreboard" class="hidden"><div class="sb-wrap"><div class="sb-head"><small>LIVE SCOREBOARD</small><h2 id="sb-title"></h2></div><div class="sb-teams"></div></div></div>
-        <div id="resume" class="hidden"><div><span>PAUZA · ESC — davom etish</span><h2>O‘yin to‘xtatildi</h2><p>WASD — harakat · SICHQONCHA — nishon · CHAP TUGMA — otish<br>SHIFT — jimgina yurish · CTRL — cho‘kish · Q — oxirgi qurol · 1–5 — slot</p><button id="lock" class="primary">DAVOM ETISH ${arrow}</button><button id="leave" class="text-button">Bosh menyuga qaytish</button></div></div>
+        <div id="resume" class="hidden"><div><span>PAUZA · ESC — davom etish</span><h2>O‘yin to‘xtatildi</h2><p>WASD — harakat · SICHQONCHA — nishon · CHAP TUGMA — otish<br>SHIFT — jimgina yurish · CTRL — cho‘kish · Q — oxirgi qurol · 1–5 — slot</p><button id="lock" class="primary">DAVOM ETISH ${arrow}</button><button id="pause-settings" class="secondary pause-set">⚙ SOZLAMALAR</button><button id="leave" class="text-button">Bosh menyuga qaytish</button></div></div>
       </section>
       <dialog id="modal"><button id="close" aria-label="Yopish">×</button><div id="modal-content"></div></dialog>
       <div id="toast" role="status"></div><div id="loader"><b>◩ KONTIR</b><div><i id="loader-bar"></i></div><span id="loader-text">OPERATSIYA YUKLANMOQDA</span></div>`;
