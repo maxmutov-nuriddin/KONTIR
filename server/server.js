@@ -181,7 +181,8 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         }
         if (!room) {
           const code = (practice ? 'P' : 'Q') + randomBytes(3).toString('hex').toUpperCase();
-          room = await matchmaker.create(code, mapId, { isPublic: quick, practice, timing });
+          const diff = ['easy', 'medium', 'hard', 'expert'].includes(request?.difficulty) ? request.difficulty : 'medium';
+          room = await matchmaker.create(code, mapId, { isPublic: quick, practice, timing, botDifficulty: diff });
         }
         while (quick && room.isFull() && socket.connected) room = await matchmaker.quick(mapId, { timing });
         if (!socket.connected || joinVersion !== (socket.data.joinVersion || 0)) return;
@@ -190,7 +191,12 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         const name = String(request?.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
         if (!player) return ack({ error: 'Tanlangan jamoa to‘la.' });
-        if (practice) { room.fillBots(); room.start(); }
+        if (practice) {
+          const n = v => (Number.isInteger(v) && v >= 0 && v <= 5 ? v : 5);
+          const counts = request?.bots && typeof request.bots === 'object' ? { TERRORIST: n(request.bots.t), COUNTER_TERRORIST: n(request.bots.ct) } : null;
+          if (counts) counts[player.team] = Math.max(1, counts[player.team]);   // the human counts toward their side
+          room.fillBots(counts); room.start();
+        }
         socket.data.room = room.code; socket.join(room.code);
         ack({ ok: true, id: socket.id, code: room.code, team: player.team, snapshot: room.snapshot(socket.id) });
       } catch (error) { if (!quiet) console.error('Join failed:', error); ack({ error: 'Xonaga ulanib bo‘lmadi.' }); }

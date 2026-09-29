@@ -269,3 +269,14 @@ test('packet jitter preserves held jump state without inventing a fresh jump pre
   assert.equal(p.char.prevJump, true); room.step(); assert.equal(p.char.prevJump, true);
   assert.equal(room.nextCommand(p).jump, true);
 });
+
+test('practice options: bot counts per side and difficulty shape the bots', () => {
+  const room = new Room('BOTS01', map, map.nav, { timing: fast, practice: true, botDifficulty: 'expert' });
+  room.add('me', 'Me', 'TERRORIST'); room.fillBots({ TERRORIST: 2, COUNTER_TERRORIST: 3 });
+  assert.equal(room.count('TERRORIST'), 2); assert.equal(room.count('COUNTER_TERRORIST'), 3);
+  const bots = [...room.players.values()].filter(p => p.bot);
+  assert.ok(bots.every(b => b.brain.skill >= 0.9 && b.brain.reaction <= 9), 'expert bots aim fast');
+  assert.equal(new Set(bots.map(b => b.name)).size, bots.length, 'unique bot names');
+  const easy = new Room('BOTS02', map, map.nav, { timing: fast, botDifficulty: 'easy' }); easy.add('me', 'Me', 'TERRORIST'); easy.fillBots();
+  assert.ok([...easy.players.values()].filter(p => p.bot).every(b => b.brain.skill <= 0.4 && b.brain.reaction >= 30));
+});

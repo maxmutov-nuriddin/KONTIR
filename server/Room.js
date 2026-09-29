@@ -8,7 +8,7 @@ import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, inaccuracy, makeRand
 import { LagCompensator } from './LagCompensator.js';
 import { BotBrain } from './Bots.js';
 
-const BOT_NAMES = ['NOVA', 'GHOST', 'ATLAS', 'VIPER', 'RAVEN', 'ORION', 'COBRA', 'DELTA', 'SABLE', 'ONYX'];
+const BOT_NAMES = ['NOVA', 'GHOST', 'ATLAS', 'VIPER', 'RAVEN', 'ORION', 'COBRA', 'DELTA', 'SABLE', 'ONYX', 'KESTREL', 'BISHOP', 'TITAN', 'MAMBA', 'FALCON', 'JACKAL', 'HYDRA', 'LYNX', 'RONIN', 'WOLF'];
 const secondsToTick = s => Math.round(s * TICK_RATE);
 const GRAVITY = M.gravity;
 
@@ -22,6 +22,8 @@ export class Room {
   constructor(code, map, nav, options = {}) {
     this.code = code; this.map = map; this.collider = map.collider; this.nav = nav;
     this.isPublic = !!options.isPublic; this.practice = !!options.practice;
+    this.botDifficulty = ['easy', 'medium', 'hard', 'expert'].includes(options.botDifficulty) ? options.botDifficulty : 'medium';
+    this.noises = [];   // recent gunfire / footsteps bots can hear: { x, z, tick, team, range }
     this.timing = { warmup: RULES.warmupSeconds, freeze: RULES.freezeSeconds, round: RULES.roundSeconds, post: RULES.postRoundSeconds, ...(options.timing || {}) };
     for (const value of Object.values(this.timing)) if (!Number.isFinite(value) || value < 0 || value > 3600) throw new Error('Invalid phase timing');
     this.players = new Map(); this.host = null;
@@ -86,8 +88,9 @@ export class Room {
     return p;
   }
   nextIndex() { const used = new Set([...this.players.values()].map(p => p.index)); let i = 0; while (used.has(i)) i++; return i; }
-  addBot(team) { const id = `bot-${randomBytes(3).toString('hex')}`; const name = BOT_NAMES[this.players.size % BOT_NAMES.length]; return this.add(id, name, team, true); }
-  fillBots() { for (const team of TEAM_IDS) while (this.count(team) < RULES.perTeam) if (!this.addBot(team)) break; }
+  addBot(team) { const id = `bot-${randomBytes(3).toString('hex')}`; const used = new Set([...this.players.values()].map(q => q.name)); const name = BOT_NAMES.find(n => !used.has(n)) || BOT_NAMES[this.players.size % BOT_NAMES.length]; return this.add(id, name, team, true); }
+  /** Fills each side with bots up to `counts[team]` (default 5 per side). */
+  fillBots(counts = null) { for (const team of TEAM_IDS) { const want = Math.min(RULES.perTeam, counts?.[team] ?? RULES.perTeam); while (this.count(team) < want) if (!this.addBot(team)) break; } }
 
   remove(id) {
     const p = this.players.get(id);
@@ -106,6 +109,8 @@ export class Room {
       p.queue.push(c); p.lastReceived = c.seq; p.lastCommandTick = this.tick;
     }
   }
+
+  noise(p, range) { this.noises.push({ x: p.char.x, z: p.char.z, tick: this.tick, team: p.team, range }); if (this.noises.length > 40) this.noises.splice(0, this.noises.length - 40); }
 
   // ------------------------------------------------------------------------------------------- spawning
   pickSpawn(p) {
@@ -381,6 +386,7 @@ export class Room {
       this.emit('hit', { attacker: p.id, target: h.target.id, part: h.part, damage: h.damage, killed: h.killed, from: { x: origin.x, z: origin.z } });
     }
     this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to: first.to, hit: info, wall: first.wall });
+    this.noise(p, w.suppressed ? 14 : 45);
   }
   melee(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], origin = this.eye(p), c = p.char;
@@ -602,7 +608,7 @@ export class Room {
     const movement = !canMove ? { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch } : cmd;
     if (!p.alive) { p.char.yaw = cmd.yaw; p.char.pitch = clamp(cmd.pitch, -1.55, 1.55); return; }
     const ev = stepPlayer(p.char, movement, this.collider);
-    if (ev.footstep) this.emit('footstep', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z });
+    if (ev.footstep) { this.emit('footstep', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z }); this.noise(p, 16); }
     if (ev.jumped) this.emit('jump', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z });
     if (ev.landed > 2) {
       this.emit('land', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z, speed: ev.landed });

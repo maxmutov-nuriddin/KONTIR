@@ -5,18 +5,28 @@ import { SLOT, WEAPONS } from '../shared/weapons.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
+/** skill = aim precision / tracking speed, reaction = ticks before the first shot, utility = uses grenades, headshot = head aim share. */
+export const DIFFICULTY = Object.freeze({
+  easy: { skill: [0.2, 0.4], reaction: [30, 44], utility: 0, headshot: 0.15, burst: [6, 12], hearing: 0.4 },
+  medium: { skill: [0.5, 0.72], reaction: [16, 26], utility: 0.35, headshot: 0.4, burst: [3, 9], hearing: 0.7 },
+  hard: { skill: [0.74, 0.88], reaction: [9, 15], utility: 0.65, headshot: 0.55, burst: [3, 6], hearing: 0.9 },
+  expert: { skill: [0.9, 0.98], reaction: [5, 9], utility: 0.9, headshot: 0.7, burst: [2, 5], hearing: 1 },
+});
+
 export class BotBrain {
   constructor(room) {
     this.room = room;
-    this.skill = rand(0.5, 0.85);
-    this.reaction = Math.round(rand(10, 24));
+    const d = DIFFICULTY[room.botDifficulty] || DIFFICULTY.medium;
+    this.level = d;
+    this.skill = rand(...d.skill);
+    this.reaction = Math.round(rand(...d.reaction));
     this.reset();
   }
   reset() {
     this.path = []; this.pathTick = -1000; this.goal = null; this.goalKey = '';
     this.target = null; this.seenAt = -1000; this.acquired = -1000; this.burst = 0; this.pause = 0; this.strafe = 1; this.strafeUntil = 0;
     this.stuck = 0; this.lastPos = null; this.lastCheck = 0; this.site = null; this.holdSpot = null; this.holdUntil = 0; this.lookOffset = 0;
-    this.crouchUntil = 0; this.toggle = false;
+    this.crouchUntil = 0; this.toggle = false; this.util = null; this.utilDone = Math.random() > this.level.utility; this.lookAt = null; this.lookUntil = 0;
   }
   newRound() { this.reset(); this.site = this.room.map.sites[Math.random() < 0.5 ? 0 : 1]; }
 
@@ -66,6 +76,11 @@ export class BotBrain {
       else if (tick - this.seenAt > TICK_RATE * 1.5) this.target = null;
     }
     if (p.flashUntil > tick) { this.target = null; return cmd; }
+    // hearing: turn toward recent enemy gunfire / footsteps nobody on the team can see yet
+    if (!this.target && tick % 8 === (p.index % 8) && Math.random() < this.level.hearing) {
+      const n = room.noises?.find(z => z.team !== p.team && tick - z.tick < TICK_RATE && Math.hypot(z.x - p.char.x, z.z - p.char.z) < z.range);
+      if (n) { this.lookAt = n; this.lookUntil = tick + TICK_RATE * 2; }
+    }
     const engaged = this.target && tick - this.seenAt < 12;
 
     // ---- weapon housekeeping ----
@@ -77,8 +92,39 @@ export class BotBrain {
       if (a.mag === 0 || (!engaged && a.mag < weapon.mag * 0.35)) { this.toggle = !this.toggle; cmd.reload = this.toggle; }
     }
 
-    if (engaged) return this.fight(p, cmd, eye, weapon);
-    return this.navigate(p, cmd);
+    if (engaged) { this.util = null; return this.fight(p, cmd, eye, weapon); }
+    if (this.util || this.wantsUtility(p)) return this.throwUtility(p, cmd);
+    const out = this.navigate(p, cmd);
+    if (this.lookAt && tick < this.lookUntil) {
+      const want = Math.atan2(-(this.lookAt.x - p.char.x), -(this.lookAt.z - p.char.z));
+      out.yaw = p.char.yaw + clamp(angleDelta(want, p.char.yaw), -0.12, 0.12);
+    }
+    return out;
+  }
+
+  /** Attackers flash / smoke the site on entry; defenders molly the approach once. Chance scales with difficulty. */
+  wantsUtility(p) {
+    if (this.utilDone || this.room.phase !== 'live') return false;
+    const inv = p.inv, site = this.site, d = Math.hypot(site.x - p.char.x, site.z - p.char.z);
+    const pick = p.team === 'TERRORIST' ? ['flash', 'smoke', 'he'] : ['molotov', 'incendiary', 'smoke', 'he'];
+    const g = pick.find(id => (inv.grenades[id] || 0) > 0);
+    if (!g || d > 26 || d < 9) return false;
+    if (!this.room.hasSight(this.room.eye(p), { x: site.x, y: p.char.y + 1.5, z: site.z }, true)) return false;
+    this.util = { id: g, stage: 0, until: this.room.tick + TICK_RATE * 3 };
+    return true;
+  }
+  throwUtility(p, cmd) {
+    const u = this.util, inv = p.inv, tick = this.room.tick, c = p.char, site = this.site;
+    if (tick > u.until) { this.util = null; this.utilDone = true; return cmd; }
+    const want = Math.atan2(-(site.x - c.x), -(site.z - c.z)), d = Math.hypot(site.x - c.x, site.z - c.z);
+    cmd.yaw = c.yaw + clamp(angleDelta(want, c.yaw), -0.2, 0.2);
+    cmd.pitch = clamp(c.pitch + clamp(0.18 + d * 0.012 - c.pitch, -0.1, 0.1), -1.2, 1.2);
+    if (u.stage === 0) { if (inv.current !== SLOT.UTILITY || inv.weaponId() !== u.id) { inv.util = u.id; cmd.slot = SLOT.UTILITY; } else u.stage = 1; return cmd; }
+    if (inv.drawing) return cmd;
+    const aimed = Math.abs(angleDelta(want, c.yaw)) < 0.08;
+    if (u.stage === 1 && aimed) { cmd.fire = true; u.stage = 2; u.release = tick + 10; return cmd; }
+    if (u.stage === 2) { cmd.fire = tick < u.release; if (tick >= u.release) { this.util = null; this.utilDone = true; } }
+    return cmd;
   }
 
   bombCarrier(p) { return this.room.bomb.state === 'carried' && this.room.bomb.carrier === p.id; }
@@ -86,7 +132,7 @@ export class BotBrain {
 
   fight(p, cmd, eye, weapon) {
     const room = this.room, tick = room.tick, t = this.target;
-    const aimPoint = tick % 7 < 4 ? t.head : t.chest;
+    const aimPoint = (tick + p.index * 3) % 20 < this.level.headshot * 20 ? t.head : t.chest;
     const dx = aimPoint.x - eye.x, dy = aimPoint.y - eye.y, dz = aimPoint.z - eye.z, flat = Math.hypot(dx, dz);
     const error = (1 - this.skill) * 0.045;
     const wantYaw = Math.atan2(-dx, -dz) + Math.sin(tick * 0.31 + p.index) * error, wantPitch = Math.atan2(dy, flat) + Math.cos(tick * 0.23 + p.index) * error * 0.6;
@@ -104,7 +150,7 @@ export class BotBrain {
     if (weapon.kind === 'melee') { cmd.fire = t.d < 2; cmd.forward = 1; return cmd; }
     if (weapon.kind !== 'gun') return cmd;
     if (weapon.auto) {
-      if (this.pause > 0) this.pause--; else if (this.burst-- > 0) cmd.fire = true; else { this.burst = Math.round(rand(3, 9)); this.pause = Math.round(rand(6, 16)); }
+      if (this.pause > 0) this.pause--; else if (this.burst-- > 0) cmd.fire = true; else { this.burst = Math.round(rand(...this.level.burst)); this.pause = Math.round(rand(6, 16) * (1.4 - this.skill)); }
     } else cmd.fire = tick % Math.round(weapon.interval * TICK_RATE + 5) === 0;
     return cmd;
   }
