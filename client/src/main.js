@@ -399,6 +399,9 @@ addEventListener('keydown', e => {
   e.preventDefault(); ui.resume(false); try { controller.lock(); } catch { /* next click locks */ }
 });
 document.querySelector('#pause-settings').onclick = () => document.querySelector('#settings').click(); // settings from the pause menu
+// mouse buttons 4 / 5 (browser back / forward) must never leave the game: they stay usable as bindable inputs
+for (const t of ['mousedown', 'mouseup', 'auxclick']) addEventListener(t, e => { if (e.button === 3 || e.button === 4) e.preventDefault(); }, true);
+history.pushState({ kontir: 1 }, ''); addEventListener('popstate', () => history.pushState({ kontir: 1 }, ''));
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
 document.addEventListener('pointerlockerror', () => { if (playing && !ui.modal.open) ui.toast('Sichqonchani yoqish uchun ekranni bosing.'); });
 ui.modal.addEventListener('cancel', e => { if (ui.locked) { e.preventDefault(); if (state?.phase === 'warmup') leave(); } });
