@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "dev": "concurrently -k -n server,client -c yellow,cyan \"node server/server.js\" \"vite --host 0.0.0.0\"",
-    "prestart": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
+    "prestart": "npm run build",
     "start": "node server/server.js",
     "maps": "node tools/build-maps.mjs",
     "prebuild": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
@@ -15,11 +15,13 @@
     "test": "node --test tests/*.test.js",
     "test:browser": "node tests/browser-smoke.mjs",
     "test:browser:local": "node tests/run-browser.mjs",
+    "test:browser:rounds": "node tests/browser-rounds.mjs",
     "test:browser:friends": "node tests/browser-friends.mjs",
     "models": "node tools/scan-models.mjs && node tools/build-maps.mjs"
   },
   "dependencies": {
     "gsap": "^3.13.0",
+    "mongodb": "^7.7.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "three": "^0.180.0",

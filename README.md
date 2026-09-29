@@ -8,10 +8,16 @@ Node.js 22.12+:
 
 ```sh
 npm install
-npm run dev          # server :3101 + klient http://localhost:5190
+npm start            # o‘yinni yig‘adi va http://localhost:3101 da ishga tushiradi
 ```
 
-Production: `npm run build && npm start` — `http://localhost:3101` (`PORT` bilan o‘zgartiriladi, `/health` server holati).
+`npm start` har safar yangi build tayyorlaydi; o‘yin vaqtida fayl o‘zgarishlari sahifani avtomatik yangilamaydi. `PORT` bilan portni o‘zgartirish mumkin, `/health` server holatini ko‘rsatadi.
+
+Kod ustida ishlash uchun: `npm run dev` — server `:3101`, Vite klienti `http://localhost:5190` (kod o‘zgarsa avtomatik yangilanadi).
+
+macOS’da loyihani `~/Projects/KONTIR` kabi mahalliy papkada saqlang. iCloud sinxronlaydigan Desktop/Documents papkalarida fayllar diskdan bo‘shatilsa, Node ularni o‘qishni kutib, `predev` bosqichida to‘xtab qolishi mumkin.
+
+Oxirgi tirik o‘yinchi, kuzatuv kamerasi va ketma-ket raundlar tekshiruvi: `npm run build && npm run test:browser:rounds`. Playwright brauzeri o‘rnatilmagan bo‘lsa, kompyuterdagi Chrome bilan `BROWSER_CHANNEL=chrome npm run test:browser:rounds` ishlaydi.
 
 ### Lobbi va rejimlar (CS2 uslubida)
 

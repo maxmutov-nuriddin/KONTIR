@@ -1,5 +1,6 @@
 import './style.css';
 import { FramePacer } from './frame-pacer.js';
+import { spectatorTarget } from './spectator.js';
 import * as THREE from 'three';
 import { UI } from './ui.js';
 import { WorldEngine } from '../WorldEngine.js';
@@ -185,6 +186,7 @@ function handleEvent(e, me) {
     case 'planted': audio.plant(); break;
     case 'round': world.effects.clear(); ui.lastPhase = ''; ui.slotKey = ''; if (me) weapons.setTeam(me.team); world.csm?.updateFrustums(); break;
     case 'live': audio.beep(true); break;
+    case 'roundEnd': if (e.winner) audio.roundWin(e.winner); break;
     default: break;
   }
 }
@@ -473,8 +475,7 @@ function frame(nowMs) {
       // spectate: follow a living teammate (else anyone) through their eyes; otherwise tilt the death camera
       // LMB / RMB cycle through living teammates (anyone alive when the team is wiped)
       deadView = true;
-      const remote = network.remote(now), mates = remote.filter(p => p.alive && p.id !== id && p.team === me?.team).sort((a, b) => (a.id < b.id ? -1 : 1));
-      const pool = mates.length ? mates : remote.filter(p => p.alive && p.id !== id), spec = pool.length ? pool[((specPick % pool.length) + pool.length) % pool.length] : null;
+      const spec = spectatorTarget(network.remote(now), id, me?.team, specPick);
       if (spec && state.phase !== 'warmup') { world.setCamera(V.set(spec.char.x, spec.char.y + 1.62 - 0.57 * (spec.char.crouch || 0), spec.char.z), spec.char.yaw, spec.char.pitch, 0); ui.spectate(spec.name); specId = spec.id; }
       else { world.setCamera(pose.eye, controller.yaw, Math.max(-0.6, controller.pitch - 0.25), 0.25); specId = null; }
       weapons.root.visible = false;

@@ -5,6 +5,7 @@ import { scrypt as scryptCb, randomBytes, timingSafeEqual, createHash } from 'no
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
+import { MongoClient } from 'mongodb';
 import { newStats, applyMatch, cleanChoices, FINISH_PRICES } from '../shared/progress.js';
 
 const scrypt = promisify(scryptCb);
@@ -13,25 +14,102 @@ const sha = s => createHash('sha256').update(s).digest('hex');
 export const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 
 export class Accounts {
-  constructor(file, { now = () => Date.now() } = {}) { this.file = file; this.now = now; this.users = {}; this.tokens = {}; this.messages = {}; this.saving = null; this.dirty = false; }
+  constructor(file, { now = () => Date.now(), mongoUri = process.env.MONGODB_URI } = {}) {
+    this.file = file;
+    this.mongoUri = mongoUri;
+    this.now = now;
+    this.users = {};
+    this.tokens = {};
+    this.messages = {};
+    this.saving = null;
+    this.dirty = false;
+    this.client = null;
+    this.db = null;
+  }
   async load() {
-    try { const d = JSON.parse(await readFile(this.file, 'utf8')); this.users = d.users || {}; this.tokens = d.tokens || {}; this.messages = d.messages || {}; } catch { /* first run */ }
+    try {
+      const d = JSON.parse(await readFile(this.file, 'utf8'));
+      this.users = d.users || {};
+      this.tokens = d.tokens || {};
+      this.messages = d.messages || {};
+    } catch { /* first run */ }
+
+    if (this.mongoUri) {
+      try {
+        this.client = new MongoClient(this.mongoUri, { serverSelectionTimeoutMS: 5000 });
+        await this.client.connect();
+        this.db = this.client.db('kontir');
+        console.log('[KONTIR] MongoDB ga muvaffaqiyatli ulandi.');
+
+        const userDocs = await this.db.collection('users').find().toArray();
+        for (const doc of userDocs) {
+          const { _id, ...rest } = doc;
+          this.users[_id] = rest;
+        }
+
+        const tokenDocs = await this.db.collection('tokens').find().toArray();
+        for (const doc of tokenDocs) {
+          const { _id, ...rest } = doc;
+          this.tokens[_id] = rest;
+        }
+
+        const messageDocs = await this.db.collection('messages').find().toArray();
+        for (const doc of messageDocs) {
+          const { _id, list } = doc;
+          this.messages[_id] = list;
+        }
+      } catch (err) {
+        console.error('[KONTIR] MongoDB ulanishida xatolik (mahalliy fayldan foydalaniladi):', err.message);
+      }
+    }
     return this;
   }
-  /** Atomic, coalesced write (tmp file + rename). */
+  /** Atomic, coalesced write (tmp file + rename + MongoDB sync). */
   save() {
     this.dirty = true;
     if (this.saving) return this.saving;
     this.saving = (async () => {
       while (this.dirty) {
         this.dirty = false;
-        const t = this.now(); for (const [k, v] of Object.entries(this.tokens)) if (v.exp < t) delete this.tokens[k];
-        await mkdir(dirname(this.file), { recursive: true });
-        await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens, messages: this.messages }));
-        await rename(this.file + '.tmp', this.file);
+        const t = this.now();
+        for (const [k, v] of Object.entries(this.tokens)) if (v.exp < t) delete this.tokens[k];
+        try {
+          await mkdir(dirname(this.file), { recursive: true });
+          await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens, messages: this.messages }));
+          await rename(this.file + '.tmp', this.file);
+        } catch { /* ignore local file errors */ }
+
+        if (this.db) {
+          try {
+            const userOps = Object.entries(this.users).map(([id, data]) => ({
+              replaceOne: { filter: { _id: id }, replacement: { _id: id, ...data }, upsert: true }
+            }));
+            if (userOps.length > 0) await this.db.collection('users').bulkWrite(userOps, { ordered: false });
+
+            const tokenOps = Object.entries(this.tokens).map(([id, data]) => ({
+              replaceOne: { filter: { _id: id }, replacement: { _id: id, ...data }, upsert: true }
+            }));
+            if (tokenOps.length > 0) await this.db.collection('tokens').bulkWrite(tokenOps, { ordered: false });
+            await this.db.collection('tokens').deleteMany({ _id: { $nin: Object.keys(this.tokens) } });
+
+            const msgOps = Object.entries(this.messages).map(([id, list]) => ({
+              replaceOne: { filter: { _id: id }, replacement: { _id: id, list }, upsert: true }
+            }));
+            if (msgOps.length > 0) await this.db.collection('messages').bulkWrite(msgOps, { ordered: false });
+          } catch (err) {
+            console.error('[KONTIR] MongoDB ga saqlashda xatolik:', err.message);
+          }
+        }
       }
     })().finally(() => { this.saving = null; });
     return this.saving;
+  }
+  async close() {
+    if (this.client) {
+      try { await this.client.close(); } catch { /* ignore */ }
+      this.client = null;
+      this.db = null;
+    }
   }
   public(u) { const { salt, hash, friends, requests, ...rest } = u; return { ...rest, demo: false }; }
   issue(key) { const token = randomBytes(32).toString('hex'); this.tokens[sha(token)] = { user: key, exp: this.now() + TOKEN_TTL }; this.save(); return token; }

@@ -1,4 +1,5 @@
 // KONTIR game server: HTTP (static + health), Socket.IO transport, matchmaker and the 64 Hz room tick loop.
+try { process.loadEnvFile?.(); } catch { /* optional .env file */ }
 import { createServer as createHttpServer } from 'node:http';
 import { readFile, access, realpath } from 'node:fs/promises';
 import { resolve, extname, sep, dirname } from 'node:path';
@@ -16,7 +17,7 @@ import { Accounts } from './Accounts.js';
 const here = dirname(fileURLToPath(import.meta.url));
 // No input for 2 minutes -> kicked (a hidden browser tab stops sending, so this must outlast a quick alt-tab).
 const AFK_TICKS = 64 * 120;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.txt': 'text/plain' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.txt': 'text/plain', '.wav': 'audio/wav', '.mp3': 'audio/mpeg' };
 const normalizeTeam = value => (value === 'CT' || value === 'COUNTER_TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST');
 
 /** Loads manifest + GLBs once; physics (BVH) and navigation are built lazily per map. */
@@ -92,8 +93,8 @@ export class Matchmaker {
 /** KONTIR_TIMING='{"freeze":40,"warmup":5}' shortens/lengthens phases (seconds) for tests and private servers. */
 const envTiming = () => { try { return process.env.KONTIR_TIMING ? JSON.parse(process.env.KONTIR_TIMING) : undefined; } catch { return undefined; } };
 
-export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming(), queue: queueOptions = {}, accountsFile = resolve(process.env.KONTIR_DATA || resolve(here, '../data'), 'accounts.json') } = {}) {
-  const accounts = await new Accounts(accountsFile).load();
+export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming(), queue: queueOptions = {}, accountsFile = resolve(process.env.KONTIR_DATA || resolve(here, '../data'), 'accounts.json'), mongoUri = process.env.MONGODB_URI } = {}) {
+  const accounts = await new Accounts(accountsFile, { mongoUri }).load();
   const library = await new MapLibrary(await MapLibrary.locate()).init();
   const matchmaker = new Matchmaker(library);
   const queue = new MatchQueue({ mapIds: library.list().map(m => m.id), ...queueOptions });
@@ -442,7 +443,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   }
   const address = http.address();
   if (!quiet) console.log(`KONTIR server: http://localhost:${address.port}  (64 tick, maps: ${library.list().map(m => m.id).join(', ')})`);
-  const close = async () => { clearInterval(loop); clearInterval(probes); clearInterval(pump); await new Promise(r => io.close(r)); http.closeAllConnections?.(); };
+  const close = async () => { clearInterval(loop); clearInterval(probes); clearInterval(pump); await accounts.close?.(); await new Promise(r => io.close(r)); http.closeAllConnections?.(); };
   return { http, io, rooms, matchmaker, library, queue, port: address.port, close };
 }
 

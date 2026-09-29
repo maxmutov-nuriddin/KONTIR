@@ -5,7 +5,7 @@ import { cuesFor } from './reload.js';
 import { WEAPONS } from '../../shared/weapons.js';
 
 export class AudioEngine {
-  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); }
+  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); this.clips = new Map(); }
 
   /** Must run inside a user gesture (the lock button). Safe to call repeatedly. */
   unlock() {
@@ -23,6 +23,8 @@ export class AudioEngine {
       for (let c = 0; c < 2; c++) { const ch = ir.getChannelData(c); for (let i = 0; i < irLen; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 3.2); }
       this.reverb = this.ctx.createConvolver(); this.reverb.buffer = ir;
       this.reverbGain = this.ctx.createGain(); this.reverbGain.gain.value = 0.32; this.reverb.connect(this.reverbGain); this.reverbGain.connect(this.master);
+      this.loadClip('/audio/terwin.wav');
+      this.loadClip('/audio/ctwin.wav');
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
@@ -195,4 +197,36 @@ export class AudioEngine {
   beep(high = false) { if (!this.ctx) return; const d = this.out(null, { reverb: 0.1 }); this.tone(d, { dur: 0.09, type: 'square', from: high ? 1900 : 1300, gain: 0.08 }); }
   plant() { if (!this.ctx) return; const d = this.out(null, { reverb: 0.1 }); for (let i = 0; i < 3; i++) this.tone(d, { start: i * 0.13, dur: 0.1, type: 'square', from: 1200 + i * 200, gain: 0.08 }); }
   click() { if (!this.ctx) return; const d = this.out(null, { reverb: 0 }); this.tone(d, { dur: 0.03, type: 'square', from: 1400, to: 800, gain: 0.05 }); }
+  async loadClip(url) {
+    if (!this.ctx || this.clips.has(url)) return this.clips.get(url);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const arrayBuffer = await res.arrayBuffer();
+      const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+      this.clips.set(url, audioBuffer);
+      return audioBuffer;
+    } catch {
+      return null;
+    }
+  }
+  async playClip(url, volume = 0.9) {
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    let buf = this.clips.get(url) || await this.loadClip(url);
+    if (!buf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const g = this.ctx.createGain();
+    g.gain.value = volume;
+    src.connect(g);
+    g.connect(this.master);
+    src.onended = () => { src.disconnect(); g.disconnect(); };
+    src.start();
+  }
+  roundWin(team) {
+    if (!team) return;
+    const url = team === 'TERRORIST' ? '/audio/terwin.wav' : (team === 'COUNTER_TERRORIST' || team === 'CT') ? '/audio/ctwin.wav' : null;
+    if (url) this.playClip(url, 0.95);
+  }
 }
