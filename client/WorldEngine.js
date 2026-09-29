@@ -81,7 +81,7 @@ export class WorldEngine {
 
     this.scene = new THREE.Scene(); this.viewScene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.05, 700); this.camera.rotation.order = 'YXZ'; this.scene.add(this.camera);
-    this.viewCamera = new THREE.PerspectiveCamera(54, innerWidth / innerHeight, 0.01, 8);
+    this.viewCamera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.01, 8);
     this.hemi = new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.3); this.scene.add(this.hemi);
     this.viewHemi = new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.3); this.viewScene.add(this.viewHemi);
     this.viewSun = new THREE.DirectionalLight(0xffffff, 3); this.viewSun.position.set(2, 3, 2); this.viewScene.add(this.viewSun, this.viewSun.target);

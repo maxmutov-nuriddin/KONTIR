@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 export default defineConfig({
   root: 'client',
   server: {
@@ -10,7 +11,7 @@ export default defineConfig({
   },
   build: {
     outDir: '../dist', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 800,
-    rollupOptions: { output: { manualChunks(id) {
+    rollupOptions: { input: { main: resolve('client/index.html'), viewer: resolve('client/viewer.html') }, output: { manualChunks(id) {
       if (id.includes('/node_modules/three/')) return 'three';
       if (id.includes('/node_modules/')) return 'vendor';
     } } },

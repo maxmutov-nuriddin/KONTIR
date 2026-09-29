@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { applyPBR } from './materials.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildArms as makeArms, poseArms as placeArms } from './hands.js';
 
 const V2 = (x, y) => new THREE.Vector2(x, y);
 let shared = null;
@@ -235,54 +237,62 @@ function buildC4(M) {
   return { group: g, muzzle: null, eject: null, parts, hands: { right: { p: [0.07, -0.03, 0.03], r: [0.2, 0.0, 0] }, left: { p: [-0.07, -0.03, 0.03], r: [0.2, 0, 0], support: true } }, length: 0.25 };
 }
 
+// ---------------------------------------------------------------------------------------------- hand poses (weapon-local)
+const R = Math.PI / 2;
+// p: palm centre, r: euler (roll about the finger axis first), elbow: sleeve target, grip: finger curl preset
+const HANDS = {
+  ak47: { right: { p: [0.033, -0.088, 0.088], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.62], grip: 'grip' }, left: { p: [-0.012, -0.05, -0.29], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.5], grip: 'wrap' } },
+  m4a4: { right: { p: [0.033, -0.09, 0.05], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.6], grip: 'grip' }, left: { p: [-0.012, -0.035, -0.29], r: [0.1, 0.15, 2.4], elbow: [-0.3, -0.36, 0.5], grip: 'wrap' } },
+  pistol: { right: { p: [0.03, -0.075, 0.06], r: [0.2, 0.12, -R], elbow: [0.16, -0.36, 0.6], grip: 'grip' }, left: { p: [-0.035, -0.085, 0.045], r: [0.25, -0.2, R], elbow: [-0.2, -0.34, 0.55], grip: 'wrap' } },
+  knife: { right: { p: [0.0, -0.005, 0.06], r: [0.1, 0, -R], elbow: [0.2, -0.32, 0.6], grip: 'grip' }, left: null },
+  grenade: { right: { p: [0.03, -0.035, 0.0], r: [0.2, 0.1, -R], elbow: [0.22, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.045, -0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
+  c4: { right: { p: [0.085, -0.035, 0.03], r: [0.15, 0.1, -R], elbow: [0.22, -0.34, 0.55], grip: 'wrap' }, left: { p: [-0.085, -0.035, 0.03], r: [0.15, -0.1, R], elbow: [-0.24, -0.34, 0.55], grip: 'wrap' } },
+};
+const HAND_CLASS = { ak47: 'ak47', galil: 'ak47', m4a4: 'm4a4', famas: 'm4a4', awp: 'm4a4', glock: 'pistol', usp: 'pistol', deagle: 'pistol', knife: 'knife', he: 'grenade', flash: 'grenade', smoke: 'grenade', c4: 'c4' };
+
 const BUILDERS = { ak47: buildAK47, m4a4: buildM4A4, deagle: buildDeagle, glock: buildGlock, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, c4: buildC4, usp: buildGlock, awp: buildM4A4, famas: buildM4A4, galil: buildAK47 };
 
 export function buildWeaponRig(id) {
   const M = weaponMaterials(), rig = BUILDERS[id](M);
   rig.id = id; rig.group.name = `weapon_${id}`;
+  rig.hands = HANDS[HAND_CLASS[id] || 'ak47'];
   return rig;
 }
 
-// ---------------------------------------------------------------------------------------------- arms
-const glove = () => new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.8, metalness: 0 });
-const sleeves = { TERRORIST: 0x6d5b3f, COUNTER_TERRORIST: 0x28323f };
-
-/** Gloved hand: palm, four curled fingers and a thumb. Returns the group positioned so the palm centre is the origin. */
-function buildHand(side, gloveMat) {
-  const g = new THREE.Group(), s = side === 'right' ? 1 : -1;
-  const palm = new THREE.Mesh(new RoundedBoxGeometry(0.078, 0.03, 0.09, 3, 0.011), gloveMat); g.add(palm);
-  for (let i = 0; i < 4; i++) {
-    const f = new THREE.Group(); f.position.set(-0.03 + i * 0.02, 0.006, -0.043); g.add(f);
-    const a = new THREE.Mesh(new THREE.CapsuleGeometry(0.0085, 0.03, 4, 8), gloveMat); a.rotation.x = Math.PI / 2 + 0.3; a.position.set(0, -0.006, -0.018); f.add(a);
-    const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.0078, 0.026, 4, 8), gloveMat); b.rotation.x = Math.PI / 2 + 1.2; b.position.set(0, -0.026, -0.038); f.add(b);
+/** Third-person weapon: the same rig baked into one static mesh per material (cached geometry, shared by every operator). */
+const tpCache = new Map();
+export function buildWeaponRigTP(id) {
+  let c = tpCache.get(id);
+  if (!c) {
+    const full = buildWeaponRig(id); full.group.updateMatrixWorld(true);
+    const buckets = new Map();
+    full.group.traverse(o => {
+      if (!o.isMesh || !o.geometry.attributes.position) return;
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      g.applyMatrix4(o.matrixWorld);
+      const list = buckets.get(o.material) || []; list.push(g); buckets.set(o.material, list);
+    });
+    const meshes = [];
+    for (const [mat, list] of buckets) { const geo = mergeGeometries(list, false); geo.userData.shared = true; mat.userData.shared = true; meshes.push({ geo, mat }); }
+    c = { meshes, hands: full.hands, muzzle: full.muzzle ? full.muzzle.position.clone() : new THREE.Vector3(0, 0, -0.4) };
+    tpCache.set(id, c);
   }
-  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0095, 0.035, 4, 8), gloveMat); thumb.position.set(-0.042 * s, 0.006, -0.02); thumb.rotation.set(Math.PI / 2 - 0.3, 0, 0.5 * s); g.add(thumb);
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.05, 14), gloveMat); cuff.rotation.x = Math.PI / 2; cuff.position.set(0, 0, 0.065); g.add(cuff);
-  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  return g;
+  const group = new THREE.Group(); group.name = `tp_${id}`;
+  for (const { geo, mat } of c.meshes) { const m = new THREE.Mesh(geo, mat); m.castShadow = true; group.add(m); }
+  const muzzle = new THREE.Object3D(); muzzle.position.copy(c.muzzle); group.add(muzzle);
+  return { group, hands: c.hands, muzzle, id };
 }
 
-/** Full first-person arms. Forearms extend back/down toward the camera; hands follow rig.hands poses. */
+// ---------------------------------------------------------------------------------------------- arms
+const sleeves = { TERRORIST: 0x7a6a49, COUNTER_TERRORIST: 0x2c3746 };
+const armMats = {};
+/** First-person arms: sleeved forearms + gloved hands, posed by poseArms(arms, rig). */
 export function buildArms(team = 'TERRORIST') {
-  const root = new THREE.Group(), gm = glove();
-  const sleeve = new THREE.MeshStandardMaterial({ color: sleeves[team], roughness: 0.95 });
-  applyPBR(sleeve, 'cloth', { size: 256, normalScale: 0.8 });
-  const make = side => {
-    const wrap = new THREE.Group(), hand = buildHand(side, gm);
-    const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.04, 0.42, 16), sleeve); fore.rotation.x = Math.PI / 2; fore.position.set(0, 0, 0.29); fore.castShadow = true; hand.add(fore);
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0425, 0.0425, 0.02, 16), gm); band.rotation.x = Math.PI / 2; band.position.set(0, 0, 0.09); hand.add(band);
-    wrap.add(hand); wrap.userData.hand = hand; return wrap;
-  };
-  root.userData.right = make('right'); root.userData.left = make('left');
-  root.add(root.userData.right, root.userData.left);
-  return root;
+  if (!armMats.glove) { armMats.glove = new THREE.MeshStandardMaterial({ color: 0x1e1f21, roughness: 0.72, metalness: 0 }); armMats.glove.userData.shared = true; applyPBR(armMats.glove, 'polymer', { size: 256, normalScale: 0.6 }); }
+  if (!armMats['glove' + team]) { const gm = armMats.glove.clone(); gm.color.set(team === 'TERRORIST' ? 0x6a5a44 : 0x3a4148); gm.userData.shared = true; armMats['glove' + team] = gm; }
+  if (!armMats[team]) { const m = new THREE.MeshStandardMaterial({ color: sleeves[team], roughness: 1 }); applyPBR(m, 'cloth', { size: 256, normalScale: 1 }); m.userData.shared = true; armMats[team] = m; }
+  return makeArms(team, armMats['glove' + team], armMats[team]);
 }
-
-/** Positions both hands on a rig (poses are weapon-local). Left hand hides for one-handed items. */
-export function poseArms(arms, rig) {
-  const set = (wrap, pose) => {
-    wrap.visible = !!pose; if (!pose) return;
-    wrap.position.set(...pose.p); wrap.rotation.set(...pose.r);
-  };
-  set(arms.userData.right, rig.hands.right); set(arms.userData.left, rig.hands.left);
-}
+export const poseArms = placeArms;

@@ -13,12 +13,11 @@ const seg = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
 
 // resting pose of each rig inside the view space (metres, radians)
 const REST = {
-  ak47: { p: [0.155, -0.2, -0.56], r: [0.0, 0.055, 0.0] }, m4a4: { p: [0.155, -0.2, -0.52], r: [0.0, 0.055, 0.0] },
-  galil: { p: [0.155, -0.2, -0.55], r: [0.0, 0.055, 0.0] }, famas: { p: [0.15, -0.19, -0.51], r: [0.0, 0.05, 0.0] },
-  awp: { p: [0.16, -0.21, -0.58], r: [0.0, 0.05, 0.0] },
-  deagle: { p: [0.115, -0.13, -0.38], r: [0.02, 0.04, 0.0] }, glock: { p: [0.11, -0.125, -0.36], r: [0.02, 0.04, 0.0] }, usp: { p: [0.11, -0.125, -0.36], r: [0.02, 0.04, 0.0] },
-  knife: { p: [0.14, -0.15, -0.42], r: [-0.25, 0.5, 0.45] }, he: { p: [0.115, -0.13, -0.4], r: [0.1, 0.0, 0.0] },
-  flash: { p: [0.115, -0.13, -0.4], r: [0.1, 0.0, 0.0] }, smoke: { p: [0.115, -0.125, -0.4], r: [0.1, 0.0, 0.0] }, c4: { p: [0.05, -0.19, -0.42], r: [0.35, 0.0, 0.0] },
+  ak47: { p: [0.1, -0.1, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 }, galil: { p: [0.1, -0.1, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 },
+  m4a4: { p: [0.1, -0.105, -0.48], r: [0.04, 0.05, 0.0], s: 0.85 }, famas: { p: [0.1, -0.1, -0.48], r: [0.04, 0.05, 0.0], s: 0.85 }, awp: { p: [0.1, -0.11, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 },
+  deagle: { p: [0.09, -0.085, -0.33], r: [0.03, 0.04, 0.0] }, glock: { p: [0.085, -0.082, -0.32], r: [0.03, 0.04, 0.0] }, usp: { p: [0.085, -0.082, -0.32], r: [0.03, 0.04, 0.0] },
+  knife: { p: [0.14, -0.13, -0.4], r: [-0.25, 0.5, 0.45] }, he: { p: [0.11, -0.11, -0.36], r: [0.1, 0.0, 0.0] },
+  flash: { p: [0.11, -0.11, -0.36], r: [0.1, 0.0, 0.0] }, smoke: { p: [0.11, -0.105, -0.36], r: [0.1, 0.0, 0.0] }, c4: { p: [0.04, -0.16, -0.4], r: [0.35, 0.0, 0.0] },
 };
 
 export class WeaponManager {
@@ -98,7 +97,7 @@ export class WeaponManager {
     poseArms(this.arms, rig); rig.group.add(this.arms);
     if (rig.muzzle) { this.flash.removeFromParent(); rig.muzzle.add(this.flash); }
     this.kick = 0; this.melee = 0; this.flashT = 0; this.flash.visible = false;
-    const rest = REST[id] || REST.ak47; rig.group.position.set(...rest.p); rig.group.rotation.set(...rest.r);
+    const rest = REST[id] || REST.ak47; rig.group.position.set(...rest.p); rig.group.rotation.set(...rest.r); rig.group.scale.setScalar(rest.s || 1);
   }
 
   // ----------------------------------------------------------------------------------------- visuals

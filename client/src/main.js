@@ -223,7 +223,7 @@ let previous = performance.now(), slowSince = 0, specId = null;
 const meshQ = new THREE.Vector3();
 function frame(nowMs) {
   if (!pacer.ready(nowMs, { hidden: document.hidden, active: playing && controller.locked })) return;
-  const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.min(0.25, raw); fps += (1 / Math.max(0.001, raw) - fps) * 0.04;
+  const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.max(0, Math.min(0.25, raw)); fps += (1 / Math.max(0.001, raw) - fps) * 0.04;
   const now = performance.now();
   // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
   if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(world.qualityName === 'ultra' ? 'high' : 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
