@@ -13,13 +13,29 @@ npm run dev          # server :3101 + klient http://localhost:5190
 
 Production: `npm run build && npm start` — `http://localhost:3101` (`PORT` bilan o‘zgartiriladi, `/health` server holati).
 
-### Rejimlar
+### Lobbi va rejimlar (CS2 uslubida)
 
-| Tugma | Nima qiladi |
+Bosh menyu — CS2 lobbisi kabi: yuqorida rejim yorliqlari, o‘rtada xaritalar (har biri ustdan ko‘rinish sxemasi bilan), o‘ngda partiya paneli va katta **IZLASH** tugmasi.
+
+| Rejim | Nima qiladi |
 |---|---|
-| **MASHQ · 5v5 BOTLAR** | Bir o‘yinchi + server botlari (10 kishi), darhol buy fazasi |
-| **TEZKOR O‘YIN** | Ochiq (public) xonaga joylashtiradi yoki yangisini yaratadi |
-| **XONA KODI** | Do‘st bilan bir xil kod; T/CT avtomatik tenglashadi; 5+5 qat’iy limit |
+| **COMPETITIVE** | Matchmaking: xaritalar puli (bir nechtasini belgilash mumkin) → qidiruv taymeri → **“O‘YININGIZ TAYYOR!”** → 20 s ichida **QABUL QILISH**. 10 kishi to‘lsa darhol; kamida 2 kishi bo‘lsa 45 s dan keyin; yolg‘iz qidiruvchi 90 s dan keyin — bo‘sh o‘rinlarga botlar. Tomonlar tasodifiy, lekin teng. |
+| **CASUAL** | Xuddi shu, lekin tezroq (12 s / 20 s) |
+| **MASHQ** | Siz + 9 bot, darhol |
+| **XUSUSIY XONA** | Do‘stlar bilan bir xil kod (5+5 qat’iy) |
+
+Kimdir qabul qilmasa u navbatdan chiqariladi, qolganlar navbatdagi o‘rnini yo‘qotmasdan qidirishda davom etadi. Hammasi serverda (`server/Queue.js`, testlar: `tests/queue.test.js`).
+
+### Internetdagi haqiqiy o‘yinchilar bilan o‘ynash
+
+Matchmaking bir serverga ulangan hamma o‘yinchilarni birlashtiradi. Notanish o‘yinchilar bilan o‘ynash uchun serverni internetga chiqarish kerak (bu repodan tashqarida — hosting sizniki):
+
+```sh
+npm ci && npm run maps && npm run build
+PORT=3101 npm start          # Node 20+; WebSocket ochiq bo‘lishi kerak
+```
+
+Istalgan Node hostingi (VPS, Render, Fly.io, Railway…) ishlaydi; domen HTTPS bilan bo‘lsa Socket.IO avtomatik `wss://` ishlatadi. `/health` — navbatdagi va o‘ynayotganlar soni. Server bitta jarayonda 24 tagacha xonani 64 tick’da yuritadi.
 
 ## Fayllar (asosiy 4 modul)
 
@@ -68,12 +84,14 @@ Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 
 
 ## Xaritalar va GLB pipeline
 
-`client/public/maps/*.glb` — server ham, klient ham **bir xil baytlardan** to‘qnashuv BVH quradi (predikta ↔ server farq qilmaydi). Repo to‘rtta xarita bilan keladi (`npm run maps` ularni `tools/maps/*.mjs` dan qayta generatsiya qiladi):
+`client/public/maps/*.glb` — server ham, klient ham **bir xil baytlardan** to‘qnashuv BVH quradi (predikta ↔ server farq qilmaydi). Repo oltita xarita bilan keladi (`npm run maps` ularni `tools/maps/*.mjs` dan qayta generatsiya qiladi):
 
 | Xarita | Uslub | Asosiy joylar |
 |---|---|---|
 | **SAROB** | klassik “mirage” layouti | T spawn (sharq), top mid → mid → **sniper window** (ko‘tarilgan xona), **short** → B, **connector** → jungle → A; **palace** (tomli yuqori qavat), **A ramp / tetris**, firebox/triple/sandwich; **B apartments** (tomli koridor), market → CT |
 | **CHANGTEPA** | klassik “dust” layouti | **Long A** (outside long → long doors → long corner → A ramp), **catwalk/short** (mid’dan zinapoya), **mid doors** → CT mid → **B doors/window**, **upper/lower tunnels** (tomli) → B, B platformasi, xbox |
+| **QISHLOQ** | klassik “inferno” layouti | **banana** (mashina, qopchalar) → B (favvora, coffins, new box), **apartments** (tomli) → **balcony** → A, **pit**, **library**, **arch**, mid / second mid, short |
+| **OMBOR** | klassik “cache” layouti | **A main** → A (quad, konteynerlar), **mid** (white box) → **highway** → A, **vents** → B, **B main**, **checkers**, **heaven**, **sun room** |
 | SAHARA OUTPOST | original | uch yo‘lak, ko‘tarilgan A |
 | IRON HARBOR | original | konteyner terminali |
 
@@ -93,14 +111,18 @@ Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
 | Guruh | T | CT | Ikkalasi |
 |---|---|---|---|
-| Pistol | Glock-18, Tec-9 | USP-S (glushitel), Five-SeveN | P250, Desert Eagle |
-| SMG | MAC-10 | MP9 | — |
-| Shotgun | — | — | Nova (9 ta drob) |
-| Rifle | Galil AR, AK-47 | FAMAS, M4A4 | SSG 08, AWP (scope: o‘ng tugma) |
+| Pistol | Glock-18, Tec-9 | USP-S (glushitel), Five-SeveN | P250, CZ75-Auto, Desert Eagle, R8 Revolver |
+| SMG | MAC-10 | MP9 | UMP-45, MP7, P90 |
+| Og‘ir | Sawed-Off | MAG-7 | Nova, XM1014, Negev |
+| Rifle | Galil AR, AK-47, SG 553 (scope) | FAMAS, M4A4, M4A1-S (glushitel), AUG (scope) | SSG 08, AWP (scope: o‘ng tugma) |
 | Granata | Molotov | Incendiary | Decoy, Flashbang, HE, Smoke |
 | Jihoz | — | Defuse kit | Kevlar, Kevlar + dubulg‘a |
 
 Molotov/Incendiary yerga tegishi bilan 7 s yonadigan zona hosil qiladi (har 0.5 s zarar; ustiga tushgan smoke o‘chiradi). Decoy egasining qurolidan soxta otish ovozlarini chiqaradi. Snayper miltiqlarida scope bo‘lmasa aniqlik juda past, otgandan keyin scope yopiladi; zoom paytida sichqoncha sezgirligi FOV bilan moslashadi.
+
+## Reload (R)
+
+Har reload uslubi alohida animatsiya: **miltiq/SMG** — qurol yonboshlaydi, chap qo‘l magazinni ushlab chiqarib oladi (magazin qo‘l bilan birga ekrandan chiqadi), yangisini olib kelib kiritadi, bo‘sh bo‘lsa zatvorni tortadi; **pistol** — eski magazin tushib ketadi, yangisi dastaga uriladi, bo‘sh bo‘lsa slayd qo‘yib yuboriladi; **snayper** — magazin + zatvor sikli; **drobovik** — o‘q-o‘qdan (qo‘lda qizil patron ko‘rinadi), oxirida pump; **revolver** — baraban. Ovozlar (magazin chiqishi/kirishi, zatvor, slayd, patron, pump) animatsiyaning aniq nuqtalarida chalinadi; boshqa o‘yinchilarning reloadi ham xuddi shu jadval bo‘yicha eshitiladi (`client/src/reload.js`).
 
 ## Qurol ko‘rigi (F)
 

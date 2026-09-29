@@ -52,6 +52,56 @@
       "builtIn": true
     },
     {
+      "id": "qishloq",
+      "name": "QISHLOQ",
+      "subtitle": "Klassik “inferno” uslubi: banana, apartments, balcony, pit, library, arch.",
+      "file": "qishloq.glb",
+      "env": {
+        "sky": "day",
+        "sun": [
+          -0.5,
+          0.62,
+          0.45
+        ],
+        "sunColor": "#ffd9a0",
+        "sunIntensity": 3.3,
+        "exposure": 1,
+        "fog": "#d6c09a",
+        "fogDensity": 0.005,
+        "ambient": "#bac7d2"
+      },
+      "bounds": {
+        "x": 126,
+        "z": 132
+      },
+      "builtIn": true
+    },
+    {
+      "id": "ombor",
+      "name": "OMBOR",
+      "subtitle": "Klassik “cache” uslubi: A main, quad, mid white box, vents, checkers, heaven.",
+      "file": "ombor.glb",
+      "env": {
+        "sky": "overcast",
+        "sun": [
+          0.35,
+          0.66,
+          -0.4
+        ],
+        "sunColor": "#eef2ff",
+        "sunIntensity": 2.8,
+        "exposure": 1,
+        "fog": "#a9b4b8",
+        "fogDensity": 0.007,
+        "ambient": "#a8b7c4"
+      },
+      "bounds": {
+        "x": 126,
+        "z": 132
+      },
+      "builtIn": true
+    },
+    {
       "id": "sahara",
       "name": "SAHARA OUTPOST",
       "subtitle": "Cho‘l shahri. Uch yo‘lak, ko‘tarilgan A hududi.",

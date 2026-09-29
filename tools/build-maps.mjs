@@ -8,6 +8,8 @@ import { buildSahara } from './maps/sahara.mjs';
 import { buildHarbor } from './maps/harbor.mjs';
 import { buildChangtepa } from './maps/changtepa.mjs';
 import { buildSarob } from './maps/sarob.mjs';
+import { buildQishloq } from './maps/qishloq.mjs';
+import { buildOmbor } from './maps/ombor.mjs';
 
 const out = resolve(dirname(fileURLToPath(import.meta.url)), '../client/public/maps');
 await mkdir(out, { recursive: true });
@@ -15,6 +17,8 @@ await mkdir(out, { recursive: true });
 const BUILT_IN = {
   sarob: { build: buildSarob, name: 'SAROB', subtitle: 'Klassik “mirage” uslubi: palace, A ramp, window, connector, B apartments.', env: { sky: 'day', sun: [0.5, 0.7, 0.35], sunColor: '#ffdcaa', sunIntensity: 3.4, exposure: 1.0, fog: '#d8c3a0', fogDensity: 0.005, ambient: '#bccad6' } },
   changtepa: { build: buildChangtepa, name: 'CHANGTEPA', subtitle: 'Klassik “dust” uslubi: Long A, catwalk, mid doors, B tunnellari.', env: { sky: 'day', sun: [-0.35, 0.78, 0.45], sunColor: '#ffe0ae', sunIntensity: 3.5, exposure: 1.0, fog: '#dcc9a0', fogDensity: 0.005, ambient: '#b9c9d8' } },
+  qishloq: { build: buildQishloq, name: 'QISHLOQ', subtitle: 'Klassik “inferno” uslubi: banana, apartments, balcony, pit, library, arch.', env: { sky: 'day', sun: [-0.5, 0.62, 0.45], sunColor: '#ffd9a0', sunIntensity: 3.3, exposure: 1.0, fog: '#d6c09a', fogDensity: 0.005, ambient: '#bac7d2' } },
+  ombor: { build: buildOmbor, name: 'OMBOR', subtitle: 'Klassik “cache” uslubi: A main, quad, mid white box, vents, checkers, heaven.', env: { sky: 'overcast', sun: [0.35, 0.66, -0.4], sunColor: '#eef2ff', sunIntensity: 2.8, exposure: 1.0, fog: '#a9b4b8', fogDensity: 0.007, ambient: '#a8b7c4' } },
   sahara: { build: buildSahara, name: 'SAHARA OUTPOST', subtitle: 'Cho‘l shahri. Uch yo‘lak, ko‘tarilgan A hududi.', env: { sky: 'day', sun: [-0.45, 0.72, 0.38], sunColor: '#ffe1b0', sunIntensity: 3.4, exposure: 1.0, fog: '#d9c9a6', fogDensity: 0.006, ambient: '#b7c8d6' } },
   harbor: { build: buildHarbor, name: 'IRON HARBOR', subtitle: 'Konteyner terminali. Omborxona va kran maydoni.', env: { sky: 'overcast', sun: [0.4, 0.58, -0.35], sunColor: '#e8efff', sunIntensity: 2.6, exposure: 1.0, fog: '#a8b6bc', fogDensity: 0.009, ambient: '#a6b6c4' } },
 };
