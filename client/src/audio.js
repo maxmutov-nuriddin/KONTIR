@@ -1,7 +1,9 @@
 // Fully procedural spatial audio (no asset files): layered noise/oscillator voices through HRTF panners,
 // distance low-pass and a shared convolution reverb tail.
+import { SHOT_PROFILES, synthShot } from './gunsynth.js';
+
 export class AudioEngine {
-  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; }
+  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); }
 
   /** Must run inside a user gesture (the lock button). Safe to call repeatedly. */
   unlock() {
@@ -72,41 +74,27 @@ export class AudioEngine {
   }
 
   // ------------------------------------------------------------------------------------------- voices
+  /** Baked shot variants (3 per weapon, stereo) — rendered lazily on first use so start-up stays instant. */
+  shotBuffers(weapon) {
+    const key = SHOT_PROFILES[weapon] ? weapon : 'ak47';
+    let list = this.shots.get(key);
+    if (!list) {
+      const sr = this.ctx.sampleRate; list = [];
+      for (let v = 0; v < 3; v++) { const s = synthShot(key, sr, 11 + v * 17), buf = this.ctx.createBuffer(2, s.left.length, sr); buf.copyToChannel(s.left, 0); buf.copyToChannel(s.right, 1); list.push(buf); }
+      this.shots.set(key, list);
+    }
+    return list;
+  }
+  /** Pre-bakes the loadout so the first shot of a weapon never hitches. */
+  warmShots(ids) { if (!this.ctx) return; ids.forEach((id, i) => setTimeout(() => this.ctx && this.shotBuffers(id), 250 + i * 120)); }
   gunshot(weapon, pos, own = false) {
     if (!this.ctx) return;
-    const profiles = {
-      ak47: { snapFreq: 3200, snapGain: 1.1, bodyFreq: 650, bodySweep: 180, bodyDur: 0.12, subPunch: 75, gain: 1.0, tail: 0.5 },
-      galil: { snapFreq: 3400, snapGain: 1.0, bodyFreq: 700, bodySweep: 200, bodyDur: 0.11, subPunch: 80, gain: 0.95, tail: 0.45 },
-      m4a4: { snapFreq: 4200, snapGain: 1.0, bodyFreq: 800, bodySweep: 220, bodyDur: 0.09, subPunch: 85, gain: 0.9, tail: 0.4 },
-      famas: { snapFreq: 4500, snapGain: 0.95, bodyFreq: 850, bodySweep: 240, bodyDur: 0.08, subPunch: 90, gain: 0.85, tail: 0.38 },
-      awp: { snapFreq: 2500, snapGain: 1.6, bodyFreq: 500, bodySweep: 120, bodyDur: 0.24, subPunch: 55, gain: 1.5, tail: 0.8 },
-      deagle: { snapFreq: 2400, snapGain: 1.3, bodyFreq: 550, bodySweep: 160, bodyDur: 0.15, subPunch: 65, gain: 1.25, tail: 0.55 },
-      glock: { snapFreq: 3800, snapGain: 0.85, bodyFreq: 950, bodySweep: 300, bodyDur: 0.07, subPunch: 105, gain: 0.75, tail: 0.25 },
-      usp: { snapFreq: 2200, snapGain: 0.55, bodyFreq: 1200, bodySweep: 500, bodyDur: 0.05, subPunch: 0, gain: 0.5, tail: 0.15, suppressed: true },
-    };
-    const p = profiles[weapon] || profiles.ak47;
-    const d = this.out(own ? null : pos, { reverb: p.tail });
-    const jitter = 0.95 + Math.random() * 0.1;
-
-    // 1. Initial supersonic crack / snap (high pressure shockwave)
-    this.noise(d, { dur: 0.035, type: 'bandpass', freq: p.snapFreq * jitter, q: 1.2, gain: p.snapGain * p.gain, attack: 0.001, decay: 0.03 });
-    this.noise(d, { dur: 0.02, type: 'highpass', freq: 4500, gain: 0.6 * p.gain, attack: 0.001, decay: 0.018 });
-
-    // 2. Gunpowder explosion body (burst of expanding gas, not a drum tone)
-    this.noise(d, { dur: p.bodyDur, type: 'lowpass', freq: p.bodyFreq, sweepTo: p.bodySweep, gain: 0.9 * p.gain, attack: 0.002, decay: p.bodyDur });
-
-    // 3. Short non-tonal sub pressure impulse (micro transient punch, not a ringing tone)
-    if (p.subPunch > 0) {
-      this.tone(d, { dur: 0.035, from: p.subPunch, to: 30, gain: 0.65 * p.gain, attack: 0.001 });
-    }
-
-    // 4. Mechanical slide / bolt action click
-    if (!p.suppressed) {
-      this.noise(d, { start: 0.008, dur: 0.02, type: 'bandpass', freq: 3500, q: 3.5, gain: 0.3 * p.gain, decay: 0.015 });
-    }
-
-    // 5. Environmental acoustic reflection tail
-    this.noise(d, { start: 0.02, dur: p.tail, type: 'highpass', freq: p.suppressed ? 5000 : 2600, gain: 0.16 * p.gain, decay: p.tail * 0.8 });
+    const list = this.shotBuffers(weapon), buf = list[(Math.random() * list.length) | 0];
+    const long = SHOT_PROFILES[weapon]?.length > 1.1;
+    const d = this.out(own ? null : pos, { reverb: own ? 0.1 : (long ? 0.32 : 0.22) });
+    const src = this.ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = 0.975 + Math.random() * 0.05;
+    const g = this.ctx.createGain(); g.gain.value = own ? 1 : 0.9; src.connect(g); g.connect(d);
+    this.releaseVoice(src, d, [g]); src.start();
   }
   footstep(pos, own = false, scale = 1) {
     if (!this.ctx) return;

@@ -126,7 +126,7 @@ weapons.on('shot', e => {
 });
 weapons.on('reload', () => audio.reload(null, true)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
 controller.on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
-controller.on('lock', () => { audio.unlock(); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
+controller.on('lock', () => { audio.unlock(); audio.warmShots(['ak47', 'm4a4', 'glock', 'usp', 'deagle', 'awp']); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
 
 // ---------------------------------------------------------------------------------------------- join / leave
 async function join(options) {
