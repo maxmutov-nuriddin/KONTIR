@@ -3,6 +3,7 @@
 // acknowledged command and the still-unacknowledged commands are replayed on top (silently).
 import { DT, neutralInput } from '../../shared/constants.js';
 import { stepPlayer } from '../../shared/movement.js';
+import { speedMul } from '../../shared/weapons.js';
 
 export class Prediction {
   /** @param {import('../../shared/collision.js').MeshCollider} collider @param {import('../WeaponManager.js').WeaponManager} weapons */
@@ -19,6 +20,7 @@ export class Prediction {
     const { canMove, canFire } = this.gate(phase, alive);
     if (!alive) { char.yaw = cmd.yaw; char.pitch = Math.max(-1.55, Math.min(1.55, cmd.pitch)); return null; }
     const input = canMove ? cmd : { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch };
+    char.speedMul = speedMul(this.weapons.inventory.weapon()?.id);
     const events = stepPlayer(char, input, this.collider, DT);
     this.weapons.predict(cmd, { canFire }, silent);
     return events;

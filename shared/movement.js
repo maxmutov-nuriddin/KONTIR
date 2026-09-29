@@ -136,7 +136,7 @@ export function stepPlayer(p, cmd, collider, dt = DT) {
   const f = cmd.forward / norm, r = cmd.right / norm;
   const wx = -Math.sin(cmd.yaw) * f + Math.cos(cmd.yaw) * r, wz = -Math.cos(cmd.yaw) * f - Math.sin(cmd.yaw) * r;
   const wishLen = Math.hypot(wx, wz);
-  const wishSpeed = wishLen * targetSpeed(cmd, p.crouch);
+  const wishSpeed = wishLen * targetSpeed(cmd, p.crouch) * (p.speedMul ?? 1); // heavier weapon in hand = slower
 
   if (onGround) {
     applyFriction(p, dt);

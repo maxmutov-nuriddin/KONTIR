@@ -124,6 +124,13 @@ export const WEAPONS = Object.freeze({
 export const GRENADES = Object.freeze(['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy']);
 export const MAX_GRENADES = 4;
 
+/** Movement speed factor for the held weapon (CS-like: knife 250 u/s, pistols 240, SMGs 230, rifles 215, AWP / Negev 200). */
+export function speedMul(id) {
+  const w = id && WEAPONS[id]; if (!w || w.melee) return 1;
+  if (id === 'awp' || id === 'negev') return 0.8;
+  if (id === 'ssg08') return 0.92;
+  return { PISTOLS: 0.96, SMGS: 0.92, HEAVY: 0.88, RIFLES: 0.86, GRENADES: 0.98 }[BUY_ITEMS[id]?.group] ?? 0.97;
+}
 export const BUY_ITEMS = Object.freeze({
   glock: { price: 200, team: 'TERRORIST', group: 'PISTOLS' }, usp: { price: 200, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
   p250: { price: 300, group: 'PISTOLS' }, tec9: { price: 500, team: 'TERRORIST', group: 'PISTOLS' }, fiveseven: { price: 500, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },

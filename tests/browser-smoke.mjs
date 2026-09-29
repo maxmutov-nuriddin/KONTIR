@@ -93,6 +93,7 @@ try {
   // software GL runs at a few FPS, so wait on conditions instead of fixed sleeps
   const untilSpeed = (target, tol) => page.waitForFunction(([t, e]) => { const p = window.__KONTIR__.predicted, v = Math.hypot(p.vx, p.vz) / 0.0254; return Math.abs(v - t) < e; }, [target, tol], { timeout: 45000 });
   const untilEye = (target) => page.waitForFunction(t => { const s = window.__KONTIR__; return Math.abs(s.eye[1] - s.predicted.y - t) < 0.025; }, target, { timeout: 45000 });
+  await page.keyboard.press('Digit3'); // knife: full 250 u/s (guns slow you down)
   await page.keyboard.down('KeyW'); await untilSpeed(250, 8);
   await page.keyboard.down('ShiftLeft'); await untilSpeed(130, 6);
   await page.keyboard.up('ShiftLeft'); await page.keyboard.down('ControlLeft'); await untilSpeed(100, 6);

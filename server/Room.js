@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, UNIT, neutralInput, otherTeam, clamp, validCommand } from '../shared/constants.js';
 import { createPlayer, eyeHeight, horizontalSpeed, stepPlayer } from '../shared/movement.js';
 import { Inventory } from '../shared/inventory.js';
-import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, inaccuracy, makeRandom, rayHitPlayer, shotDirection } from '../shared/weapons.js';
+import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, speedMul, inaccuracy, makeRandom, rayHitPlayer, shotDirection } from '../shared/weapons.js';
 import { LagCompensator } from './LagCompensator.js';
 import { BotBrain } from './Bots.js';
 
@@ -686,6 +686,7 @@ export class Room {
     p.lastLook.yaw = cmd.yaw; p.lastLook.pitch = cmd.pitch;
     const movement = !canMove ? { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch } : cmd;
     if (!p.alive) { p.char.vx = p.char.vz = 0; return; } // the body stays put: no turning / leg motion from a dead player's input
+    p.char.speedMul = speedMul(p.inv.weapon()?.id);
     const ev = stepPlayer(p.char, movement, this.collider);
     if (ev.footstep) { this.emit('footstep', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z }); this.noise(p, 16); }
     if (ev.jumped) this.emit('jump', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z });
