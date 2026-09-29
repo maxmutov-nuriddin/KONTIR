@@ -159,7 +159,7 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 #use-prompt kbd { display: inline-block; min-width: 18px; margin-right: 6px; padding: 1px 5px; border: 1px solid #ffffff55; border-radius: 3px; text-align: center; color: var(--gold, #e3b04b); font: inherit; }
 
 /* ---------------- CS2-style lobby ---------------- */
-.lobby { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; gap: 18px; padding: 8px 0 14px; }
+.menu-view > .lobby { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; gap: 18px; padding: 8px 0 14px; }
 .lobby-main { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; backdrop-filter: blur(6px); }
 .mode-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
 .mode-tabs button { text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 3px; background: #0c1314aa; transition: .15s; }
@@ -345,28 +345,32 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 .badge { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #e04a3a; color: #fff; font: 800 10px/16px 'DM Sans', sans-serif; font-style: normal; }
 .friend-dot { width: 34px; height: 34px; margin: 6px auto 0; display: block; border-radius: 50%; background: #2a3a36; color: #fff; font: 800 14px 'DM Sans', sans-serif; border: 2px solid #5dcf6b; }
 .friend-dot.game { border-color: #e9b64f; } .friend-dot.search { border-color: #5fa8e8; }
-#friends { position: fixed; top: 64px; right: 16px; bottom: 16px; z-index: 30; width: min(360px, calc(100vw - 32px)); display: flex; flex-direction: column; background: #0b1112f2; border: 1px solid #ffffff1f; border-radius: 6px; box-shadow: 0 20px 60px #000a; color: #e6ece9; font-family: 'DM Sans', sans-serif; overflow: hidden; }
+#friends { position: fixed; top: 64px; right: 16px; bottom: 16px; z-index: 30; width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 80px); display: flex; flex-direction: column; background: #0b1112f2; border: 1px solid #ffffff1f; border-radius: 6px; box-shadow: 0 20px 60px #000a; color: #e6ece9; font-family: 'DM Sans', sans-serif; overflow: hidden; }
 #friends[hidden] { display: none; }
-#friends header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #ffffff14; }
+#friends header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #ffffff14; flex-shrink: 0; }
 #friends header b { letter-spacing: 1.4px; } #friends header span { flex: 1; color: #8d9a94; font-size: 11px; letter-spacing: 1px; }
 #friends header button { color: #cfd8d4; font-size: 18px; padding: 0 6px; } #friends header button:disabled { opacity: .35; }
-.fr-search, .fr-send { display: flex; gap: 6px; padding: 10px 14px; }
+.fr-search, .fr-send { display: flex; gap: 6px; padding: 10px 14px; flex-shrink: 0; }
 .fr-search input, .fr-send input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #ffffff2a; border-radius: 3px; background: #000a; color: #fff; font: 13px 'DM Sans', sans-serif; }
 .fr-search button, .fr-send button { padding: 0 12px; }
-#fr-results { padding: 0 6px; }
-.fr-h { display: block; padding: 10px 14px 4px; color: var(--gold); font-size: 10px; letter-spacing: 1.6px; }
-.fr-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; }
+#fr-results { padding: 0 6px; flex-shrink: 0; }
+.fr-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.fr-h { display: block; padding: 10px 14px 4px; color: var(--gold); font-size: 10px; letter-spacing: 1.6px; flex-shrink: 0; }
+.fr-row { display: flex !important; flex: none !important; width: 100%; align-items: center; gap: 10px; padding: 7px 14px; }
 .fr-row:hover { background: #ffffff08; }
 .fr-row > div { flex: 1; min-width: 0; } .fr-row > b { flex: 1; }
 .fr-row small { display: block; color: #8d9a94; font-size: 10px; letter-spacing: 1px; }
-.fr-row button { position: relative; min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid #ffffff22; border-radius: 3px; color: #dfe7e3; font: 700 11px 'DM Sans', sans-serif; }
+.fr-row button { position: relative; min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid #ffffff22; border-radius: 3px; color: #dfe7e3; font: 700 11px 'DM Sans', sans-serif; flex-shrink: 0; }
 .fr-row button.ok { border-color: #5dcf6b; color: #8ee07a; } .fr-row button:disabled { opacity: .35; }
 .fr-row .av { position: relative; width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #2a3a36; font-weight: 800; }
 .fr-row .av i { position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid #0b1112; background: #5dcf6b; }
-.fr-row.game .av i { background: #e9b64f; } .fr-row.search .av i { background: #5fa8e8; } .fr-row.offline .av i { background: #56605c; } .fr-row.offline { opacity: .6; }
+.fr-row.game .av i, .fr-row.status-game .av i { background: #e9b64f; }
+.fr-row.search .av i, .fr-row.status-search .av i { background: #5fa8e8; }
+.fr-row.offline .av i, .fr-row.status-offline .av i { background: #56605c; }
+.fr-row.offline, .fr-row.status-offline { opacity: .6; }
 .fr-note, .fr-empty p { padding: 8px 14px; color: #8d9a94; font-size: 13px; } .fr-empty { padding: 14px; }
-#friends > div, .fr-msgs { overflow-y: auto; }
-.fr-msgs { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+.fr-list, .fr-msgs { overflow-y: auto; }
+.fr-msgs { flex: 1; min-height: 280px; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
 .msg { max-width: 80%; align-self: flex-start; padding: 7px 10px; border-radius: 8px 8px 8px 2px; background: #1c2826; font-size: 13px; line-height: 1.35; word-break: break-word; }
 .msg.me { align-self: flex-end; border-radius: 8px 8px 2px 8px; background: #3a3218; }
 .msg small { display: block; margin-top: 2px; color: #8d9a94; font-size: 10px; text-align: right; }
