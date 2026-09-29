@@ -18,7 +18,7 @@ export class Navigation {
     this.walkable = new Uint8Array(this.cols * this.rows);
     for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
       const p = this.world(c, r), y = collider.floorHeight(p.x, probeHeight, p.z, probeHeight + 1);
-      if (y === null || y > 2.6) continue;
+      if (y === null || y > 2.6 || collider.insideSolid(p.x, y + 0.9, p.z)) continue;
       this.floor[r * this.cols + c] = y;
       if (!collider.capsuleBlocked(p.x, y + 0.03, p.z, 0.3, M.standHeight, 0.02)) this.walkable[r * this.cols + c] = 1;
     }

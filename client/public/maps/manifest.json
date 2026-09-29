@@ -2,6 +2,56 @@
   "version": 1,
   "maps": [
     {
+      "id": "sarob",
+      "name": "SAROB",
+      "subtitle": "Klassik “mirage” uslubi: palace, A ramp, window, connector, B apartments.",
+      "file": "sarob.glb",
+      "env": {
+        "sky": "day",
+        "sun": [
+          0.5,
+          0.7,
+          0.35
+        ],
+        "sunColor": "#ffdcaa",
+        "sunIntensity": 3.4,
+        "exposure": 1,
+        "fog": "#d8c3a0",
+        "fogDensity": 0.005,
+        "ambient": "#bccad6"
+      },
+      "bounds": {
+        "x": 132,
+        "z": 120
+      },
+      "builtIn": true
+    },
+    {
+      "id": "changtepa",
+      "name": "CHANGTEPA",
+      "subtitle": "Klassik “dust” uslubi: Long A, catwalk, mid doors, B tunnellari.",
+      "file": "changtepa.glb",
+      "env": {
+        "sky": "day",
+        "sun": [
+          -0.35,
+          0.78,
+          0.45
+        ],
+        "sunColor": "#ffe0ae",
+        "sunIntensity": 3.5,
+        "exposure": 1,
+        "fog": "#dcc9a0",
+        "fogDensity": 0.005,
+        "ambient": "#b9c9d8"
+      },
+      "bounds": {
+        "x": 120,
+        "z": 138
+      },
+      "builtIn": true
+    },
+    {
       "id": "sahara",
       "name": "SAHARA OUTPOST",
       "subtitle": "Cho‘l shahri. Uch yo‘lak, ko‘tarilgan A hududi.",

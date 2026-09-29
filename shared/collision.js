@@ -40,6 +40,18 @@ export class MeshCollider {
     return { distance: hit.distance, x: hit.point.x, y: hit.point.y, z: hit.point.z, nx: n.x * flip, ny: n.y * flip, nz: n.z * flip };
   }
 
+  /**
+   * True when the point is enclosed by closed solid geometry (parity test: an upward ray leaves a closed box through
+   * an odd number of faces). Used to reject nav probes that start inside walls; roofs and arches above a street are
+   * whole boxes and count twice.
+   */
+  insideSolid(x, y, z, far = 60) {
+    ray.origin.set(x, y, z); ray.direction.set(0, 1, 0);
+    const hits = this.bvh.raycast(ray, DoubleSide, 0, far);
+    const ys = [...new Set(hits.map(h => Math.round(h.point.y * 1000)))];    // coplanar duplicates count once
+    return ys.length % 2 === 1;
+  }
+
   /** Distance from origin to the first surface, or `far` when the ray is unobstructed. */
   wallDistance(ox, oy, oz, dx, dy, dz, far = 500) {
     const hit = this.raycast(ox, oy, oz, dx, dy, dz, far);

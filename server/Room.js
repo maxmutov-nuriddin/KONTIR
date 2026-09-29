@@ -111,8 +111,10 @@ export class Room {
   pickSpawn(p) {
     const list = this.map.spawns[p.team];
     const taken = new Set([...this.players.values()].filter(q => q !== p && q.team === p.team && q.alive).map(q => q.spawnIndex));
-    let i = p.index % list.length;
-    for (let k = 0; k < list.length; k++) { const c = (p.index + k) % list.length; if (!taken.has(c)) { i = c; break; } }
+    // spawnShift is re-rolled every round, so with more markers than players the positions differ round to round
+    const start = p.index + (this.spawnShift || 0);
+    let i = start % list.length;
+    for (let k = 0; k < list.length; k++) { const c = (start + k) % list.length; if (!taken.has(c)) { i = c; break; } }
     p.spawnIndex = i;
     return list[i];
   }
@@ -152,6 +154,7 @@ export class Room {
       this.lossStreak = { A: 0, B: 0 };
     }
     this.phase = 'buy'; this.phaseEnd = this.tick + secondsToTick(this.timing.freeze); this.result = null;
+    this.spawnShift = Math.floor(Math.random() * 10);
     this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     for (const p of this.players.values()) {
       const keep = !fresh && !halftime && p.carry && p.alive;

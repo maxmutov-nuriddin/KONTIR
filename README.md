@@ -68,7 +68,16 @@ Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 
 
 ## Xaritalar va GLB pipeline
 
-`client/public/maps/*.glb` — server ham, klient ham **bir xil baytlardan** to‘qnashuv BVH quradi (predikta ↔ server farq qilmaydi). Repo ikkita original xaritani olib keladi (`sahara`, `harbor`; `npm run maps` ularni `tools/maps/*.mjs` dan qayta generatsiya qiladi).
+`client/public/maps/*.glb` — server ham, klient ham **bir xil baytlardan** to‘qnashuv BVH quradi (predikta ↔ server farq qilmaydi). Repo to‘rtta xarita bilan keladi (`npm run maps` ularni `tools/maps/*.mjs` dan qayta generatsiya qiladi):
+
+| Xarita | Uslub | Asosiy joylar |
+|---|---|---|
+| **SAROB** | klassik “mirage” layouti | T spawn (sharq), top mid → mid → **sniper window** (ko‘tarilgan xona), **short** → B, **connector** → jungle → A; **palace** (tomli yuqori qavat), **A ramp / tetris**, firebox/triple/sandwich; **B apartments** (tomli koridor), market → CT |
+| **CHANGTEPA** | klassik “dust” layouti | **Long A** (outside long → long doors → long corner → A ramp), **catwalk/short** (mid’dan zinapoya), **mid doors** → CT mid → **B doors/window**, **upper/lower tunnels** (tomli) → B, B platformasi, xbox |
+| SAHARA OUTPOST | original | uch yo‘lak, ko‘tarilgan A |
+| IRON HARBOR | original | konteyner terminali |
+
+Balandliklar (1.2 m qavat), zinapoyalar, rampalar, tomli tunnellar, mashinalar, quduq/favvora va quti to‘plamlari bor; 1.2 m lablarga sakrab chiqish mumkin (CS’dagi kabi). Har jamoada 10 tagacha spawn nuqtasi, server har raund qaysi beshtasi ishlatilishini aralashtiradi. Bot navigatsiyasi to‘qnashuv BVH’dan olinadi (devor ichidagi nuqtalar paritet testi bilan chiqarib tashlanadi). Bu layoutlar Valve fayllaridan emas — CS xaritalarining umumiy tuzilishiga qarab xotiradan qayta yig‘ilgan, o‘lchamlari taxminiy.
 
 **De_Dust2 / De_Mirage** kabi haqiqiy `.glb` layoutlarini ulash:
 
