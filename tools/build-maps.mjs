@@ -14,6 +14,17 @@ import { buildOmbor } from './maps/ombor.mjs';
 const out = resolve(dirname(fileURLToPath(import.meta.url)), '../client/public/maps');
 await mkdir(out, { recursive: true });
 
+// --if-missing (used by predev / prestart / pretest / prebuild): skip when every built-in GLB exists and is newer than
+// the generator sources, so a fresh clone builds its maps once and later runs start instantly.
+if (process.argv.includes('--if-missing')) {
+  const { stat } = await import('node:fs/promises');
+  const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), 'maps');
+  const newestSource = Math.max(...await Promise.all([...(await readdir(srcDir)).map(f => resolve(srcDir, f)), fileURLToPath(import.meta.url), resolve(dirname(fileURLToPath(import.meta.url)), '../shared/geometry.js')].map(async f => (await stat(f)).mtimeMs)));
+  const ids = ['sarob', 'changtepa', 'qishloq', 'ombor', 'sahara', 'harbor'];
+  const fresh = await Promise.all([...ids.map(id => resolve(out, `${id}.glb`)), resolve(out, 'manifest.json')].map(async f => { try { return (await stat(f)).mtimeMs >= newestSource; } catch { return false; } }));
+  if (fresh.every(Boolean)) { console.log('maps: up to date'); process.exit(0); }
+}
+
 const BUILT_IN = {
   sarob: { build: buildSarob, name: 'SAROB', subtitle: 'Klassik “mirage” uslubi: palace, A ramp, window, connector, B apartments.', env: { sky: 'day', sun: [0.5, 0.7, 0.35], sunColor: '#ffdcaa', sunIntensity: 3.4, exposure: 1.0, fog: '#d8c3a0', fogDensity: 0.005, ambient: '#bccad6' } },
   changtepa: { build: buildChangtepa, name: 'CHANGTEPA', subtitle: 'Klassik “dust” uslubi: Long A, catwalk, mid doors, B tunnellari.', env: { sky: 'day', sun: [-0.35, 0.78, 0.45], sunColor: '#ffe0ae', sunIntensity: 3.5, exposure: 1.0, fog: '#dcc9a0', fogDensity: 0.005, ambient: '#b9c9d8' } },
