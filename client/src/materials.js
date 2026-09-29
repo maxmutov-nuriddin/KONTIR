@@ -173,8 +173,8 @@ export function recipeFor(name) {
 
 const cache = new Map();
 /** Bakes albedo / normal / ORM canvases for a recipe. Result textures are shared (never dispose per-material). */
-export function textureSet(recipe, { size = 512, anisotropy = 8, normalStrength = 2.4 } = {}) {
-  const key = `${recipe}:${size}`;
+export function textureSet(recipe, { size = 256, anisotropy = 8, normalStrength = 2.4 } = {}) {
+  const key = `${recipe}:${size}:${normalStrength}`;
   if (cache.has(key)) return cache.get(key);
   const fn = RECIPES[recipe] || RECIPES.default;
   const height = new Float32Array(size * size), albedo = new ImageData(size, size), orm = new ImageData(size, size), normal = new ImageData(size, size);
@@ -193,7 +193,7 @@ export function textureSet(recipe, { size = 512, anisotropy = 8, normalStrength 
   const make = (data, srgb) => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
     canvas.getContext('2d').putImageData(data, 0, 0);
-    const tex = new THREE.CanvasTexture(canvas);
+    const tex = new THREE.CanvasTexture(canvas); tex.userData.shared = true;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = anisotropy; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     return tex;

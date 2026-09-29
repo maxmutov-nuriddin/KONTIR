@@ -1,7 +1,7 @@
 // Deterministic inventory / weapon state machine. The server runs it authoritatively; the client runs an
 // identical copy (WeaponManager) for prediction and re-syncs it from every snapshot.
 //
-// Time base is `time`: one unit per processed command (== one 64 Hz tick while the command queue is fed),
+// Time base is `time`: one unit per 64 Hz simulation step, including neutral input during silence,
 // so predicted and authoritative timers stay comparable without sharing a wall clock.
 import { DT, TICK_RATE } from './constants.js';
 import { GRENADES, MAX_GRENADES, SLOT, WEAPONS, samplePattern, secondsToTicks } from './weapons.js';
@@ -14,8 +14,9 @@ export class Inventory {
   /** New round / new half: standard loadout (pistol + knife). */
   reset(team = this.team) {
     this.team = team;
-    this.slots = { 1: null, 2: 'glock', 3: 'knife', 4: null, 5: null };
-    this.ammo = { glock: { mag: WEAPONS.glock.mag, reserve: WEAPONS.glock.reserve } };
+    const pistol = team === 'COUNTER_TERRORIST' ? 'usp' : 'glock';
+    this.slots = { 1: null, 2: pistol, 3: 'knife', 4: null, 5: null };
+    this.ammo = { [pistol]: { mag: WEAPONS[pistol].mag, reserve: WEAPONS[pistol].reserve } };
     this.grenades = { he: 0, flash: 0, smoke: 0 };
     this.util = null;
     this.current = 2; this.previous = 3;
@@ -140,6 +141,7 @@ export class Inventory {
       a.mag += take; a.reserve -= take; this.reloading = false;
       events.push({ type: 'reloaded', weapon: w.id });
     }
+    if (!ctx.canFire) this.pin = 0;
     const ready = this.time >= this.drawUntil;
     const fireEdge = cmd.fire && !this.lastFire, fire2Edge = cmd.fire2 && !this.lastFire2;
 

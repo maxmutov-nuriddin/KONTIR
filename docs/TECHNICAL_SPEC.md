@@ -21,3 +21,14 @@ Metr = unit × 0.0254. Yugurish 250, Shift 130, cho‘kish 100 u/s; `accelerate 
 
 ## Test strategiyasi
 `tests/movement.test.js` (fizika, GLB), `inventory.test.js` (slot/Q/recoil/zarar), `server.test.js` (5v5, MR12, buy, lag comp, bomba, granata, 5v5 bot match), `network.test.js` (haqiqiy Socket.IO), `browser-smoke.mjs` (haqiqiy brauzer).
+
+
+## Resurslar va vaqt chegaralari (2026-09-29)
+
+`client/src/frame-pacer.js` render chastotasini cheklaydi: o‘yinda 30/60/90/120 FPS, menyuda ≤30 FPS, yashirin tabda render yo‘q. Simulyatsiya DT = 1/64 s bo‘lib qoladi. YUQORI rejimida 2 × 1024 soya, ULTRA rejimida 3 × 2048 soya va postprocessing; TEZKOR rejimida CSM va makro shader o‘chirilgan.
+
+`client/src/dispose.js` sahna geometriyasi, material va teksturalarining egaligini boshqaradi. Umumiy qurol materiallari va protsedur teksturalar belgilangan keshda qoladi; shaxsiy aktyor/granata/label resurslari, eski soyalar va postprocessing passlari chiqariladi. Audio ovozlari tugaganda ularga tegishli tugunlar uziladi.
+
+Server har o‘yinchini har tickda bir marta yangilaydi. Plant/defuse uchun vaqt, yerda turish, tezlik, masofa, balandlik va devor to‘sig‘i tekshiriladi. Bomba portlash tickida tugallanayotgan defusedan ustun turadi. Raund tugaganidan keyin uchayotgan granatalar mavjud bo‘lib qoladi; keyin o‘lgan o‘yinchi qurolini keyingi raundga olib o‘tmaydi.
+
+Qamrov va qolgan cheklovlar: [AUDIT.md](AUDIT.md).

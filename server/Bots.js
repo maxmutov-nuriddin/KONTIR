@@ -53,6 +53,7 @@ export class BotBrain {
     const room = this.room, c = p.char, inv = p.inv;
     const cmd = { ...neutralInput(), yaw: c.yaw, pitch: c.pitch, viewTick: room.tick };
     if (!p.alive || (room.phase !== 'live' && room.phase !== 'warmup')) return cmd;
+    if (!this.site) this.newRound();
     const tick = room.tick, eye = room.eye(p), weapon = inv.weapon();
 
     // ---- perception (every 3rd tick) ----
@@ -61,6 +62,7 @@ export class BotBrain {
       if (seen) { if (!this.target || this.target.t !== seen.t) this.acquired = tick; this.target = seen; this.seenAt = tick; }
       else if (tick - this.seenAt > TICK_RATE * 1.5) this.target = null;
     }
+    if (p.flashUntil > tick) { this.target = null; return cmd; }
     const engaged = this.target && tick - this.seenAt < 12;
 
     // ---- weapon housekeeping ----
@@ -139,7 +141,7 @@ export class BotBrain {
       if (goal.kind === 'defuse') cmd.interact = true;
       return cmd;
     }
-    if (goal.key !== this.goalKey || tick - this.pathTick > TICK_RATE * 2 || !this.path.length) {
+    if (goal.key !== this.goalKey || tick - this.pathTick > TICK_RATE * 2) {
       this.path = room.nav.path(c, goal); this.pathTick = tick; this.goalKey = goal.key;
     }
     while (this.path.length && Math.hypot(this.path[0].x - c.x, this.path[0].z - c.z) < 0.9) this.path.shift();

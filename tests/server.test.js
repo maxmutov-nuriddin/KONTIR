@@ -148,7 +148,7 @@ test('MR12: sides swap after 12 rounds, money resets, first to 13 wins the match
   for (let i = 0; i < 6; i++) { win('TERRORIST'); win('COUNTER_TERRORIST'); }
   assert.equal(room.round, 12); while (room.phase !== 'buy') room.step();
   assert.equal(room.round, 13); assert.equal(t.team, 'COUNTER_TERRORIST', 'squad swapped sides'); assert.equal(c.team, 'TERRORIST');
-  assert.equal(t.money, RULES.startMoney); assert.equal(t.inv.weaponId(2), 'glock');
+  assert.equal(t.money, RULES.startMoney); assert.equal(t.inv.weaponId(2), 'usp');
   assert.equal(room.snapshot('t').half, 2);
   for (let i = 0; i < 7; i++) win('COUNTER_TERRORIST'); // t's squad is CT now
   assert.equal(room.phase === 'matchEnd' || room.phase === 'post', true);
@@ -182,4 +182,90 @@ test('full bot match runs stably (5v5, all bots) and produces kills', () => {
   assert.ok(ms / (TICK_RATE * 120) < 4);
   Math.random = realRandom;
   for (const p of room.players.values()) assert.ok(Number.isFinite(p.char.x) && Math.abs(p.char.x) < 200);
+});
+
+test('grenade limits and inherited property names reject without charging money', () => {
+  const room = mkRoom(); const p = room.add('shop', 'Shop'); room.add('enemy', 'Enemy', 'COUNTER_TERRORIST'); room.start(); p.money = 16000;
+  assert.ok(room.buy(p.id, 'he').ok);
+  const money = p.money;
+  assert.ok(room.buy(p.id, 'he').error); assert.equal(p.money, money);
+  for (const item of ['__proto__', 'constructor', 'toString']) assert.ok(room.buy(p.id, item).error);
+  for (const item of ['flash', 'flash', 'smoke']) assert.ok(room.buy(p.id, item).ok);
+  const full = p.money; assert.ok(room.buy(p.id, 'flash').error); assert.equal(p.money, full);
+});
+
+test('missing input cannot freeze gravity or reload and spam cannot advance more than one tick', () => {
+  const room = mkRoom({ ...fast, round: 60 }); const p = room.add('idle', 'Idle'); room.add('other', 'Other', 'COUNTER_TERRORIST'); toLive(room);
+  Object.assign(p.char, openSpot(0, 0)); p.char.y += 6; p.char.grounded = false;
+  p.inv.ammo.glock.mag = 0; send(room, p.id, { reload: true }); room.step();
+  const y = p.char.y; run(room, 32); assert.ok(p.char.y < y - 1);
+  run(room, 180); assert.ok(p.char.grounded); assert.ok(p.inv.ammo.glock.mag > 0);
+  const time = p.inv.time;
+  for (let i = 0; i < 128; i++) send(room, p.id);
+  run(room, 10); assert.equal(p.inv.time - time, 10);
+});
+
+test('commands from a previous life or round cannot act in a new spawn', () => {
+  const room = mkRoom(); const p = room.add('stale', 'Stale');
+  const command = { ...neutralInput(), seq: 1, epoch: room.epoch, life: p.life };
+  room.respawn(p); room.enqueue(p.id, [command]); assert.equal(p.queue.length, 0);
+  room.enqueue(p.id, [{ ...command, life: p.life, forward: NaN }]); assert.equal(p.queue.length, 0);
+});
+
+test('grenade events preserve event type and expose grenadeType; lethal HE reports killed', () => {
+  const room = mkRoom(); const p = room.add('grenadier', 'G'); const enemy = room.add('victim', 'V', 'COUNTER_TERRORIST');
+  Object.assign(enemy.char, openSpot(0, 0)); enemy.health = 1;
+  room.detonate({ id: 12, type: 'he', owner: p.id, team: p.team, x: enemy.char.x, y: enemy.char.y + 1, z: enemy.char.z });
+  assert.equal(room.events.find(e => e.type === 'detonate').grenadeType, 'he');
+  assert.equal(room.events.find(e => e.type === 'hit').killed, true);
+});
+
+test('plant requires site elevation, defuse cannot pass through walls or continue while firing', () => {
+  const room = mkRoom({ ...fast, round: 60 }); const t = room.add('planter', 'T'); const c = room.add('defuser', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  const site = room.map.sites[0]; Object.assign(t.char, site, { y: site.y + 4, grounded: true, vx: 0, vz: 0 });
+  t.inv.current = SLOT.OBJECTIVE; t.inv.drawUntil = 0; room.objectives(t, { ...neutralInput(), fire: true }); assert.equal(t.action, null);
+  Object.assign(c.char, openSpot(0, 0), { grounded: true, vx: 0, vz: 0 });
+  room.bomb = { state: 'planted', x: c.char.x, y: c.char.y, z: c.char.z, explodeTick: room.tick + 1000 };
+  const sight = room.hasSight; room.hasSight = () => false;
+  room.objectives(c, { ...neutralInput(), interact: true }); assert.equal(c.action, null);
+  room.hasSight = sight; room.objectives(c, { ...neutralInput(), interact: true, fire: true }); assert.equal(c.action, null);
+});
+
+test('bomb deadline wins a simultaneous final defuse tick and cancels round actions', () => {
+  const room = mkRoom({ ...fast, round: 60 }); room.add('t', 'T'); const c = room.add('c', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  Object.assign(c.char, openSpot(0, 0)); c.kit = true;
+  room.bomb = { state: 'planted', x: c.char.x, y: c.char.y, z: c.char.z, explodeTick: room.tick + 1 };
+  c.action = { kind: 'defuse', progress: RULES.defuseKitSeconds - 1 / TICK_RATE };
+  send(room, c.id, { interact: true }); room.step();
+  assert.equal(room.bomb.state, 'exploded'); assert.equal(room.result.winner, 'TERRORIST'); assert.equal(c.action, null);
+});
+
+test('flash-blinded bots stop firing and weaker flashes do not shorten existing blindness', () => {
+  const room = mkRoom(); room.add('human', 'Human'); room.fillBots(); toLive(room);
+  const bot = [...room.players.values()].find(p => p.bot); bot.flashUntil = room.tick + 500;
+  assert.equal(bot.brain.command(bot).fire, false);
+  room.detonate({ id: 22, type: 'flash', owner: 'human', team: 'TERRORIST', x: bot.char.x, y: bot.char.y + 1.6, z: bot.char.z });
+  assert.ok(bot.flashUntil >= room.tick + 500);
+});
+
+test('a dropped airborne bomb falls and rests on the map', () => {
+  const room = mkRoom(); const p = room.add('carrier', 'T'); room.add('ct', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  Object.assign(p.char, openSpot(0, 0)); const floor = p.char.y; p.char.y += 5;
+  room.dropBomb(p); for (let i = 0; i < 200; i++) room.stepDroppedBomb();
+  assert.ok(Math.abs(room.bomb.y - floor) < 0.02);
+});
+
+
+test('post-round projectile deaths cannot carry weapons into the next round', () => {
+  const room = mkRoom(); const t = room.add('t', 'T'); room.add('ct', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  t.inv.give('ak47'); room.endRound('TERRORIST', 'elimination');
+  assert.ok(t.carry); room.kill(t, null, 'he', false); room.beginRound();
+  assert.equal(t.inv.weaponId(SLOT.PRIMARY), null); assert.equal(t.alive, true);
+});
+
+test('packet jitter preserves held jump state without inventing a fresh jump press', () => {
+  const room = mkRoom({ ...fast, round: 60 }); const p = room.add('jump', 'Jump'); room.add('ct', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  Object.assign(p.char, openSpot(0, 0)); send(room, p.id, { jump: true }); room.step();
+  assert.equal(p.char.prevJump, true); room.step(); assert.equal(p.char.prevJump, true);
+  assert.equal(room.nextCommand(p).jump, true);
 });

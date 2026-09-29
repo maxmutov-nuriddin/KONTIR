@@ -14,7 +14,7 @@ export function buildMapData(meta, bytes) {
   const byName = (prefix) => parsed.markers.filter(m => m.name.toLowerCase().startsWith(prefix)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const spawns = {
     TERRORIST: byName('spawn_t_').map(m => ({ x: m.x, y: m.y, z: m.z, yaw: m.yaw || 0 })),
-    COUNTER_TERRORIST: byName('spawn_ct_').map(m => ({ x: m.x, y: m.y, z: m.z, yaw: m.yaw || Math.PI })),
+    COUNTER_TERRORIST: byName('spawn_ct_').map(m => ({ x: m.x, y: m.y, z: m.z, yaw: m.yaw ?? Math.PI })),
   };
   for (const team of Object.keys(spawns)) {
     if (!spawns[team].length) throw new Error(`${meta.id}: no spawn markers for ${team}`);

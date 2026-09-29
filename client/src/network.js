@@ -34,17 +34,11 @@ export class Network {
       if (error) reject(new Error('Server javob bermadi.')); else if (response?.error) reject(new Error(response.error)); else resolve(response);
     }));
   }
-  /**
-   * Sends every command the server has not seen yet (a slow frame can produce many ticks at once) plus a short
-   * redundant tail so a dropped volatile packet never loses an edge-triggered input (slot, Q, jump tap).
-   */
+  /** Resend the oldest unacknowledged commands in order; never discard an input edge. */
   send(pending) {
     if (!this.socket.connected || !pending.length) return;
-    const fresh = pending.filter(c => c.seq > this.lastSent), tail = pending.filter(c => c.seq <= this.lastSent).slice(-4);
-    if (!fresh.length && !tail.length) return;
-    const batch = [...tail, ...fresh].slice(-32);
-    if (fresh.length) this.lastSent = fresh.at(-1).seq;
-    this.socket.volatile.emit('commands', batch);
+    // Volatile packets may be dropped, so the authoritative ack (not lastSent) owns retirement.
+    this.socket.volatile.emit('commands', pending.slice(0, 32));
   }
   leave() { this.socket.emit('leave'); this.socket.disconnect(); this.id = null; this.latest = null; this.frames = []; }
   /** Estimated authoritative tick of the world as currently *rendered* (interpolation delay included). Sent as viewTick for lag compensation. */

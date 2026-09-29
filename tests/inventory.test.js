@@ -55,7 +55,7 @@ test('rifle rate of fire matches interval and the recoil pattern climbs then rec
   idle(inv, 200, {}); assert.equal(inv.shots, 0);
 });
 test('semi-auto pistols need a fresh click; magazines and reload work', () => {
-  const inv = new Inventory('COUNTER_TERRORIST'); idle(inv, 100);
+  const inv = new Inventory('TERRORIST'); idle(inv, 100);
   const held = idle(inv, 64, { fire: true }).filter(e => e.type === 'shot');
   assert.equal(held.length, 1); idle(inv, 2);
   for (let i = 0; i < 19; i++) { inv.step(cmd({ fire: true })); idle(inv, 12); }
@@ -96,4 +96,12 @@ test('inventory serialisation round-trips for client reconciliation', () => {
   const b = Inventory.from(JSON.parse(JSON.stringify(a.toJSON())));
   const c1 = cmd({ fire: true }); assert.deepEqual(a.step(c1), b.step(c1)); assert.deepEqual(a.toJSON(), b.toJSON());
   assert.ok(samplePattern(WEAPONS.ak47, 3.5).pitch > samplePattern(WEAPONS.ak47, 3).pitch);
+});
+
+test('a grenade pin cannot produce a throw after combat has ended', () => {
+  const inv = new Inventory(); inv.give('he', { select: true });
+  for (let i = 0; i < 80; i++) inv.step(neutralInput());
+  inv.step({ ...neutralInput(), fire: true }); assert.ok(inv.pin);
+  const events = inv.step(neutralInput(), { canFire: false });
+  assert.equal(events.some(e => e.type === 'throw'), false); assert.equal(inv.grenades.he, 1); assert.equal(inv.pin, 0);
 });

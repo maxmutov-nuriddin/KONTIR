@@ -2,6 +2,7 @@
 // draw / fire / reload / melee / grenade animation, CS recoil view-punch and the muzzle flash.
 // The rules run in shared/Inventory (identical to the server), this class adds prediction hooks and visuals.
 import * as THREE from 'three';
+import { disposeTree } from './src/dispose.js';
 import { Inventory } from '../shared/inventory.js';
 import { GRENADES, SLOT, WEAPONS } from '../shared/weapons.js';
 import { DT } from '../shared/constants.js';
@@ -13,7 +14,9 @@ const seg = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
 // resting pose of each rig inside the view space (metres, radians)
 const REST = {
   ak47: { p: [0.155, -0.2, -0.56], r: [0.0, 0.055, 0.0] }, m4a4: { p: [0.155, -0.2, -0.52], r: [0.0, 0.055, 0.0] },
-  deagle: { p: [0.115, -0.15, -0.42], r: [0.02, 0.05, 0.0] }, glock: { p: [0.11, -0.145, -0.4], r: [0.02, 0.05, 0.0] },
+  galil: { p: [0.155, -0.2, -0.55], r: [0.0, 0.055, 0.0] }, famas: { p: [0.15, -0.19, -0.51], r: [0.0, 0.05, 0.0] },
+  awp: { p: [0.16, -0.21, -0.58], r: [0.0, 0.05, 0.0] },
+  deagle: { p: [0.115, -0.13, -0.38], r: [0.02, 0.04, 0.0] }, glock: { p: [0.11, -0.125, -0.36], r: [0.02, 0.04, 0.0] }, usp: { p: [0.11, -0.125, -0.36], r: [0.02, 0.04, 0.0] },
   knife: { p: [0.14, -0.15, -0.42], r: [-0.25, 0.5, 0.45] }, he: { p: [0.115, -0.13, -0.4], r: [0.1, 0.0, 0.0] },
   flash: { p: [0.115, -0.13, -0.4], r: [0.1, 0.0, 0.0] }, smoke: { p: [0.115, -0.125, -0.4], r: [0.1, 0.0, 0.0] }, c4: { p: [0.05, -0.19, -0.42], r: [0.35, 0.0, 0.0] },
 };
@@ -45,7 +48,7 @@ export class WeaponManager {
   emit(name, data) { this.handlers[name]?.(data); }
   setTeam(team) {
     if (team === this.team) return;
-    this.team = team; this.arms.removeFromParent(); this.arms = buildArms(team); this.inventory.team = team; this.setActive(this.activeId, true);
+    this.team = team; disposeTree(this.arms); this.arms = buildArms(team); this.inventory.team = team; this.setActive(this.activeId, true);
   }
   /** Mouse wheel: cycle to the next / previous owned slot. Returns the slot to request, or 0. */
   wheelSlot(dir) {

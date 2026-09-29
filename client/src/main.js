@@ -1,4 +1,5 @@
 import './style.css';
+import { FramePacer } from './frame-pacer.js';
 import * as THREE from 'three';
 import { UI } from './ui.js';
 import { WorldEngine } from '../WorldEngine.js';
@@ -13,8 +14,9 @@ import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
 
 const store = { get: (k, d) => { try { return localStorage.getItem(`kontir.${k}`) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(`kontir.${k}`, v); } catch { /* private mode */ } } };
 const ui = new UI(), audio = new AudioEngine();
+const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for battery/heat
 let world;
-try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'high') }); }
+try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'low') }); }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
@@ -30,11 +32,19 @@ const hero = buildWeaponRig('ak47'); hero.group.scale.setScalar(1.7); hero.group
 const heroHolder = new THREE.Group(); heroHolder.add(hero.group); heroHolder.position.set(0.5, -0.16, -1.05); world.viewScene.add(heroHolder);
 
 // ---------------------------------------------------------------------------------------------- maps
-async function loadMapById(mapId, silent = false) {
+let mapLoading = Promise.resolve();
+function loadMapById(mapId, silent = false) {
+  const loading = mapLoading.catch(() => {}).then(() => loadMapNow(mapId, silent));
+  mapLoading = loading;
+  return loading;
+}
+async function loadMapNow(mapId, silent = false) {
   const meta = maps.find(m => m.id === mapId); if (!meta) throw new Error('Xarita topilmadi');
   if (loadedMap === mapId && world.map) return;
   if (!silent) ui.showBusy('XARITA YUKLANMOQDA…');
+  loadedMap = null;
   try { await world.loadMap(meta, (f, label) => ui.setLoading(f, label)); loadedMap = mapId; }
+  catch (error) { world.disposeMap(); throw error; }
   finally { ui.hideBusy(); }
 }
 
@@ -44,6 +54,7 @@ function receive(next) {
   state = next;
   const reset = prediction.reconcile(state, id);
   if (reset) controller.setAim(prediction.char.yaw, 0);
+  if (!['buy', 'warmup'].includes(state.phase) && ui.modal.querySelector('.buy-cols')) ui.modal.close();
   const me = state.players.find(p => p.id === id);
   for (const event of state.events) if (event.id > lastEvent) { lastEvent = event.id; handleEvent(event, me); ui.event(event, id, state.players); }
   world.effects.syncSmokes?.(state.smokes);
@@ -91,9 +102,9 @@ function handleEvent(e, me) {
     case 'bounce': audio.bounce(e); break;
     case 'detonate': {
       const d = V.set(e.x - world.camera.position.x, e.y - world.camera.position.y, e.z - world.camera.position.z).length();
-      if (e.type === 'he') { world.effects.explosion(e.x, e.y, e.z, 'he'); audio.explosion(e); world.shake += Math.max(0, 3 - d * 0.12); }
-      else if (e.type === 'flash') { world.effects.flashPop(new THREE.Vector3(e.x, e.y + 0.3, e.z)); audio.flashbang(e); }
-      else if (e.type === 'smoke') audio.smokePop(e);
+      if (e.grenadeType === 'he') { world.effects.explosion(e.x, e.y, e.z, 'he'); audio.explosion(e); world.shake += Math.max(0, 3 - d * 0.12); }
+      else if (e.grenadeType === 'flash') { world.effects.flashPop(new THREE.Vector3(e.x, e.y + 0.3, e.z)); audio.flashbang(e); }
+      else if (e.grenadeType === 'smoke') audio.smokePop(e);
       break;
     }
     case 'flash': if (e.target === id) { ui.flash(e.duration, e.full); audio.ring(Math.min(6, e.duration + 1)); } break;
@@ -127,9 +138,11 @@ async function join(options) {
     if (my !== generation) { network.leave(); return; }
     id = result.id; state = result.snapshot;
     await loadMapById(state.mapId, true);
+    if (!network.socket.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
     if (my !== generation) { network.leave(); return; }
     weapons.setTeam(result.team);
     prediction = new Prediction(world.map.collider, weapons);
+    state = network.latest || state;
     playing = true; lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
     ui.showGame(world.map.name); ui.hideBusy(); receive(state);
     if (state.phase !== 'warmup') ui.resume(true);
@@ -144,12 +157,28 @@ function leave() {
 }
 
 // ---------------------------------------------------------------------------------------------- buy
+let isBuyOpen = false;
 function openBuy() {
+  if (isBuyOpen && ui.modal.open) {
+    ui.modal.close();
+    return;
+  }
   const me = state?.players.find(p => p.id === id); if (!playing || !me) return;
   if (!(state.phase === 'buy' || state.phase === 'warmup')) { ui.toast('Xarid vaqti tugagan. Keyingi raundni kuting.'); return; }
   if (!me.alive) { ui.toast('Yo‘q qilinganda xarid qilib bo‘lmaydi.'); return; }
+  isBuyOpen = true;
   controller.unlock(); ui.resume(false);
-  const render = () => { const p = state.players.find(q => q.id === id); ui.buy(state, p, async item => { try { await network.request('buy', item); audio.click(); setTimeout(() => { if (ui.modal.open && ui.modal.querySelector('.buy-cols')) render(); }, 140); } catch (e) { ui.toast(e.message); } }); };
+  const render = () => {
+    if (!playing || !state || !['buy', 'warmup'].includes(state.phase) || !isBuyOpen) return;
+    const p = state.players.find(q => q.id === id);
+    ui.buy(state, p, async item => {
+      try {
+        await network.request('buy', item);
+        audio.click();
+        setTimeout(() => { if (ui.modal.open && ui.modal.querySelector('.buy-cols') && isBuyOpen) render(); }, 140);
+      } catch (e) { ui.toast(e.message); }
+    });
+  };
   render();
 }
 
@@ -159,19 +188,32 @@ document.querySelector('#practice').onclick = () => join({ practice: true, name:
 document.querySelector('#quick').onclick = () => join({ quick: true, name: store.get('name', 'Operator') });
 document.querySelector('#online').onclick = () => {
   ui.dialog(`<small class="eyebrow">MULTIPLAYER</small><h2>Xonaga qo‘shiling.</h2><p>Yangi xona oching yoki do‘stingiz bilan bir xil kodni kiriting. Har jamoada 5 o‘rin bor; T / CT ni server tenglashtiradi.</p>
-    <form id="join-form"><label for="operator-name">OPERATOR NOMI</label><input id="operator-name" value="${store.get('name', 'Operator')}" maxlength="18" required><label for="room-input">XONA KODI</label><input id="room-input" value="OPS001" minlength="4" maxlength="8" pattern="[A-Za-z0-9]{4,8}" required><div id="join-error" role="alert"></div><button id="join-submit" class="primary full">XONAGA KIRISH →</button></form>`);
+    <form id="join-form"><label for="operator-name">OPERATOR NOMI</label><input id="operator-name" value="" maxlength="18" required><label for="room-input">XONA KODI</label><input id="room-input" value="OPS001" minlength="4" maxlength="8" pattern="[A-Za-z0-9]{4,8}" required><div id="join-error" role="alert"></div><button id="join-submit" class="primary full">XONAGA KIRISH →</button></form>`);
+  document.querySelector('#operator-name').value = store.get('name', 'Operator');
   document.querySelector('#join-form').onsubmit = e => { e.preventDefault(); document.querySelector('#join-submit').disabled = true; store.set('name', nameInput()); void join({ name: nameInput(), code: document.querySelector('#room-input').value }); };
 };
 document.querySelector('#guide-nav').onclick = () => ui.controls(); document.querySelector('#play-nav').onclick = () => ui.modal.close();
 document.querySelector('#team').onclick = e => { team = team === 'TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'; e.target.textContent = `${team === 'TERRORIST' ? 'TERRORIST' : 'COUNTER-TERRORIST'} ⇄`; };
-document.querySelector('#settings').onclick = () => ui.settings({ quality: world.qualityName, sensitivity: controller.controls.pointerSpeed, volume: audio.volume,
+document.querySelector('#settings').onclick = () => ui.settings({ quality: world.qualityName, sensitivity: controller.controls.pointerSpeed, volume: audio.volume, fpsLimit: pacer.limit, onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
   onQuality: q => { world.setQuality(q); store.set('quality', q); }, onSensitivity: v => { controller.setSensitivity(v); store.set('sens', v); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
 document.addEventListener('pointerlockerror', () => ui.toast('Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.'));
 ui.modal.addEventListener('cancel', e => { if (ui.locked) { e.preventDefault(); if (state?.phase === 'warmup') leave(); } });
-ui.modal.addEventListener('close', () => { if (playing && state && ui.modal.querySelector) { if (!controller.locked && state.phase !== 'warmup' && !resultShown) ui.resume(true); } });
-document.addEventListener('visibilitychange', () => { controller.clearInput(); acc = 0; });
+ui.modal.addEventListener('close', () => {
+  if (isBuyOpen) {
+    isBuyOpen = false;
+    ui.resume(false);
+    if (playing) { try { controller.lock(); } catch { /* user click fallback */ } }
+    return;
+  }
+  if (playing && state && ui.modal.querySelector) { if (!controller.locked && state.phase !== 'warmup' && !resultShown) ui.resume(true); }
+});
+document.addEventListener('visibilitychange', () => {
+  controller.clearInput(); acc = 0; sendAcc = 0; previous = performance.now(); pacer.next = null;
+  if (document.hidden) { controller.unlock(); audio.ctx?.suspend().catch(() => {}); }
+  else if (playing) audio.ctx?.resume().catch(() => {});
+});
 
 // ---------------------------------------------------------------------------------------------- frame loop
 // debug / screenshot hook: window.__setCam(x, y, z, yaw, pitch) pins the camera, window.__setCam(null) releases it
@@ -180,10 +222,11 @@ window.__setCam = (x, y, z, yaw = 0, pitch = 0) => { debugCam = x === null ? nul
 let previous = performance.now(), slowSince = 0, specId = null;
 const meshQ = new THREE.Vector3();
 function frame(nowMs) {
+  if (!pacer.ready(nowMs, { hidden: document.hidden, active: playing && controller.locked })) return;
   const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.min(0.25, raw); fps += (1 / Math.max(0.001, raw) - fps) * 0.04;
   const now = performance.now();
   // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
-  if (playing && fps < 28 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(world.qualityName === 'ultra' ? 'high' : 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
+  if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(world.qualityName === 'ultra' ? 'high' : 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
   heroHolder.visible = !playing; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {
@@ -210,7 +253,7 @@ function frame(nowMs) {
       weapons.update(dt, controller.viewmodel, { wallPush });
     } else {
       // spectate: follow a living teammate (else anyone) through their eyes; otherwise tilt the death camera
-      const remote = network.remote(now), spec = remote.find(p => p.alive && p.id !== id && p.team === me?.team) || remote.find(p => p.alive && p.id !== id);
+      const remote = network.remote(now), spec = remote.find(p => p.alive && p.id !== id && p.team === me?.team);
       if (spec && state.phase !== 'warmup') { world.setCamera(V.set(spec.char.x, spec.char.y + 1.62 - 0.57 * (spec.char.crouch || 0), spec.char.z), spec.char.yaw, spec.char.pitch, 0); ui.spectate(spec.name); specId = spec.id; }
       else { world.setCamera(pose.eye, controller.yaw, Math.max(-0.6, controller.pitch - 0.25), 0.25); specId = null; }
       weapons.root.visible = false;
@@ -246,4 +289,4 @@ world.renderer.setAnimationLoop(frame);
 })();
 
 Object.defineProperty(window, '__KONTIR__', { get: () => ({ playing, state, id, predicted: prediction?.char, pending: prediction?.pending.length, drawCalls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles,
-  inventory: weapons.inventory.toJSON(), activeWeapon: weapons.activeWeaponMesh?.name, visibleRigs: [...weapons.rigs.values()].filter(r => r.group.visible).map(r => r.id), crouchFactor: controller.crouchFactor, eye: controller.eye.toArray(), world, controller, weapons, audio, TICK_RATE, WEAPONS }) });
+  fpsLimit: pacer.limit, inventory: weapons.inventory.toJSON(), activeWeapon: weapons.activeWeaponMesh?.name, visibleRigs: [...weapons.rigs.values()].filter(r => r.group.visible).map(r => r.id), crouchFactor: controller.crouchFactor, eye: controller.eye.toArray(), world, controller, weapons, audio, TICK_RATE, WEAPONS }) });

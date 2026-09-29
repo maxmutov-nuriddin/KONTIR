@@ -10,7 +10,7 @@ let shared = null;
 
 export function weaponMaterials() {
   if (shared) return shared;
-  const std = (o, recipe, extra) => { const m = new THREE.MeshStandardMaterial(o); if (recipe) applyPBR(m, recipe, { size: 512, ...extra }); return m; };
+  const std = (o, recipe, extra) => { const m = new THREE.MeshStandardMaterial(o); if (recipe) applyPBR(m, recipe, { size: 256, ...extra }); return m; };
   shared = {
     metal: std({ color: 0x9aa1a6, metalness: 1, roughness: 1 }, 'gunmetal', { normalScale: 0.5 }),
     darkMetal: std({ color: 0x565b60, metalness: 1, roughness: 1 }, 'gunmetal', { normalScale: 0.5 }),
@@ -30,6 +30,7 @@ export function weaponMaterials() {
     wire: std({ color: 0x9d2b25, roughness: 0.6, metalness: 0 }, null),
     wireBlue: std({ color: 0x24457a, roughness: 0.6, metalness: 0 }, null),
   };
+  for (const m of Object.values(shared)) m.userData.shared = true;
   return shared;
 }
 
@@ -157,7 +158,7 @@ function buildDeagle(M) {
   const mag = new THREE.Group(); mag.position.set(0, -0.15, 0.03); g.add(mag); parts.mag = mag;
   part(mag, box(0.026, 0.01, 0.046, 0.002), M.darkMetal, 0, 0, 0);
   return { group: g, muzzle: marker(g, 0, 0.026, -0.275, 'muzzle'), eject: marker(g, 0.02, 0.04, -0.05, 'eject'), parts,
-    hands: { right: { p: [0.004, -0.06, 0.03], r: [0.2, 0, 0] }, left: { p: [-0.045, -0.085, 0.0], r: [0.3, 0.15, 0.2], support: true } }, length: 0.4 };
+    hands: { right: { p: [0.014, -0.08, 0.065], r: [0.2, -0.12, 0.22] }, left: { p: [-0.02, -0.095, 0.055], r: [0.32, 0.25, -0.22], support: true } }, length: 0.4 };
 }
 function buildGlock(M) {
   const g = new THREE.Group(), parts = {};
@@ -176,7 +177,7 @@ function buildGlock(M) {
   const mag = new THREE.Group(); mag.position.set(0, -0.125, 0.03); g.add(mag); parts.mag = mag;
   part(mag, box(0.024, 0.01, 0.036, 0.002), M.polymer, 0, 0, 0);
   return { group: g, muzzle: marker(g, 0, 0.034, -0.19, 'muzzle'), eject: marker(g, 0.018, 0.042, -0.03, 'eject'), parts,
-    hands: { right: { p: [0.004, -0.055, 0.025], r: [0.2, 0, 0] }, left: { p: [-0.045, -0.075, 0.0], r: [0.3, 0.15, 0.2], support: true } }, length: 0.3 };
+    hands: { right: { p: [0.012, -0.07, 0.055], r: [0.2, -0.12, 0.22] }, left: { p: [-0.018, -0.082, 0.045], r: [0.32, 0.25, -0.22], support: true } }, length: 0.3 };
 }
 
 // ---------------------------------------------------------------------------------------------- melee / utility
@@ -234,7 +235,7 @@ function buildC4(M) {
   return { group: g, muzzle: null, eject: null, parts, hands: { right: { p: [0.07, -0.03, 0.03], r: [0.2, 0.0, 0] }, left: { p: [-0.07, -0.03, 0.03], r: [0.2, 0, 0], support: true } }, length: 0.25 };
 }
 
-const BUILDERS = { ak47: buildAK47, m4a4: buildM4A4, deagle: buildDeagle, glock: buildGlock, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, c4: buildC4 };
+const BUILDERS = { ak47: buildAK47, m4a4: buildM4A4, deagle: buildDeagle, glock: buildGlock, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, c4: buildC4, usp: buildGlock, awp: buildM4A4, famas: buildM4A4, galil: buildAK47 };
 
 export function buildWeaponRig(id) {
   const M = weaponMaterials(), rig = BUILDERS[id](M);

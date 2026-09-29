@@ -79,5 +79,6 @@ export function validCommand(c) {
   if (Math.abs(c.forward) > 1.0001 || Math.abs(c.right) > 1.0001 || Math.abs(c.yaw) > Math.PI * 64 || Math.abs(c.pitch) > Math.PI / 2 + 0.01) return false;
   if (!Number.isInteger(c.slot) || c.slot < 0 || c.slot > 5) return false;
   if (!Number.isSafeInteger(c.viewTick) || c.viewTick < 0) return false;
+  if (['epoch', 'life'].some(k => c[k] !== undefined && (!Number.isSafeInteger(c[k]) || c[k] < 0))) return false;
   return BOOLS.every(k => typeof c[k] === 'boolean');
 }

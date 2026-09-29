@@ -5,6 +5,7 @@
 //  * procedural PBR material processing for walls/props, static batching into frustum-cullable chunks
 //  * separate viewmodel pass (own FOV + lights) so weapons never clip into geometry
 import * as THREE from 'three';
+import { disposeTree } from './src/dispose.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
@@ -28,9 +29,9 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const QUALITY = {
-  ultra: { pixelRatio: 2, shadows: true, mapSize: 4096, post: true, msaa: 4, cascades: 3, maxFar: 170 },
-  high: { pixelRatio: 1.5, shadows: true, mapSize: 2048, post: false, msaa: 4, cascades: 3, maxFar: 150 },
-  low: { pixelRatio: 1, shadows: false, mapSize: 1024, post: false, msaa: 0, cascades: 3, maxFar: 100 },
+  ultra: { pixelRatio: 1.5, shadows: true, mapSize: 2048, post: true, msaa: 0, cascades: 3, maxFar: 170 },
+  high: { pixelRatio: 1, shadows: true, mapSize: 1024, post: false, msaa: 0, cascades: 2, maxFar: 150 },
+  low: { pixelRatio: 0.7, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 3, maxFar: 60 },
 };
 
 // World-space macro variation: breaks texture tiling with large-scale tone patches and adds wall-base grime + vertical sun-bleach streaks.
@@ -54,19 +55,20 @@ function patchMacro(material) {
       .replace('#include <color_fragment>', `#include <color_fragment>
         float mTone = mix(0.8, 1.16, mFbm(vec3(vMacroPos.xz * 0.05, 1.0))) * mix(0.93, 1.07, mFbm(vec3(vMacroPos.xz * 0.21, 4.0)));
         float mWall = 1.0 - smoothstep(0.35, 0.8, abs(vMacroN.y));
-        float mGrime = mWall * smoothstep(1.7, 0.0, vMacroPos.y) * (0.16 + 0.34 * mFbm(vMacroPos * vec3(1.3, 2.4, 1.3)));
+        float mGrime = mWall * (1.0 - smoothstep(0.0, 1.7, vMacroPos.y)) * (0.16 + 0.34 * mFbm(vMacroPos * vec3(1.3, 2.4, 1.3)));
         float mStreak = mWall * smoothstep(0.55, 0.9, mFbm(vec3((vMacroPos.x + vMacroPos.z) * 1.7, vMacroPos.y * 0.18, 3.0))) * 0.14;
         diffuseColor.rgb *= mTone * (1.0 - mGrime - mStreak);`);
   };
-  material.customProgramCacheKey = () => 'kontir-macro-v1';
+  material.customProgramCacheKey = () => `kontir-macro-v2-${material.defines?.CSM_CASCADES || 0}`;
 }
 const CHUNK = 28;
 const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 export class WorldEngine {
-  constructor(canvas, { quality = 'high' } = {}) {
+  constructor(canvas, { quality = 'low' } = {}) {
+    if (!Object.hasOwn(QUALITY, quality)) quality = 'low';
     this.canvas = canvas; this.qualityName = quality; this.quality = QUALITY[quality];
-    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality.msaa > 0, powerPreference: 'high-performance', stencil: false });
+    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality.msaa > 0, powerPreference: 'default', stencil: false });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -111,7 +113,7 @@ export class WorldEngine {
     this.sky = make(480); this.sky.material.fog = false; this.scene.add(this.sky);
     const envScene = new THREE.Scene(); envScene.add(make(100));
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.envRT?.dispose(); this.envRT = pmrem.fromScene(envScene, 0.02); pmrem.dispose();
+    this.envRT?.dispose(); this.envRT = pmrem.fromScene(envScene, 0.02); pmrem.dispose(); disposeTree(envScene);
     this.scene.environment = this.envRT.texture; this.scene.environmentIntensity = overcast ? 0.8 : 0.72;
     this.viewScene.environment = this.envRT.texture; this.viewScene.environmentIntensity = 0.55;
     this.scene.fog = new THREE.FogExp2(new THREE.Color(env.fog), env.fogDensity);
@@ -121,9 +123,30 @@ export class WorldEngine {
     this.buildSun();
     this.moteMat.opacity = overcast ? 0.18 : 0.42;
   }
+  clearSun() {
+    if (this.csm) {
+      for (const light of this.csm.lights) light.shadow.dispose();
+      this.csm.remove(); this.csm.dispose(); this.csm = null;
+    }
+    if (this.sun) { this.sun.removeFromParent(); this.sun.target.removeFromParent(); this.sun.dispose(); this.sun = null; }
+  }
+  prepareMaterial(m) {
+    // Rebuild hooks once; repeated quality changes must not stack GLSL patches.
+    m.onBeforeCompile = THREE.Material.prototype.onBeforeCompile;
+    m.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey;
+    this.csm?.setupMaterial(m);
+    if (m.userData.macro && this.qualityName !== 'low') patchMacro(m);
+    m.needsUpdate = true;
+  }
   buildSun() {
-    if (this.csm) { this.csm.remove?.(); this.csm.dispose(); this.csm = null; }
+    this.clearSun();
     const q = this.quality, env = this.env;
+    if (!q.shadows) {
+      this.sun = new THREE.DirectionalLight(env.sunColor, env.sunIntensity);
+      this.sun.position.copy(this.sunDir).multiplyScalar(100); this.scene.add(this.sun, this.sun.target);
+      for (const m of this.materials) this.prepareMaterial(m);
+      return;
+    }
     this.csm = new CSM({
       maxFar: q.maxFar, cascades: q.cascades, mode: 'practical', parent: this.scene, shadowMapSize: q.mapSize,
       lightDirection: this.sunDir.clone().negate(), camera: this.camera, lightIntensity: env.sunIntensity, lightNear: 1, lightFar: 400, shadowBias: -0.0002,
@@ -136,13 +159,13 @@ export class WorldEngine {
       light.shadow.normalBias = 0.015 + i * 0.03;          // normal offset kills acne on grazing sunlit walls
       light.shadow.radius = 2.2 - i * 0.4;
     });
-    for (const m of this.materials) { this.csm.setupMaterial(m); if (m.userData.macro) patchMacro(m); }
+    for (const m of this.materials) this.prepareMaterial(m);
   }
   applyQualityTargets() {
     const r = this.renderer, q = this.quality;
     r.setPixelRatio(Math.min(devicePixelRatio || 1, q.pixelRatio));
     r.shadowMap.enabled = q.shadows;
-    this.composer?.dispose?.(); this.composer = null;
+    this.disposeComposer();
     if (q.post) {
       const size = r.getDrawingBufferSize(new THREE.Vector2());
       const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: q.msaa });
@@ -152,13 +175,17 @@ export class WorldEngine {
       gtao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.4, scale: 1.1, samples: 10, distanceFallOff: 1.0, screenSpaceRadius: false });
       gtao.blendIntensity = 0.85;
       composer.addPass(gtao);
-      const view = new RenderPass(this.viewScene, this.viewCamera); view.clear = false; view.clearDepth = true; composer.addPass(view);
+      const view = this.viewPass = new RenderPass(this.viewScene, this.viewCamera); view.clear = false; view.clearDepth = true; composer.addPass(view);
       composer.addPass(new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.18, 0.7, 0.92));
       composer.addPass(new OutputPass());
     }
   }
+  disposeComposer() {
+    if (this.composer) { for (const pass of this.composer.passes) pass.dispose?.(); this.composer.dispose(); }
+    this.composer = null; this.gtao = null;
+  }
   setQuality(name) {
-    if (!QUALITY[name]) return;
+    if (!Object.hasOwn(QUALITY, name) || name === this.qualityName) return;
     this.qualityName = name; this.quality = QUALITY[name];
     this.applyQualityTargets();
     if (this.env) this.buildSun();
@@ -169,7 +196,7 @@ export class WorldEngine {
     const w = innerWidth, h = innerHeight;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio)); this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.viewCamera.aspect = w / h; this.viewCamera.updateProjectionMatrix();
-    this.composer?.setSize(w, h); this.csm?.updateFrustums();
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio()); this.composer?.setSize(w, h); this.csm?.updateFrustums();
   }
 
   // ------------------------------------------------------------------------------------------ map loading
@@ -198,14 +225,13 @@ export class WorldEngine {
     progress(1, 'Tayyor');
     return data;
   }
+  releaseTree(root) {
+    disposeTree(root, m => { this.materials.delete(m); this.csm?.shaders.delete(m); });
+  }
   disposeMap() {
-    if (this.mapGroup) {
-      this.scene.remove(this.mapGroup);
-      this.mapGroup.traverse(o => { if (o.isMesh) { o.geometry.disposeBoundsTree?.(); o.geometry.dispose(); } });
-      for (const m of this.materials) m.dispose();
-      this.materials.clear(); this.mapGroup = null;
-    }
-    this.effects.clear(); this.clearActors();
+    this.clearActors(); this.releaseTree(this.mapGroup); this.mapGroup = null;
+    this.map?.collider.geometry.dispose(); this.map = null;
+    this.effects.clear();
   }
 
   /** Converts loaded GLB materials to PBR, then merges every material into spatial chunks (few draw calls, culled per chunk). */
@@ -215,26 +241,34 @@ export class WorldEngine {
     root.traverse(o => {
       if (!o.isMesh || !o.geometry.attributes.position) return;
       if (/^(clip|nocollide_hidden|trigger)/i.test(o.name)) return;
-      const mat = o.material, key = mat.uuid;
-      if (!buckets.has(key)) buckets.set(key, { material: mat, geos: [], decor: /^decor/i.test(o.name) });
-      const geo = o.geometry.clone(); geo.applyMatrix4(o.matrixWorld);
-      for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
-      if (!geo.attributes.normal) geo.computeVertexNormals();
-      if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
-      if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
-      buckets.get(key).geos.push(geo);
+      const source = o.geometry;
+      const groups = Array.isArray(o.material) ? source.groups : [{ start: 0, count: source.index?.count ?? source.attributes.position.count, materialIndex: 0 }];
+      for (const group of groups) {
+        const mat = Array.isArray(o.material) ? o.material[group.materialIndex] : o.material;
+        if (!mat || group.count === 0) continue;
+        const key = mat.uuid;
+        if (!buckets.has(key)) buckets.set(key, { material: mat, geos: [], decor: /^decor/i.test(o.name) });
+        const geo = source.clone(); geo.applyMatrix4(o.matrixWorld);
+        for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+        if (!geo.index) geo.setIndex(Array.from({ length: geo.attributes.position.count }, (_, i) => i));
+        geo.setIndex(new THREE.BufferAttribute(geo.index.array.slice(group.start, group.start + group.count), 1));
+        if (!geo.attributes.normal) geo.computeVertexNormals();
+        if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+        buckets.get(key).geos.push(geo);
+      }
     });
     for (const { material, geos, decor } of buckets.values()) {
       material.side = THREE.FrontSide; material.envMapIntensity = 1;
       if (!material.map && !material.normalMap) applyPBR(material, recipeFor(material.name || ''), { anisotropy: this.maxAniso });
       else for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (material[k]) material[k].anisotropy = this.maxAniso;
       if (/glass|window/i.test(material.name)) { material.envMapIntensity = 1.6; material.metalness = 0.25; }
-      this.materials.add(material); this.csm?.setupMaterial(material);
-      if (!/glass|window|sandbag/i.test(material.name)) { material.userData.macro = true; patchMacro(material); }
+      this.materials.add(material);
+      if (!/glass|window|sandbag/i.test(material.name)) { material.userData.macro = true; }
+      this.prepareMaterial(material);
       const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+      if (!merged) throw new Error('Xarita geometriyasi birlashtirilmadi.');
       for (const chunk of this.splitGrid(merged)) {
         const mesh = new THREE.Mesh(chunk, material); mesh.castShadow = true; mesh.receiveShadow = true; mesh.matrixAutoUpdate = false; mesh.userData.decor = decor;
-        if (chunk.index.count > 300) { try { chunk.computeBoundsTree(); } catch { /* raycast falls back to brute force */ } }
         out.add(mesh);
       }
     }
@@ -245,7 +279,7 @@ export class WorldEngine {
     for (let i = 0; i < idx.length; i += 3) {
       const a = idx[i], b = idx[i + 1], c = idx[i + 2];
       const cx = Math.floor((pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3 / CHUNK), cz = Math.floor((pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3 / CHUNK);
-      const key = cx * 4096 + cz; let list = cells.get(key); if (!list) cells.set(key, list = []);
+      const key = `${cx},${cz}`; let list = cells.get(key); if (!list) cells.set(key, list = []);
       list.push(a, b, c);
     }
     const chunks = [];
@@ -263,11 +297,11 @@ export class WorldEngine {
     this.siteGroup = new THREE.Group(); this.mapGroup.add(this.siteGroup);
     for (const s of data.sites) {
       const ring = new THREE.Mesh(new THREE.RingGeometry(s.radius - 0.16, s.radius, 96), new THREE.MeshBasicMaterial({ color: 0xe9b64f, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false, fog: true }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(s.x, 0.04, s.z); this.siteGroup.add(ring);
+      ring.rotation.x = -Math.PI / 2; ring.position.set(s.x, s.y + 0.04, s.z); this.siteGroup.add(ring);
       const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
       g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, 128, 128); g.font = '900 96px Barlow Condensed, Arial Narrow, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8; g.strokeStyle = 'rgba(20,18,10,.7)'; g.strokeText(s.id, 64, 70); g.fillStyle = '#f0c15c'; g.fillText(s.id, 64, 70);
       const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, opacity: 0.85, fog: false }));
-      label.position.set(s.x, 5.5, s.z); label.scale.setScalar(3.4); this.siteGroup.add(label);
+      label.position.set(s.x, s.y + 5.5, s.z); label.scale.setScalar(3.4); this.siteGroup.add(label);
     }
   }
   /** Top-down radar image straight from the collision BVH (works for any GLB). */
@@ -320,7 +354,7 @@ export class WorldEngine {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false, fog: false, opacity: 0.85 }));
     s.scale.set(1.5, 0.28, 1); s.renderOrder = 10; return s;
   }
-  clearActors() { for (const a of this.actors.values()) this.scene.remove(a); this.actors.clear(); this.labels.clear(); }
+  clearActors() { for (const a of this.actors.values()) this.releaseTree(a); this.actors.clear(); this.labels.clear(); }
   /** remote: interpolated player list from Network.remote(); returns nothing. */
   updateActors(remote, localId, localTeam, dt) {
     const seen = new Set();
@@ -329,9 +363,9 @@ export class WorldEngine {
       seen.add(p.id);
       let a = this.actors.get(p.id);
       if (!a || a.userData.team !== p.team) {
-        if (a) this.scene.remove(a);
+        if (a) this.releaseTree(a);
         a = buildOperator(p.team, [...p.id].reduce((n, c) => n + c.charCodeAt(0), 0)); this.actors.set(p.id, a); this.scene.add(a);
-        a.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) { this.materials.add(m); this.csm?.setupMaterial(m); } } });
+        a.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) { this.materials.add(m); this.prepareMaterial(m); } } });
         if (p.team === localTeam) { const l = this.label(p.name); a.add(l); l.position.y = 2.1; this.labels.set(p.id, l); }
       }
       const c = p.char, speed = Math.hypot(c.vx, c.vz);
@@ -341,7 +375,7 @@ export class WorldEngine {
       animateOperator(a, { speed: c.grounded ? speed : speed * 0.4, yaw: c.yaw, pitch: c.pitch, crouch: c.crouch || 0, alive: p.alive, dt, moveYaw: speed > 0.2 ? Math.atan2(-c.vx, -c.vz) : undefined });
       const l = this.labels.get(p.id); if (l) l.visible = p.alive;
     }
-    for (const [id, a] of this.actors) if (!seen.has(id)) { this.scene.remove(a); this.actors.delete(id); this.labels.delete(id); }
+    for (const [id, a] of this.actors) if (!seen.has(id)) { this.releaseTree(a); this.actors.delete(id); this.labels.delete(id); }
   }
   actorMuzzleWorld(id, out) {
     const a = this.actors.get(id); if (!a) return null;
@@ -382,10 +416,14 @@ export class WorldEngine {
     this.viewSun.position.copy(tmpV).multiplyScalar(4); this.viewSun.target.position.set(0, 0, 0);
     tmpE.setFromQuaternion(tmpQ, 'YXZ'); this.viewScene.environmentRotation?.copy(tmpE);
     this.viewScene.visible = viewmodel !== false;
-    if (this.composer) { this.composer.render(dt); return; }
+    if (this.composer) { this.viewPass.enabled = viewmodel !== false; this.composer.render(dt); return; }
     const r = this.renderer; r.clear(); r.render(this.scene, this.camera);
     if (viewmodel !== false) { r.clearDepth(); r.render(this.viewScene, this.viewCamera); }
   }
-  dispose() { removeEventListener('resize', this.onResize); this.disposeMap(); this.renderer.dispose(); }
+  dispose() {
+    this.renderer.setAnimationLoop(null); removeEventListener('resize', this.onResize);
+    this.disposeMap(); this.clearSun(); this.disposeComposer(); this.envRT?.dispose();
+    disposeTree(this.scene); disposeTree(this.viewScene); this.renderer.dispose();
+  }
 }
 void tmpV2;

@@ -12,8 +12,8 @@ export class Navigation {
     const b = collider.bounds;
     this.minX = Math.floor(b.min.x + 1); this.minZ = Math.floor(b.min.z + 1);
     // ground plane extends past the outer walls; navigation only covers the enclosed region
-    this.cols = Math.max(1, Math.min(200, Math.floor((Math.min(b.max.x, -this.minX + 0) - this.minX) / cell)));
-    this.rows = Math.max(1, Math.min(240, Math.floor((Math.min(b.max.z, -this.minZ + 0) - this.minZ) / cell)));
+    this.cols = Math.max(1, Math.min(200, Math.floor(((b.max.x - 1) - this.minX) / cell)));
+    this.rows = Math.max(1, Math.min(240, Math.floor(((b.max.z - 1) - this.minZ) / cell)));
     this.floor = new Float32Array(this.cols * this.rows).fill(NaN);
     this.walkable = new Uint8Array(this.cols * this.rows);
     for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
@@ -47,7 +47,7 @@ export class Navigation {
   /** A* over the grid (binary heap). Returns waypoints [{x,y,z}] (excluding the start cell). */
   path(from, to) {
     const start = this.nearest(from.x, from.z), goal = this.nearest(to.x, to.z);
-    if (start === goal) return [];
+    if (start === goal || !this.walkable[start] || !this.walkable[goal]) return [];
     const total = this.cols * this.rows, g = new Float32Array(total).fill(Infinity), came = new Int32Array(total).fill(-1), closed = new Uint8Array(total);
     const heap = []; // [f, index]
     const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };

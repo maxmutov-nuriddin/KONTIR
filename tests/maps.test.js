@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { MeshCollider } from '../shared/collision.js';
+import { boxMesh } from '../shared/geometry.js';
+import { Navigation } from '../server/Navigation.js';
 import { MapLibrary } from '../server/server.js';
 import { MOVEMENT as M } from '../shared/constants.js';
 import { createPlayer, stepPlayer } from '../shared/movement.js';
@@ -34,3 +37,11 @@ for (const meta of library.list()) {
     assert.ok(Math.abs(p.x) < 70 && Math.abs(p.z) < 80 && p.y > -1, `stayed inside (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`);
   });
 }
+
+
+test('navigation supports maps translated away from the world origin', () => {
+  const collider = new MeshCollider([boxMesh('floor', 'stone', 100, -0.5, 200, 30, 1, 30)]);
+  const nav = new Navigation(collider);
+  assert.ok(nav.cols > 10 && nav.rows > 10);
+  assert.ok(nav.path({ x: 90, z: 190 }, { x: 110, z: 210 }).length > 5);
+});

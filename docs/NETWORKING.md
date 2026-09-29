@@ -2,17 +2,18 @@
 
 ## Transport
 Socket.IO (WebSocket). Reliable so‘rovlar (`join`, `buy`, `start`, `maps`) ack bilan; real-time oqim `volatile`:
-`commands` (klient → server) va `snapshot` (server → klient). Klient hali yuborilmagan **barcha** commandlarni (sekin kadrda bir necha tick to‘planishi mumkin) va oxirgi 4 ta takroriy commandni yuboradi (paket ≤ 32), server `seq` bo‘yicha dublikatlarni tashlaydi — shuning uchun tushib qolgan volatile paket slot/Q/sakrash kabi bir martalik kiritishlarni yo‘qotmaydi.
+`commands` (klient → server) va `snapshot` (server → klient). Klient tasdiqlanmagan eng eski 32 ta buyruqni ketma-ket qayta yuboradi. Faqat serverning `ack` qiymati buyruqni navbatdan chiqaradi; volatile paket yo‘qolsa slot/Q/sakrash kabi bir martalik kiritish saqlanadi. Server `seq` bo‘yicha dublikatlarni tashlaydi.
 
 ## Tick va snapshot
 * Server: **64 Hz** fixed-step (`accumulator`), `RULES.snapshotEvery = 2` → **32 Hz** snapshot.
 * Har xona alohida `Room.step()`; 5v5 + 9 bot uchun ~0.2 ms/tick (testda o‘lchanadi).
-* Command navbati: har tickda 1 ta (jitter to‘planganda 2 tagacha), token-bucket (`budget ≤ 4`) tezlik hackining oldini oladi.
+* Har o‘yinchi server tickida aynan bir marta simulyatsiya qilinadi. Buyruq yetishmasa uzluksiz kiritish ko‘pi bilan 8 tick (125 ms) ushlab turiladi; tugma hodisalari takrorlanmaydi. Keyin neytral kiritish bilan gravitatsiya, ishqalanish va qurol taymerlari davom etadi. Navbatdagi buyruqlar dunyo vaqtini tezlashtirmaydi.
+* Insonsiz xonalarda botlar va fizika to‘xtaydi; xona 20 soniyadan so‘ng o‘chiriladi.
 
 ## Command
 ```
 seq, forward, right, yaw, pitch, jump, crouch, walk, fire, fire2, reload, interact,
-slot (0..5), quick (Q), viewTick
+slot (0..5), quick (Q), viewTick, epoch, life
 ```
 `validCommand()` barcha maydonlarni qat’iy tekshiradi (tip, diapazon, butun son).
 
@@ -22,7 +23,7 @@ Klient har commandni darhol bajaradi: `stepPlayer` (harakat) **va** `Inventory.s
 2. `ack`dan keyingi commandlar jim (animatsiyasiz) qayta o‘ynaladi,
 3. xato `offset` orqali eksponensial silliqlanadi (>2.5 m — teleport).
 
-Inventar taymerlari **command sanog‘i** bilan o‘lchanadi (`Inventory.time`), shuning uchun klient/server soatlari kerak emas.
+Inventar taymerlari **64 Hz simulyatsiya qadamlari** bilan o‘lchanadi (`Inventory.time`). Serverda ular buyruq kelmagan ticklarda ham davom etadi; klient snapshot bilan qayta moslashadi. `epoch`/`life` mavjud bo‘lsa eskirgan raund yoki hayot buyruqlari rad qilinadi; joriy klient ikkala maydonni ham yuboradi.
 
 ## Lag compensation
 * `LagCompensator`: har tick `x,y,z,yaw,crouch,alive,life` yozuvi; **1000 ms** = 64 + 2 kadr ring buffer, kadr o‘z tick’ini saqlaydi (eskirgan slot hech qachon tarix deb o‘qilmaydi).
@@ -34,4 +35,9 @@ Inventar taymerlari **command sanog‘i** bilan o‘lchanadi (`Inventory.time`),
 Snapshot `events[]` (so‘nggi 1 s, `id` bo‘yicha dedup): `shot`, `hit`, `kill`, `footstep`, `jump`, `land`, `weaponSound`, `throw`, `bounce`, `detonate`, `flash`, `planted`, `defuseStart`, `defused`, `exploded`, `roundEnd`, … Qadam/sakrash/qurol tovushlari faqat 45 m ichidagi tinglovchiga; **Shift** (silent walk) va cho‘kish `footstep` chiqarmaydi (tezlik chegarasi 135 u/s + `walk` bayrog‘i).
 
 ## Xavfsizlik chegaralari
-Server barcha natijani hisoblaydi (zarar, pul, plant/defuse, granata fizikasi). Snapshot maxfiylik: raqib inventari/puli/zirhi yuborilmaydi, biroq **barcha pozitsiyalar** yuboriladi — bu wallhackdan himoya emas (visibility filtering keyingi bosqich). Rate limit: 100 paket/s, `maxHttpBufferSize` 32 KiB, AFK 30 s.
+Server barcha natijani hisoblaydi (zarar, pul, plant/defuse, granata fizikasi). Snapshot maxfiylik: raqib inventari/puli/zirhi yuborilmaydi, biroq **barcha pozitsiyalar** yuboriladi — bu wallhackdan himoya emas (visibility filtering keyingi bosqich). Rate limit: 120 paket/s, `maxHttpBufferSize` 32 KiB, AFK 30 s.
+
+
+Granata hodisalarida `type` hodisa nomi (`throw`, `bounce`, `detonate`), `grenadeType` esa `he`, `flash` yoki `smoke`. Ikkala ma’no bitta maydonni bosib ketmaydi. Snapshotdagi eski hodisalar bir soniyadan keyin chiqariladi; server buferi 256 hodisa bilan cheklangan.
+
+Xona yaratish va xarita yuklash davom etayotgan Promise bilan deduplikatsiya qilinadi; xona sig‘imi disk I/O oldidan band qilinadi. Tezkor ulanishlar bir xaritadagi ochiq xonani to‘ldiradi. Ulanish davomida chiqib ketgan socket o‘yinchi sifatida qo‘shilmaydi. Mashq xonalariga tashqaridan kod orqali kirish rad qilinadi.

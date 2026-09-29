@@ -1,6 +1,7 @@
 // Transient visuals: tracers, bullet-hole decals, dust / spark / blood puffs, volumetric-style smoke grenades,
 // explosions with real point-light flashes and grenade projectiles. All objects are pooled: no per-shot allocation.
 import * as THREE from 'three';
+import { disposeTree } from './dispose.js';
 import { buildWeaponRig } from './viewmodels.js';
 
 function radialTexture(stops, size = 128) {
@@ -151,7 +152,7 @@ export class Effects {
       pr.rig.group.position.copy(pr.pos);
       const k = Math.min(1, speed / 4); pr.rig.group.rotation.x += pr.spin.x * dt * k; pr.rig.group.rotation.y += pr.spin.y * dt * k; pr.rig.group.rotation.z += pr.spin.z * dt * k;
     }
-    for (const [id, pr] of this.projectiles) if (!seen.has(id)) { this.scene.remove(pr.rig.group); this.projectiles.delete(id); }
+    for (const [id, pr] of this.projectiles) if (!seen.has(id)) { disposeTree(pr.rig.group); this.projectiles.delete(id); }
   }
 
   // ---------------------------------------------------------------------------------------- frame
@@ -207,14 +208,24 @@ export class Effects {
       }
     }
   }
+  syncSmokes(list) {
+    const seen = new Set(list.map(s => s.id));
+    for (const [id, sm] of this.smokes) if (!seen.has(id)) {
+      for (const p of sm.puffs) { this.scene.remove(p.s); p.s.material.dispose(); }
+      this.smokes.delete(id);
+    }
+    for (const s of list) { const sm = this.smokes.get(s.id); if (sm) { sm.age = s.age; sm.life = s.age + s.left; } }
+  }
   clear() {
+    for (const r of this.rings) { r.live = false; r.m.visible = false; }
+
     for (const t of this.tracers) { t.live = false; t.mesh.visible = false; }
     for (const p of this.puffs) { p.live = false; p.s.visible = false; }
     for (const c of this.casings) { c.live = false; c.m.visible = false; }
     for (const l of this.lights) { l.life = 0; l.light.intensity = 0; }
     for (const sm of this.smokes.values()) for (const p of sm.puffs) { this.scene.remove(p.s); p.s.material.dispose(); }
     this.smokes.clear(); this.decalCount = 0; this.decals.count = 0;
-    for (const pr of this.projectiles.values()) this.scene.remove(pr.rig.group);
+    for (const pr of this.projectiles.values()) disposeTree(pr.rig.group);
     this.projectiles.clear();
   }
 }

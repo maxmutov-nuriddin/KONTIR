@@ -24,15 +24,19 @@ export class ViewmodelDynamics {
     // sway spring (impulses from mouse counts, underdamped return)
     this.vyaw += clamp(dx, -120, 120) * 0.0085; this.vpitch += clamp(dy, -120, 120) * 0.0065;
     const k = 210, c = 21;
-    this.vyaw += (-k * this.yaw - c * this.vyaw) * dt; this.vpitch += (-k * this.pitch - c * this.vpitch) * dt;
-    this.yaw = clamp(this.yaw + this.vyaw * dt, -0.11, 0.11); this.pitch = clamp(this.pitch + this.vpitch * dt, -0.09, 0.09);
+    const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      this.vyaw += (-k * this.yaw - c * this.vyaw) * h; this.vpitch += (-k * this.pitch - c * this.vpitch) * h;
+      this.yaw = clamp(this.yaw + this.vyaw * h, -0.11, 0.11); this.pitch = clamp(this.pitch + this.vpitch * h, -0.09, 0.09);
+      this.vland += (-260 * this.land - 24 * this.vland) * h; this.land += this.vland * h;
+    }
     // bob amplitude: 0 when crouched, walking (Shift) or airborne
     const moving = clamp(speed / (M.runSpeed), 0, 1.1);
     const target = grounded && !walking && crouch < 0.5 ? moving : 0;
     this.amp += (target - this.amp) * Math.min(1, dt * 9);
     this.phase += dt * (5.5 + speed * 1.15);
     // landing spring
-    this.vland += (-260 * this.land - 24 * this.vland) * dt; this.land += this.vland * dt;
+
     this.jump += ((grounded ? 0 : 1) - this.jump) * Math.min(1, dt * 8);
     const bx = Math.sin(this.phase) * 0.0085 * this.amp, by = -Math.abs(Math.sin(this.phase)) * 0.0125 * this.amp;
     this.position.set(-this.yaw * 0.11 + bx, this.pitch * 0.09 + by + this.land * 0.03 + this.jump * 0.006, 0);
@@ -62,7 +66,7 @@ export class PlayerController {
   get locked() { return this.controls.isLocked; }
   lock() { this.controls.lock(); }
   unlock() { this.controls.unlock(); }
-  setSensitivity(v) { this.controls.pointerSpeed = v; }
+  setSensitivity(v) { this.controls.pointerSpeed = Number.isFinite(v) ? clamp(v, 0.15, 2) : 0.6; }
   get yaw() { return this.aim.rotation.y; }
   get pitch() { return this.aim.rotation.x; }
   setAim(yaw, pitch) { this.aim.rotation.set(pitch, yaw, 0, 'YXZ'); }
@@ -71,6 +75,7 @@ export class PlayerController {
   bind() {
     this.handlers = {
       keydown: e => {
+        if (e.code === 'Escape' && this.locked) { this.unlock(); return; }
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         if (GAME_KEYS.has(e.code) && (this.locked || e.code === 'Tab')) e.preventDefault();
         if (!this.locked) { if (e.code === 'KeyB' && !e.repeat) this.callbacks.buy?.(); if (e.code === 'Tab') this.callbacks.scoreboard?.(true); return; }
@@ -142,7 +147,8 @@ export class PlayerController {
     const eyeY = lerp(M.eyeStand, M.eyeCrouch, smoothstep(clamp(this.crouchFactor, 0, 1)));
     // stair pops decay smoothly; landing dip is a damped spring
     this.stepOffset.multiplyScalar(Math.exp(-dt * 13));
-    this.vLandDip += (-220 * this.landDip - 22 * this.vLandDip) * dt; this.landDip += this.vLandDip * dt;
+    const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+    for (let i = 0; i < steps; i++) { this.vLandDip += (-220 * this.landDip - 22 * this.vLandDip) * h; this.landDip += this.vLandDip * h; }
     const a = clamp(alpha, 0, 1);
     this.eye.set(
       lerp(prev.x, char.x, a) + (correction?.x || 0) + this.stepOffset.x,

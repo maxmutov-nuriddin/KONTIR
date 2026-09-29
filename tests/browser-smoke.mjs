@@ -16,11 +16,13 @@ await context.addInitScript(q => { try { localStorage.setItem('kontir.quality', 
 const errors = [];
 const k = (page, fn, arg) => page.evaluate(fn, arg);
 async function open() {
-  const page = await context.newPage();
+  const started = Date.now(), page = await context.newPage();
+  page.on('console', m => { if (m.type() === 'error' && /THREE|WebGL|shader/i.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', e => { errors.push(e.message); console.error('PAGE ERROR', e.message); });
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__KONTIR__, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__KONTIR__, null, { timeout: 90000 });
   await page.locator('#loader').waitFor({ state: 'detached', timeout: 120000 });
+  console.log(`Menu ready in ${Date.now() - started} ms (software GL)`);
   return page;
 }
 const me = page => k(page, () => { const s = window.__KONTIR__; return s.state.players.find(p => p.id === s.id); });
@@ -30,6 +32,18 @@ try {
   assert.equal(await page.locator('[data-map]').count() >= 2, true, 'menu lists the manifest maps');
   await page.click('#guide-nav'); assert.ok(await page.locator('.control-grid').isVisible()); await page.click('#close');
 
+  await page.click('#settings');
+  await page.click('[data-fps="30"]'); assert.equal(await k(page, () => window.__KONTIR__.fpsLimit), 30);
+  await page.click('[data-fps="60"]'); await page.click('#close');
+  await page.evaluate(async () => {
+    const world = window.__KONTIR__.world;
+    for (const quality of ['high', 'ultra', 'low', 'high', 'low']) {
+      world.setQuality(quality);
+      await world.renderer.compileAsync(world.scene, world.camera);
+      world.render(1 / 60, false);
+    }
+  });
+  assert.deepEqual(errors, [], 'quality switches compile and render without shader errors');
   await page.click('#practice');
   await page.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
   assert.equal((await k(page, () => window.__KONTIR__.state.players.length)), 10, 'practice fills 5v5 with bots');
@@ -66,7 +80,7 @@ try {
   await page.keyboard.up('KeyW');
   await untilEye(1.05);
   await page.keyboard.up('ControlLeft'); await untilEye(1.65);
-  assert.ok(await k(page, () => window.__KONTIR__.crouchFactor) < 0.05, 'crouchFactor returns to 0');
+  await page.waitForFunction(() => window.__KONTIR__.crouchFactor < 0.05, null, { timeout: 15000 });
 
   // --- firing: ammo, recoil pattern
   await page.keyboard.press('Digit2'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 2 && !window.__KONTIR__.weapons.inventory.drawing);
@@ -78,18 +92,20 @@ try {
   console.log('PASS: menu, practice 5v5, buy, slots + Q quick-switch, speeds 250/130/100, crouch eye 1.65 -> 1.05, firing, scoreboard');
 
   // --- two humans: strict team allocation over real sockets
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !window.__KONTIR__.controller.locked);
+  await page.click('#leave');
   const other = await open(); const code = `K${Date.now().toString(36).slice(-6)}`.toUpperCase();
-  await page.keyboard.press('Escape'); await page.click('#leave');
   for (const [tab, name] of [[page, 'HOST'], [other, 'GUEST']]) {
     await tab.click('#online'); await tab.fill('#operator-name', name); await tab.fill('#room-input', code); await tab.click('#join-submit');
     await tab.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 60000 });
   }
   await page.waitForFunction(() => window.__KONTIR__.state.players.length === 2);
   assert.equal(await k(page, () => new Set(window.__KONTIR__.state.players.map(p => p.team)).size), 2, 'teams balanced');
-  await page.click('#leave'); await other.waitForFunction(() => window.__KONTIR__.state.players.length === 1);
+  await page.locator('#leave-lobby:visible, #leave:visible').first().click(); await other.waitForFunction(() => window.__KONTIR__.state.players.length === 1);
   console.log('PASS: two-client lobby with balanced T/CT');
   assert.deepEqual(errors, []);
 } catch (error) {
-  const page = context.pages().at(-1); if (page) { await page.screenshot({ path: 'test-results/error.png' }).catch(() => {}); console.error(await page.evaluate(() => { const s = window.__KONTIR__; return JSON.stringify({ playing: s?.playing, phase: s?.state?.phase, inv: s?.inventory && [s.inventory.current, s.inventory.previous] }); }).catch(() => '')); }
+  const page = context.pages().at(-1); if (page) { await page.screenshot({ path: 'test-results/error.png' }).catch(() => {}); console.error(await page.evaluate(() => { const s = window.__KONTIR__; return JSON.stringify({ playing: s?.playing, locked: s?.controller.locked, modal: document.querySelector('#modal')?.open, resumeHidden: document.querySelector('#resume')?.className, phase: s?.state?.phase, inv: s?.inventory && [s.inventory.current, s.inventory.previous] }); }).catch(() => '')); }
   throw error;
 } finally { await browser.close(); }

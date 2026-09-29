@@ -6,20 +6,18 @@ import { applyPBR } from './materials.js';
 import { buildWeaponRig } from './viewmodels.js';
 
 const skinTones = [0xd7a982, 0xb07d58, 0x8a5a3c, 0xe2b896, 0x6e4a33];
-const mats = {};
+
 function materialsFor(team, seed) {
-  const key = `${team}:${seed}`;
-  if (mats[key]) return mats[key];
   const t = team === 'TERRORIST';
   const cloth = (color) => { const m = new THREE.MeshStandardMaterial({ color, roughness: 1 }); applyPBR(m, 'cloth', { size: 256, normalScale: 1.2 }); m.map.repeat?.set(1, 1); return m; };
-  return (mats[key] = {
+  return {
     uniform: cloth(t ? 0x8a7650 : 0x3a4658), pants: cloth(t ? 0x6f6248 : 0x2c3542), vest: cloth(t ? 0x2b2d29 : 0x4d5540),
     skin: new THREE.MeshStandardMaterial({ color: skinTones[seed % skinTones.length], roughness: 0.62 }),
     helmet: new THREE.MeshStandardMaterial({ color: t ? 0x22231f : 0x3d4a39, roughness: 0.55, metalness: 0.05 }),
     scarf: cloth(t ? 0xc9c1a4 : 0x1b1e22), boot: new THREE.MeshStandardMaterial({ color: 0x181614, roughness: 0.75 }),
     glove: new THREE.MeshStandardMaterial({ color: 0x1c1d1f, roughness: 0.8 }), goggle: new THREE.MeshStandardMaterial({ color: 0x0c1418, roughness: 0.1, metalness: 0.6 }),
     strap: new THREE.MeshStandardMaterial({ color: 0x141513, roughness: 0.9 }),
-  });
+  };
 }
 const rbox = (w, h, d, r) => new RoundedBoxGeometry(w, h, d, 3, r);
 function mesh(parent, geo, mat, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
@@ -36,11 +34,15 @@ export function buildOperator(team, seed = 0) {
   // head, neck, helmet
   mesh(head, new THREE.CylinderGeometry(0.05, 0.058, 0.09, 12), M.skin, 0, -0.035, 0);
   const skull = mesh(head, new THREE.SphereGeometry(0.108, 20, 16), M.skin, 0, 0.08, 0); skull.scale.set(0.92, 1.08, 1);
-  const helmet = mesh(head, new THREE.SphereGeometry(0.128, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), M.helmet, 0, 0.095, 0.004); helmet.scale.set(0.98, 1, 1.08);
-  mesh(head, rbox(0.21, 0.05, 0.04, 0.012), M.goggle, 0, 0.098, -0.106);
-  mesh(head, rbox(0.23, 0.02, 0.03, 0.008), M.strap, 0, 0.112, -0.105);
-  if (team === 'TERRORIST') mesh(head, new THREE.TorusGeometry(0.098, 0.03, 8, 20, Math.PI * 1.55), M.scarf, 0, 0.005, 0.0).rotation.set(Math.PI / 2, 0, Math.PI * 0.72);
-  else mesh(head, rbox(0.17, 0.07, 0.05, 0.02), M.scarf, 0, 0.03, -0.08);
+if (team === 'COUNTER_TERRORIST') {
+    const helmet = mesh(head, new THREE.SphereGeometry(0.128, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), M.helmet, 0, 0.095, 0.004); helmet.scale.set(0.98, 1, 1.08);
+    mesh(head, rbox(0.21, 0.05, 0.04, 0.012), M.goggle, 0, 0.098, -0.106);
+    mesh(head, rbox(0.23, 0.02, 0.03, 0.008), M.strap, 0, 0.112, -0.105);
+    mesh(head, rbox(0.17, 0.07, 0.05, 0.02), M.scarf, 0, 0.03, -0.08);
+  } else {
+    mesh(head, new THREE.CylinderGeometry(0.105, 0.105, 0.15, 16), M.scarf, 0, 0.06, 0); // Balaclava mask
+    mesh(head, new THREE.TorusGeometry(0.098, 0.03, 8, 20, Math.PI * 1.55), M.scarf, 0, 0.005, 0.0).rotation.set(Math.PI / 2, 0, Math.PI * 0.72);
+  }
   // arms hold the rifle: right hand at the grip, left at the handguard (static aim pose; spine pitches with the player)
   const shoulderR = pivot(spine, 0.235, 0.46, 0), shoulderL = pivot(spine, -0.235, 0.46, 0);
   const arm = (shoulder, upperRot, foreRot) => {
@@ -51,8 +53,8 @@ export function buildOperator(team, seed = 0) {
     mesh(elbow, rbox(0.075, 0.085, 0.1, 0.03), M.glove, 0, -0.3, 0);
     return elbow;
   };
-  arm(shoulderR, [-0.75, 0.05, -0.1], [-1.05, 0, 0]);
-  arm(shoulderL, [-1.15, -0.05, 0.25], [-0.65, 0, 0]);
+  const elbowR = arm(shoulderR, [-0.75, 0.05, -0.1], [-1.05, 0, 0]);
+  const elbowL = arm(shoulderL, [-1.15, -0.05, 0.25], [-0.65, 0, 0]);
   // legs: thigh pivot -> knee pivot
   const legs = [];
   for (const s of [-1, 1]) {
@@ -63,7 +65,7 @@ export function buildOperator(team, seed = 0) {
     mesh(knee, new THREE.CylinderGeometry(0.068, 0.07, 0.1, 12), M.boot, 0, -0.36, 0);
     legs.push({ thigh, knee, side: s });
   }
-  root.userData = { M, hip, spine, head, legs, shoulderR, weapon: null, weaponId: null, rigs: new Map(), phase: Math.random() * 6, fall: 0, team };
+  root.userData = { M, hip, spine, head, legs, shoulderR, shoulderL, elbowR, elbowL, weapon: null, weaponId: null, rigs: new Map(), phase: Math.random() * 6, fall: 0, team };
   return root;
 }
 
@@ -73,16 +75,38 @@ export function holdWeapon(actor, weaponId) {
   if (u.weaponId === weaponId) return;
   if (u.weapon) u.weapon.visible = false;
   u.weaponId = weaponId;
-  if (!weaponId) return;
+  if (!weaponId) { u.weapon = null; return; }
   let rig = u.rigs.get(weaponId);
   if (!rig) {
     rig = buildWeaponRig(weaponId);
-    const small = weaponId === 'he' || weaponId === 'flash' || weaponId === 'smoke' || weaponId === 'c4' || weaponId === 'knife';
-    rig.group.position.set(0.14, 0.32, small ? -0.28 : -0.12); rig.group.rotation.set(0, 0, 0);
-    if (small) rig.group.scale.setScalar(1.1);
     u.spine.add(rig.group); u.rigs.set(weaponId, rig);
   }
   u.weapon = rig.group; rig.group.visible = true;
+  
+  const isPistol = ['glock', 'usp', 'deagle'].includes(weaponId);
+  const small = ['he', 'flash', 'smoke', 'c4', 'knife'].includes(weaponId);
+  if (isPistol) {
+    u.shoulderR.rotation.set(-1.18, -0.12, 0.12);
+    if (u.elbowR) u.elbowR.rotation.set(-0.25, 0, 0);
+    u.shoulderL.rotation.set(-1.18, 0.18, -0.12);
+    if (u.elbowL) u.elbowL.rotation.set(-0.35, 0, 0);
+    rig.group.position.set(0.08, 0.35, -0.4);
+    rig.group.rotation.set(0, 0, 0);
+  } else if (!small) {
+    u.shoulderR.rotation.set(-0.85, 0.05, -0.1);
+    if (u.elbowR) u.elbowR.rotation.set(-0.95, 0, 0);
+    u.shoulderL.rotation.set(-1.15, -0.05, 0.22);
+    if (u.elbowL) u.elbowL.rotation.set(-0.65, 0, 0);
+    rig.group.position.set(0.12, 0.33, -0.18);
+    rig.group.rotation.set(0, 0, 0);
+  } else {
+    u.shoulderR.rotation.set(-0.65, 0.15, -0.1);
+    if (u.elbowR) u.elbowR.rotation.set(-0.85, 0, 0);
+    u.shoulderL.rotation.set(-0.4, -0.1, 0.1);
+    if (u.elbowL) u.elbowL.rotation.set(-0.3, 0, 0);
+    rig.group.position.set(0.12, 0.28, -0.25);
+    rig.group.rotation.set(0, 0, 0);
+  }
 }
 
 /** Animates locomotion, crouch, aim and death for one frame. `speed` in m/s, angles in radians. */

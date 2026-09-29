@@ -22,7 +22,7 @@ export class AudioEngine {
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
-  setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; }
+  setVolume(v) { this.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.8; if (this.master) this.master.gain.value = this.volume; }
 
   setListener(camera) {
     if (!this.ctx) return;
@@ -36,48 +36,77 @@ export class AudioEngine {
   // ------------------------------------------------------------------------------------------- plumbing
   out(pos, { reverb = 0.25, cutoff = null } = {}) {
     const ctx = this.ctx, dry = ctx.createGain();
-    let node = dry;
+    dry.voiceNodes = [dry]; dry.voices = 0;
     if (pos && this.listenerPos) {
       const dist = Math.hypot(pos.x - this.listenerPos.x, pos.y - this.listenerPos.y, pos.z - this.listenerPos.z);
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cutoff ?? Math.max(700, 16000 - dist * 260);
       const pan = ctx.createPanner(); pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 3; pan.rolloffFactor = 1.15; pan.maxDistance = 220;
       if (pan.positionX) { pan.positionX.value = pos.x; pan.positionY.value = pos.y; pan.positionZ.value = pos.z; } else pan.setPosition(pos.x, pos.y, pos.z);
-      dry.connect(lp); lp.connect(pan); pan.connect(this.master); node = pan;
-      if (reverb) { const send = ctx.createGain(); send.gain.value = reverb * Math.min(1, 0.4 + dist / 60); lp.connect(send); send.connect(this.reverb); }
+      dry.connect(lp); lp.connect(pan); pan.connect(this.master); dry.voiceNodes.push(lp, pan);
+      if (reverb) { const send = ctx.createGain(); send.gain.value = reverb * Math.min(1, 0.4 + dist / 60); lp.connect(send); send.connect(this.reverb); dry.voiceNodes.push(send); }
     } else {
       dry.connect(this.master);
-      if (reverb) { const send = ctx.createGain(); send.gain.value = reverb; dry.connect(send); send.connect(this.reverb); }
+      if (reverb) { const send = ctx.createGain(); send.gain.value = reverb; dry.connect(send); send.connect(this.reverb); dry.voiceNodes.push(send); }
     }
-    void node;
     return dry;
+  }
+  releaseVoice(source, dest, nodes) {
+    dest.voices++;
+    source.onended = () => {
+      for (const node of [source, ...nodes]) node.disconnect();
+      if (--dest.voices === 0) for (const node of dest.voiceNodes) node.disconnect();
+    };
   }
   noise(dest, { start = 0, dur = 0.1, type = 'lowpass', freq = 1000, q = 0.7, gain = 0.5, attack = 0.002, decay = null, sweepTo = null }) {
     const ctx = this.ctx, t = ctx.currentTime + start, src = ctx.createBufferSource(); src.buffer = this.noiseBuffer; src.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
     if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + (decay ?? dur));
-    src.connect(f); f.connect(g); g.connect(dest); src.start(t, Math.random()); src.stop(t + dur + 0.05);
+    src.connect(f); f.connect(g); g.connect(dest); this.releaseVoice(src, dest, [f, g]); src.start(t, Math.random()); src.stop(t + dur + 0.05);
   }
   tone(dest, { start = 0, dur = 0.1, type = 'sine', from = 200, to = null, gain = 0.5, attack = 0.002 }) {
     const ctx = this.ctx, t = ctx.currentTime + start, o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(from, t);
     if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.05);
+    o.connect(g); g.connect(dest); this.releaseVoice(o, dest, [g]); o.start(t); o.stop(t + dur + 0.05);
   }
 
   // ------------------------------------------------------------------------------------------- voices
   gunshot(weapon, pos, own = false) {
     if (!this.ctx) return;
-    const profile = {
-      ak47: { crack: 1900, boom: 120, len: 0.16, gain: 1, tail: 0.45 }, m4a4: { crack: 2700, boom: 135, len: 0.13, gain: 0.9, tail: 0.4 },
-      deagle: { crack: 1500, boom: 85, len: 0.24, gain: 1.15, tail: 0.6 }, glock: { crack: 3200, boom: 170, len: 0.09, gain: 0.7, tail: 0.3 },
-    }[weapon] || { crack: 2000, boom: 120, len: 0.14, gain: 0.8, tail: 0.4 };
-    const d = this.out(own ? null : pos, { reverb: profile.tail });
-    const jitter = 0.92 + Math.random() * 0.16;
-    this.noise(d, { dur: 0.07, type: 'bandpass', freq: profile.crack * jitter, q: 0.7, gain: 0.9 * profile.gain, decay: 0.06 });
-    this.noise(d, { dur: profile.len, type: 'lowpass', freq: 900, sweepTo: 220, gain: 0.8 * profile.gain, decay: profile.len });
-    this.tone(d, { dur: profile.len + 0.08, from: profile.boom * 1.6, to: profile.boom * 0.4, gain: 0.9 * profile.gain });
-    this.noise(d, { start: 0.02, dur: 0.5, type: 'highpass', freq: 3500, gain: 0.12, decay: 0.45 });
+    const profiles = {
+      ak47: { snapFreq: 3200, snapGain: 1.1, bodyFreq: 650, bodySweep: 180, bodyDur: 0.12, subPunch: 75, gain: 1.0, tail: 0.5 },
+      galil: { snapFreq: 3400, snapGain: 1.0, bodyFreq: 700, bodySweep: 200, bodyDur: 0.11, subPunch: 80, gain: 0.95, tail: 0.45 },
+      m4a4: { snapFreq: 4200, snapGain: 1.0, bodyFreq: 800, bodySweep: 220, bodyDur: 0.09, subPunch: 85, gain: 0.9, tail: 0.4 },
+      famas: { snapFreq: 4500, snapGain: 0.95, bodyFreq: 850, bodySweep: 240, bodyDur: 0.08, subPunch: 90, gain: 0.85, tail: 0.38 },
+      awp: { snapFreq: 2500, snapGain: 1.6, bodyFreq: 500, bodySweep: 120, bodyDur: 0.24, subPunch: 55, gain: 1.5, tail: 0.8 },
+      deagle: { snapFreq: 2400, snapGain: 1.3, bodyFreq: 550, bodySweep: 160, bodyDur: 0.15, subPunch: 65, gain: 1.25, tail: 0.55 },
+      glock: { snapFreq: 3800, snapGain: 0.85, bodyFreq: 950, bodySweep: 300, bodyDur: 0.07, subPunch: 105, gain: 0.75, tail: 0.25 },
+      usp: { snapFreq: 2200, snapGain: 0.55, bodyFreq: 1200, bodySweep: 500, bodyDur: 0.05, subPunch: 0, gain: 0.5, tail: 0.15, suppressed: true },
+    };
+    const p = profiles[weapon] || profiles.ak47;
+    const d = this.out(own ? null : pos, { reverb: p.tail });
+    const jitter = 0.95 + Math.random() * 0.1;
+
+    // 1. Initial supersonic crack / snap (high pressure shockwave)
+    this.noise(d, { dur: 0.035, type: 'bandpass', freq: p.snapFreq * jitter, q: 1.2, gain: p.snapGain * p.gain, attack: 0.001, decay: 0.03 });
+    this.noise(d, { dur: 0.02, type: 'highpass', freq: 4500, gain: 0.6 * p.gain, attack: 0.001, decay: 0.018 });
+
+    // 2. Gunpowder explosion body (burst of expanding gas, not a drum tone)
+    this.noise(d, { dur: p.bodyDur, type: 'lowpass', freq: p.bodyFreq, sweepTo: p.bodySweep, gain: 0.9 * p.gain, attack: 0.002, decay: p.bodyDur });
+
+    // 3. Short non-tonal sub pressure impulse (micro transient punch, not a ringing tone)
+    if (p.subPunch > 0) {
+      this.tone(d, { dur: 0.035, from: p.subPunch, to: 30, gain: 0.65 * p.gain, attack: 0.001 });
+    }
+
+    // 4. Mechanical slide / bolt action click
+    if (!p.suppressed) {
+      this.noise(d, { start: 0.008, dur: 0.02, type: 'bandpass', freq: 3500, q: 3.5, gain: 0.3 * p.gain, decay: 0.015 });
+    }
+
+    // 5. Environmental acoustic reflection tail
+    this.noise(d, { start: 0.02, dur: p.tail, type: 'highpass', freq: p.suppressed ? 5000 : 2600, gain: 0.16 * p.gain, decay: p.tail * 0.8 });
   }
   footstep(pos, own = false, scale = 1) {
     if (!this.ctx) return;
@@ -114,6 +143,7 @@ export class AudioEngine {
   ring(seconds) {
     if (!this.ctx) return; const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = 'sine'; o.frequency.value = 3900; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.16, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+    o.onended = () => { o.disconnect(); g.disconnect(); };
     o.connect(g); g.connect(this.master); o.start(t); o.stop(t + seconds + 0.1);
   }
   smokePop(pos) { if (!this.ctx) return; const d = this.out(pos, { reverb: 0.5 }); this.noise(d, { dur: 0.5, type: 'lowpass', freq: 1800, sweepTo: 300, gain: 0.6, decay: 0.5 }); this.tone(d, { dur: 0.2, from: 220, to: 80, gain: 0.5 }); }

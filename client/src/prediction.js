@@ -26,7 +26,7 @@ export class Prediction {
   /** Builds, records and simulates the next command. Returns { cmd, events }. */
   command(input, viewTick) {
     if (!this.char || this.pending.length >= 128) return null;
-    const cmd = { ...input, seq: this.seq++, viewTick };
+    const cmd = { ...input, seq: this.seq++, viewTick, epoch: this.epoch, life: this.life };
     this.pending.push(cmd);
     this.prev = { ...this.char };
     const events = this.simulate(this.char, cmd, this.phase, this.alive, false);

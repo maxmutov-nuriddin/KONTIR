@@ -38,14 +38,20 @@ function fromTRS(t = [0, 0, 0], q = [0, 0, 0, 1], s = [1, 1, 1]) {
 const nodeMatrix = node => (node.matrix ? node.matrix.slice() : fromTRS(node.translation, node.rotation, node.scale));
 
 function readAccessor(json, bin, index) {
-  const accessor = json.accessors[index];
+  const accessor = json.accessors?.[index];
+  if (!accessor || !Number.isSafeInteger(accessor.count) || accessor.count < 0 || accessor.count > 10000000) throw new Error('GLB: invalid accessor count');
   if (accessor.sparse) throw new Error('GLB: sparse accessors are not supported');
   const width = TYPES[accessor.type], size = COMPONENTS[accessor.componentType];
   if (!width || !size) throw new Error(`GLB: unsupported accessor ${accessor.type}/${accessor.componentType}`);
   const out = accessor.componentType === 5126 ? new Float32Array(accessor.count * width) : new Uint32Array(accessor.count * width);
   if (accessor.bufferView === undefined) return out;
-  const view = json.bufferViews[accessor.bufferView];
-  const stride = view.byteStride || size * width;
+  const view = json.bufferViews?.[accessor.bufferView];
+  if (!view || (view.buffer ?? 0) !== 0) throw new Error('GLB: invalid buffer view');
+  const stride = view.byteStride ?? size * width;
+  const start = view.byteOffset ?? 0, offset = accessor.byteOffset ?? 0;
+  const length = accessor.count ? (accessor.count - 1) * stride + size * width : 0;
+  if (![start, offset, stride, view.byteLength].every(n => Number.isSafeInteger(n) && n >= 0) || stride < size * width ||
+      start + view.byteLength > bin.byteLength || offset + length > view.byteLength) throw new Error('GLB: accessor outside buffer');
   const base = bin.byteOffset + (view.byteOffset || 0) + (accessor.byteOffset || 0);
   const dv = new DataView(bin.buffer);
   const type = accessor.componentType;
@@ -68,9 +74,11 @@ export function parseGLB(input) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.byteLength < 20 || dv.getUint32(0, true) !== MAGIC) throw new Error('GLB: bad magic');
   if (dv.getUint32(4, true) !== 2) throw new Error('GLB: only glTF 2.0 is supported');
+  if (dv.getUint32(8, true) !== bytes.byteLength) throw new Error('GLB: invalid total length');
   let json = null, bin = null;
   for (let at = 12; at + 8 <= bytes.byteLength;) {
     const length = dv.getUint32(at, true), type = dv.getUint32(at + 4, true);
+    if (length % 4 || at + 8 + length > bytes.byteLength) throw new Error('GLB: invalid chunk length');
     const body = bytes.subarray(at + 8, at + 8 + length);
     if (type === CHUNK_JSON) json = JSON.parse(new TextDecoder().decode(body));
     else if (type === CHUNK_BIN && !bin) bin = new Uint8Array(body.slice().buffer);
@@ -83,15 +91,24 @@ export function parseGLB(input) {
   bin ||= new Uint8Array(0);
   const meshes = [], markers = [];
   const scene = json.scenes?.[json.scene ?? 0];
-  const roots = scene?.nodes || json.nodes.map((_, i) => i);
+  if (!Array.isArray(json.nodes)) throw new Error('GLB: missing nodes');
+  const children = new Set(json.nodes.flatMap(n => n.children || []));
+  const roots = scene?.nodes || json.nodes.map((_, i) => i).filter(i => !children.has(i));
+  if (json.nodes.length && !roots.length) throw new Error('GLB: cyclic node graph');
+  const ancestors = new Set(), visited = new Set();
   const visit = (index, parent) => {
+    if (!Number.isInteger(index) || !json.nodes[index] || visited.has(index) || ancestors.size >= 256) throw new Error('GLB: invalid or cyclic node graph');
+    ancestors.add(index); visited.add(index);
     const node = json.nodes[index], world = multiply(parent, nodeMatrix(node));
+    if (world.length !== 16 || !world.every(Number.isFinite)) throw new Error('GLB: invalid transform');
     const name = node.name || `node_${index}`;
     if (node.mesh !== undefined) {
       const mesh = json.meshes[node.mesh];
       mesh.primitives.forEach((primitive, n) => {
         if (primitive.mode !== undefined && primitive.mode !== 4) return;
         if (primitive.attributes.POSITION === undefined) return;
+        const positionAccessor = json.accessors?.[primitive.attributes.POSITION];
+        if (positionAccessor?.type !== 'VEC3' || positionAccessor.componentType !== 5126) throw new Error('GLB: positions must be float VEC3');
         const local = readAccessor(json, bin, primitive.attributes.POSITION);
         const positions = new Float32Array(local.length);
         for (let i = 0; i < local.length; i += 3) {
@@ -101,8 +118,13 @@ export function parseGLB(input) {
           positions[i + 2] = world[2] * x + world[6] * y + world[10] * z + world[14];
         }
         let indices;
-        if (primitive.indices !== undefined) indices = readAccessor(json, bin, primitive.indices);
+        if (primitive.indices !== undefined) {
+          const a = json.accessors?.[primitive.indices];
+          if (a?.type !== 'SCALAR' || ![5121, 5123, 5125].includes(a.componentType)) throw new Error('GLB: indices must be unsigned SCALAR');
+          indices = readAccessor(json, bin, primitive.indices);
+        }
         else indices = Uint32Array.from({ length: local.length / 3 }, (_, i) => i);
+        if (indices.length % 3 || !positions.every(Number.isFinite) || !indices.every(i => Number.isInteger(i) && i >= 0 && i < local.length / 3)) throw new Error('GLB: invalid triangle geometry');
         // A negative-determinant transform mirrors the mesh; restore outward winding.
         const det = world[0] * (world[5] * world[10] - world[6] * world[9]) - world[4] * (world[1] * world[10] - world[2] * world[9]) + world[8] * (world[1] * world[6] - world[2] * world[5]);
         if (det < 0) for (let i = 0; i + 2 < indices.length; i += 3) { const t = indices[i + 1]; indices[i + 1] = indices[i + 2]; indices[i + 2] = t; }
@@ -115,6 +137,7 @@ export function parseGLB(input) {
       markers.push({ name, x: world[12], y: world[13], z: world[14], sx, sy, sz, yaw });
     }
     for (const child of node.children || []) visit(child, world);
+    ancestors.delete(index);
   };
   for (const root of roots) visit(root, identity());
   return { meshes, markers };

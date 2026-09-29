@@ -10,7 +10,14 @@ const TEAM_LABEL = { TERRORIST: 'TERRORIST', COUNTER_TERRORIST: 'COUNTER-TERRORI
 const TEAM_SHORT = { TERRORIST: 'T', COUNTER_TERRORIST: 'CT' };
 const REASONS = { elimination: 'Jamoa yo‘q qilindi', exploded: 'Bomba portladi', defused: 'Bomba zararsizlantirildi', time: 'Vaqt tugadi', draw: 'Durang', match: 'Match yakuni' };
 const BUY_NAMES = { kevlar: 'KEVLAR', helmet: 'KEVLAR + DUBULG‘A', defuser: 'DEFUSE KIT' };
-const STATS = { ak47: '36 DMG · 600 RPM', m4a4: '33 DMG · 666 RPM', deagle: '63 DMG · 267 RPM', glock: '30 DMG · 400 RPM', he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA', kevlar: '100 ARMOR', helmet: '100 ARMOR + HEAD', defuser: '5 s DEFUSE' };
+const STATS = {
+  ak47: '36 DMG · 600 RPM', galil: '30 DMG · 666 RPM',
+  m4a4: '33 DMG · 666 RPM', famas: '30 DMG · 666 RPM',
+  awp: '115 DMG · 41 RPM', deagle: '63 DMG · 267 RPM',
+  glock: '30 DMG · 400 RPM', usp: '35 DMG · 352 RPM',
+  he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA',
+  kevlar: '100 ARMOR', helmet: '100 ARMOR + DUBULG‘A', defuser: '5 s DEFUSE'
+};
 
 export class UI {
   constructor() {
@@ -81,13 +88,15 @@ export class UI {
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
       <kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
-  settings({ quality, sensitivity, volume, onQuality, onSensitivity, onVolume }) {
+  settings({ quality, sensitivity, volume, fpsLimit, onFpsLimit, onQuality, onSensitivity, onVolume }) {
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
       <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === quality ? 'on' : ''}">${{ low: 'TEZKOR', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
+      <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[30, 60, 90, 120].map(v => `<button data-fps="${v}" class="${v === fpsLimit ? 'on' : ''}">${v}</button>`).join('')}</div></div>
       <label for="sensitivity">SICHQONCHA SEZGIRLIGI</label><input id="sensitivity" type="range" min="0.15" max="2" step="0.05" value="${sensitivity}">
       <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${volume}">
-      <p class="note">ULTRA: GTAO ambient occlusion + bloom, 4096 px kaskadli soyalar. YUQORI: 3 kaskadli CSM, PCF soft. TEZKOR: soyasiz.</p>`);
+      <p class="note">TEZKOR: soyasiz, kamroq yuklama. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p>`);
     document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); onQuality(b.dataset.q); });
+    document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); onFpsLimit(Number(b.dataset.fps)); });
     $('#sensitivity').oninput = e => onSensitivity(Number(e.target.value)); $('#volume').oninput = e => onVolume(Number(e.target.value));
   }
   lobby(state, id, start, leave) {
@@ -111,15 +120,17 @@ export class UI {
     const owned = id => me.inv && (Object.values(me.inv.slots).includes(id) || (me.inv.grenades[id] || 0) > 0);
     const groups = ['RIFLES', 'PISTOLS', 'GRENADES', 'GEAR'];
     const card = ([id, def]) => {
+      // Exclude weapons belonging to the enemy team
+      if (def.team && def.team !== me.team) return '';
       const name = WEAPONS[id]?.name || BUY_NAMES[id] || id.toUpperCase();
-      const blocked = def.team && def.team !== me.team, poor = me.money < def.price && state.phase !== 'warmup';
+      const poor = me.money < def.price && state.phase !== 'warmup';
       const own = id === 'kevlar' ? me.armor >= 100 : id === 'helmet' ? me.armor >= 100 && me.helmet : id === 'defuser' ? me.kit : owned(id);
-      return `<button data-buy="${id}" ${blocked ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${STATS[id] || ''}</small></span><strong>${state.phase === 'warmup' ? 'FREE' : `$${def.price}`}</strong></button>`;
+      const label = own ? '<span class="badge-own">BOR</span>' : (state.phase === 'warmup' ? 'FREE' : `$${def.price}`);
+      return `<button data-buy="${id}" ${own ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${STATS[id] || ''}</small></span><strong>${label}</strong></button>`;
     };
     this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION · ${clock(state.remaining)}</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${me.money}</strong></div>
-      <div class="buy-cols">${groups.map(g => `<div><h4>${g}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Yangi qurol avtomatik tanlanadi.</p>`);
-    document.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
-    gsap.from('.buy-cols button', { y: 8, opacity: 0, stagger: 0.02, duration: 0.2 });
+      <div class="buy-cols">${groups.map(g => `<div><h4>${g}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
+    document.querySelectorAll('[data-buy]:not([disabled])').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
   }
   results(state, onExit) {
     const rows = t => state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<div><span>${esc(p.name)}</span><b>${p.kills} / ${p.assists} / ${p.deaths}</b></div>`).join('');

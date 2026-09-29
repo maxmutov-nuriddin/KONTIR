@@ -1,7 +1,7 @@
 // One authoritative 5v5 match: lobby/team allocation, MR12 round state machine, economy, combat with
 // lag-compensated hit registration, grenades, bomb objective and bots.
 import { randomBytes } from 'node:crypto';
-import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, UNIT, neutralInput, otherTeam, clamp } from '../shared/constants.js';
+import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, UNIT, neutralInput, otherTeam, clamp, validCommand } from '../shared/constants.js';
 import { createPlayer, eyeHeight, horizontalSpeed, stepPlayer } from '../shared/movement.js';
 import { Inventory } from '../shared/inventory.js';
 import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, inaccuracy, makeRandom, rayHitPlayer, shotDirection } from '../shared/weapons.js';
@@ -23,6 +23,7 @@ export class Room {
     this.code = code; this.map = map; this.collider = map.collider; this.nav = nav;
     this.isPublic = !!options.isPublic; this.practice = !!options.practice;
     this.timing = { warmup: RULES.warmupSeconds, freeze: RULES.freezeSeconds, round: RULES.roundSeconds, post: RULES.postRoundSeconds, ...(options.timing || {}) };
+    for (const value of Object.values(this.timing)) if (!Number.isFinite(value) || value < 0 || value > 3600) throw new Error('Invalid phase timing');
     this.players = new Map(); this.host = null;
     this.tick = 0; this.epoch = 0; this.round = 0; this.phase = 'warmup'; this.phaseEnd = this.tick + secondsToTick(this.timing.warmup);
     this.side = { A: 'TERRORIST', B: 'COUNTER_TERRORIST' };            // which squad currently plays which side
@@ -39,7 +40,7 @@ export class Room {
   emit(type, data) {
     this.events.push({ ...data, id: ++this.eventId, type, tick: this.tick });
     const keep = this.tick - TICK_RATE;
-    while (this.events.length && (this.events[0].tick < keep || this.events.length > 96)) this.events.shift();
+    while (this.events.length && (this.events[0].tick < keep || this.events.length > 256)) this.events.shift();
   }
 
   // ------------------------------------------------------------------------------------------ team lobby
@@ -61,6 +62,7 @@ export class Room {
   }
 
   add(id, name, preferred = 'TERRORIST', bot = false) {
+    if (this.players.has(id)) return null;
     const team = this.allocateTeam(preferred, bot);
     if (!team) return null;
     if (this.count(team) >= RULES.perTeam) { // make room by kicking a bot of that team
@@ -71,7 +73,7 @@ export class Room {
     const squad = this.squadOf(team);
     const p = {
       id, name, team, squad, bot, index: this.nextIndex(), char: null, inv: new Inventory(team), health: 100, armor: 0, helmet: false, kit: false, money: RULES.startMoney,
-      kills: 0, deaths: 0, assists: 0, alive: false, life: 0, queue: [], ack: -1, lastReceived: -1, lastCommandTick: this.tick, rtt: 80, budget: 4,
+      kills: 0, deaths: 0, assists: 0, alive: false, life: 0, queue: [], ack: -1, lastReceived: -1, lastCommandTick: this.tick, rtt: 80,
       cmd: neutralInput(), consumed: false, action: null, respawnTick: 0, damageBy: new Map(), flashUntil: 0, brain: bot ? new BotBrain(this) : null,
       lastLook: { yaw: 0, pitch: 0 }, joinedTick: this.tick,
     };
@@ -97,8 +99,9 @@ export class Room {
 
   enqueue(id, commands) {
     const p = this.players.get(id);
-    if (!p) return;
+    if (!p || !Array.isArray(commands)) return;
     for (const c of commands) {
+      if (!validCommand(c) || (c.epoch !== undefined && c.epoch !== this.epoch) || (c.life !== undefined && c.life !== p.life)) continue;
       if (c.seq <= p.lastReceived || p.queue.length >= 128) continue;
       p.queue.push(c); p.lastReceived = c.seq; p.lastCommandTick = this.tick;
     }
@@ -118,8 +121,9 @@ export class Room {
     p.char = createPlayer(spawn);
     p.alive = true; p.life++; p.health = 100; p.action = null; p.damageBy.clear(); p.flashUntil = 0;
     if (p.queue.length) p.ack = p.queue.at(-1).seq;
-    p.queue = []; p.budget = 4;
-    if (this.phase === 'warmup') p.money = RULES.maxMoney;
+    p.queue = []; p.cmd = neutralInput(); p.lastExecutedTick = -Infinity;
+    p.brain?.newRound();
+    if (this.phase === 'warmup') { p.money = RULES.maxMoney; this.newLoadout(p); }
   }
   newLoadout(p) { p.inv.reset(p.team); p.armor = 0; p.helmet = false; p.kit = false; }
 
@@ -150,8 +154,8 @@ export class Room {
     this.phase = 'buy'; this.phaseEnd = this.tick + secondsToTick(this.timing.freeze); this.result = null;
     this.lag.reset(); this.grenades = []; this.smokes = [];
     for (const p of this.players.values()) {
-      const keep = !fresh && !halftime && p.carry;
-      if (keep) { p.inv.load(p.carry); p.inv.resetTimers(); } else this.newLoadout(p);
+      const keep = !fresh && !halftime && p.carry && p.alive;
+      if (keep) { p.inv.resetTimers(); } else this.newLoadout(p);
       p.carry = null; p.alive = false; this.respawn(p);
       p.inv.team = p.team;
     }
@@ -182,6 +186,7 @@ export class Room {
       p.money = Math.min(RULES.maxMoney, p.money);
       p.carry = p.alive ? p.inv.toJSON() : null;
     }
+    for (const p of this.players.values()) p.action = null;
     this.result = { winner, reason };
     const total = this.wins.A + this.wins.B;
     const decided = this.wins[winSquad] >= RULES.roundsToWin || total >= RULES.halfRounds * 2;
@@ -204,7 +209,7 @@ export class Room {
   buy(id, item) {
     const p = this.players.get(id);
     if (!p || !p.alive || !(this.phase === 'buy' || this.phase === 'warmup')) return { error: 'Xarid faqat buy yoki warmup vaqtida mumkin.' };
-    const def = BUY_ITEMS[item];
+    const def = Object.hasOwn(BUY_ITEMS, item) ? BUY_ITEMS[item] : null;
     if (!def) return { error: 'Noma’lum jihoz.' };
     if (def.team && def.team !== p.team) return { error: 'Bu jihoz sizning jamoangiz uchun emas.' };
     const free = this.phase === 'warmup';
@@ -212,7 +217,10 @@ export class Room {
     if (item === 'kevlar') { if (p.armor >= 100) return { error: 'Zirh allaqachon to‘liq.' }; p.armor = 100; }
     else if (item === 'helmet') { if (p.armor >= 100 && p.helmet) return { error: 'Zirh va dubulg‘a bor.' }; p.armor = 100; p.helmet = true; }
     else if (item === 'defuser') { if (p.kit) return { error: 'Defuse kit bor.' }; p.kit = true; }
-    else if (GRENADES.includes(item)) { if (p.inv.give(item) === null && !(p.inv.grenades[item] > 0)) return { error: 'Granata limiti.' }; }
+    else if (GRENADES.includes(item)) {
+      const before = p.inv.grenades[item]; p.inv.give(item);
+      if (p.inv.grenades[item] === before) return { error: 'Granata limiti.' };
+    }
     else {
       if (p.inv.weaponId(WEAPONS[item].slot) === item && p.inv.ammoOf(item).reserve >= WEAPONS[item].reserve) return { error: 'Bu qurol allaqachon bor.' };
       p.inv.give(item, { select: true });
@@ -243,7 +251,7 @@ export class Room {
     return true;
   }
   kill(victim, attacker, weaponId, head) {
-    victim.alive = false; victim.deaths++; victim.action = null; victim.respawnTick = this.tick + secondsToTick(2);
+    victim.alive = false; victim.carry = null; victim.deaths++; victim.action = null; victim.respawnTick = this.tick + secondsToTick(2);
     if (this.bomb.carrier === victim.id) this.dropBomb(victim);
     let killer = null;
     if (attacker && attacker !== victim && attacker.team !== victim.team) {
@@ -253,7 +261,7 @@ export class Room {
     } else if (attacker === victim) attacker.kills = Math.max(0, attacker.kills - 1);
     this.emit('kill', { killer: killer?.id || null, killerName: killer?.name || null, victim: victim.id, victimName: victim.name, weapon: weaponId || 'world', head: !!head, killerTeam: killer?.team || null, victimTeam: victim.team });
   }
-  dropBomb(p) { this.bomb = { ...this.bomb, state: 'dropped', carrier: null, x: p.char.x, y: p.char.y, z: p.char.z }; p.inv.remove('c4'); }
+  dropBomb(p) { this.bomb = { ...this.bomb, state: 'dropped', carrier: null, x: p.char.x, y: p.char.y, z: p.char.z, vy: p.char.vy }; p.inv.remove('c4'); }
 
   fireShot(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], c = p.char, origin = this.eye(p);
@@ -282,18 +290,17 @@ export class Room {
   }
   melee(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], origin = this.eye(p), c = p.char;
-    const dir = { x: -Math.sin(c.yaw) * Math.cos(c.pitch), y: Math.sin(c.pitch), z: -Math.cos(c.yaw) * Math.cos(c.pitch) };
-    const wall = this.collider.wallDistance(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, w.range);
     const viewTick = this.viewTickFor(p, cmd);
     let best = null;
     for (const t of this.players.values()) {
       if (!t.alive || t.team === p.team || t.id === p.id) continue;
-      const pose = this.poseAt(t, viewTick); if (!pose) continue;
+      const pose = this.poseAt(t, viewTick); if (!pose || (pose.life !== undefined && pose.life !== t.life)) continue;
       // widen the strike with a few offset rays so a slash is forgiving like a real swing
       for (const [dy, dp] of [[0, 0], [0.12, 0], [-0.12, 0], [0, -0.15]]) {
         const yaw = c.yaw + dy, pitch = c.pitch + dp;
         const d = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
-        const h = rayHitPlayer(origin, d, pose, Math.min(wall, w.range));
+        const limit = this.collider.wallDistance(origin.x, origin.y, origin.z, d.x, d.y, d.z, w.range);
+        const h = rayHitPlayer(origin, d, pose, limit);
         if (h && (!best || h.distance < best.distance)) best = { ...h, target: t, pose };
       }
     }
@@ -316,7 +323,7 @@ export class Room {
     if (clear < 0.44) { start.x = o.x; start.y = o.y; start.z = o.z; }
     this.grenades.push({ id: this.nextGrenade++, type: w.id, owner: p.id, team: p.team, x: start.x, y: start.y, z: start.z,
       vx: dir.x * speed + c.vx * 0.5, vy: dir.y * speed + c.vy * 0.5, vz: dir.z * speed + c.vz * 0.5, detonate: this.tick + secondsToTick(w.fuse), rest: 0, bounces: 0 });
-    this.emit('throw', { who: p.id, type: w.id });
+    this.emit('throw', { who: p.id, grenadeType: w.id });
   }
   stepGrenade(g) {
     const r = 0.07;
@@ -333,7 +340,7 @@ export class Room {
           g.vx -= (1 + 0.45) * vn * n.x; g.vy -= (1 + 0.45) * vn * n.y; g.vz -= (1 + 0.45) * vn * n.z;
           if (n.y > 0.7) { g.vx *= 0.82; g.vz *= 0.82; }
           g.bounces++;
-          if (Math.abs(vn) > 1.5) this.emit('bounce', { x: pos.x, y: pos.y, z: pos.z, type: g.type });
+          if (Math.abs(vn) > 1.5) this.emit('bounce', { x: pos.x, y: pos.y, z: pos.z, grenadeType: g.type });
         }
       }
     }
@@ -358,7 +365,7 @@ export class Room {
   }
   detonate(g) {
     const w = WEAPONS[g.type];
-    this.emit('detonate', { type: g.type, x: g.x, y: g.y, z: g.z });
+    this.emit('detonate', { grenadeType: g.type, x: g.x, y: g.y, z: g.z });
     const owner = this.players.get(g.owner) || null;
     if (g.type === 'he') {
       for (const t of this.players.values()) {
@@ -370,8 +377,8 @@ export class Room {
         const raw = w.damage * Math.pow(1 - d / w.radius, 1.6);
         const armorAbsorb = t.armor > 0 ? Math.min(t.armor, raw * 0.25) : 0;
         const amount = Math.max(1, Math.round(raw - armorAbsorb));
-        this.emit('hit', { attacker: g.owner, target: t.id, part: 'chest', damage: amount, killed: false, from: { x: g.x, z: g.z } });
-        this.damage(t, owner, amount, Math.round(armorAbsorb), 'he', false);
+        const killed = this.damage(t, owner, amount, Math.round(armorAbsorb), 'he', false);
+        this.emit('hit', { attacker: g.owner, target: t.id, part: 'chest', damage: amount, killed, from: { x: g.x, z: g.z } });
       }
     } else if (g.type === 'flash') {
       const origin = { x: g.x, y: g.y + 0.1, z: g.z };
@@ -382,7 +389,7 @@ export class Room {
         const c = t.char, fwd = { x: -Math.sin(c.yaw) * Math.cos(c.pitch), y: Math.sin(c.pitch), z: -Math.cos(c.yaw) * Math.cos(c.pitch) };
         const facing = (fwd.x * dx + fwd.y * dy + fwd.z * dz) / (d || 1);
         const duration = (facing > 0.3 ? 4.6 : facing > -0.4 ? 2.2 : 0.7) * (1 - Math.min(0.75, d / w.radius * 0.75));
-        t.flashUntil = this.tick + secondsToTick(duration);
+        t.flashUntil = Math.max(t.flashUntil, this.tick + secondsToTick(duration));
         this.emit('flash', { target: t.id, duration, full: facing > 0.3 });
       }
     } else if (g.type === 'smoke') {
@@ -394,12 +401,12 @@ export class Room {
   objectives(p, cmd) {
     if (!p.alive || this.phase !== 'live') { p.action = null; return; }
     const c = p.char, b = this.bomb;
-    if (b.state === 'dropped' && p.team === 'TERRORIST' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 1.6 && !p.inv.weaponId(SLOT.OBJECTIVE)) {
+    if (b.state === 'dropped' && p.team === 'TERRORIST' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 1.6 && !p.inv.weaponId(SLOT.OBJECTIVE) && this.hasSight(this.eye(p), { x: b.x, y: b.y + 0.15, z: b.z }, true)) {
       b.state = 'carried'; b.carrier = p.id; p.inv.give('c4'); this.emit('bombPickup', { who: p.id });
     }
     const still = c.grounded && horizontalSpeed(c) < 0.4;
     if (p.team === 'TERRORIST' && b.state === 'carried' && b.carrier === p.id) {
-      const site = this.map.sites.find(s => Math.hypot(c.x - s.x, c.z - s.z) < s.radius);
+      const site = this.map.sites.find(s => Math.hypot(c.x - s.x, c.z - s.z) < s.radius && Math.abs(c.y - s.y) < 1.5);
       if (p.inv.current === SLOT.OBJECTIVE && cmd.fire && site && still && !p.inv.drawing) {
         p.action = p.action?.kind === 'plant' ? p.action : { kind: 'plant', progress: 0 };
         p.action.progress += DT;
@@ -411,10 +418,11 @@ export class Room {
       } else if (p.action?.kind === 'plant') p.action = null;
       return;
     }
-    if (p.team === 'COUNTER_TERRORIST' && b.state === 'planted' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 2.2 && cmd.interact && still) {
+    if (p.team === 'COUNTER_TERRORIST' && b.state === 'planted' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 2.2 && cmd.interact && !cmd.fire && !cmd.fire2 && !p.inv.reloading && still && this.hasSight(this.eye(p), { x: b.x, y: b.y + 0.15, z: b.z }, true)) {
       const need = p.kit ? RULES.defuseKitSeconds : RULES.defuseSeconds;
       p.action = p.action?.kind === 'defuse' ? p.action : { kind: 'defuse', progress: 0, need };
       if (p.action.progress === 0) this.emit('defuseStart', { who: p.id, kit: p.kit });
+      if ([...this.players.values()].some(q => q !== p && q.alive && q.action?.kind === 'defuse')) { p.action = null; return; }
       p.action.progress += DT;
       if (p.action.progress >= need) {
         b.state = 'defused'; p.action = null; p.money = Math.min(RULES.maxMoney, p.money + 300);
@@ -422,6 +430,18 @@ export class Room {
         this.endRound('COUNTER_TERRORIST', 'defused');
       }
     } else if (p.action) p.action = null;
+  }
+  stepDroppedBomb() {
+    const b = this.bomb;
+    if (b.state !== 'dropped') return;
+    b.vy = (b.vy || 0) - GRAVITY * DT;
+    const count = Math.max(1, Math.ceil(Math.abs(b.vy) * DT / 0.08));
+    for (let i = 0; i < count; i++) {
+      b.y += b.vy * DT / count;
+      const contacts = [];
+      this.collider.resolveCapsule(b, 0.12, 0.24, contacts, 0, b.vy, 0);
+      if (contacts.some(n => n.y > 0.7)) { b.vy = 0; break; }
+    }
   }
   explodeBomb() {
     const b = this.bomb;
@@ -438,11 +458,16 @@ export class Room {
   // ---------------------------------------------------------------------------------------- tick driver
   nextCommand(p) {
     if (p.bot) return p.brain.command(p);
-    p.budget = Math.min(4, p.budget + 1);
-    if (!p.queue.length || p.budget < 1) return null;
-    p.budget -= 1;
-    const cmd = p.queue.shift(); p.ack = cmd.seq; return cmd;
+    if (p.queue.length) {
+      const cmd = p.queue.shift(); p.ack = cmd.seq; p.lastExecutedTick = this.tick;
+      return cmd;
+    }
+    // Hold continuous input across brief packet jitter, never repeat button edges.
+    if (this.tick - p.lastExecutedTick <= 8) return { ...p.cmd, slot: 0, quick: false };
+    // Gravity, friction and weapon timers keep running even if a client stops sending.
+    return { ...neutralInput(), ...p.lastLook, crouch: p.char.crouch > 0.5 };
   }
+
   runCommand(p, cmd) {
     const live = this.phase === 'live' || this.phase === 'warmup';
     const canMove = p.alive && this.phase !== 'buy' && this.phase !== 'matchEnd';
@@ -455,7 +480,7 @@ export class Room {
     if (ev.landed > 2) {
       this.emit('land', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z, speed: ev.landed });
       const fall = ev.landed / UNIT;
-      if (fall > 580 && this.phase !== 'warmup') this.damage(p, null, Math.round((fall - 580) * 0.2252), 0, 'fall', false);
+      if (fall > 580 && (this.phase === 'live' || this.phase === 'post')) this.damage(p, null, Math.round((fall - 580) * 0.2252), 0, 'fall', false);
     }
     if (!p.alive) return;
     const events = p.inv.step(cmd, { canFire: p.alive && live });
@@ -486,19 +511,25 @@ export class Room {
     else if (this.phase === 'matchEnd' && this.tick >= this.phaseEnd) this.resetToWarmup();
     if (this.phase !== 'warmup' && (this.count('TERRORIST') === 0 || this.count('COUNTER_TERRORIST') === 0)) this.resetToWarmup();
 
+    // Deadlines belong to world time, before any last-moment plant/defuse command.
+    if (this.phase === 'live') {
+      if (this.bomb.state === 'planted' && this.tick >= this.bomb.explodeTick) this.explodeBomb();
+      else if (this.bomb.state !== 'planted' && this.tick >= this.phaseEnd) this.endRound('COUNTER_TERRORIST', 'time');
+    }
+
     // ---- players
     for (const p of this.players.values()) {
       if (!p.alive && this.phase === 'warmup' && this.tick >= p.respawnTick && p.respawnTick) { this.respawn(p); p.respawnTick = 0; }
       let cmd = this.nextCommand(p);
       p.consumed = !!cmd;
-      if (!cmd) { if (p.bot) continue; continue; }
+      if (!cmd) continue;
       this.runCommand(p, cmd);
-      // catch up when the queue backs up (jitter burst), still bounded by the per-tick budget
-      if (!p.bot && p.queue.length > 3 && p.budget >= 1) { p.budget -= 1; cmd = p.queue.shift(); p.ack = cmd.seq; this.runCommand(p, cmd); }
+
     }
     if (this.phase === 'warmup') for (const p of this.players.values()) p.money = RULES.maxMoney;
 
     // ---- world
+    this.stepDroppedBomb();
     for (let i = this.grenades.length - 1; i >= 0; i--) if (this.stepGrenade(this.grenades[i])) this.grenades.splice(i, 1);
     this.smokes = this.smokes.filter(s => this.tick < s.end);
     this.lag.record(this.tick, [...this.players.values()].filter(p => p.alive));
@@ -522,6 +553,7 @@ export class Room {
     const viewer = this.players.get(viewerId);
     const remaining = Math.max(0, (this.phaseEnd - this.tick) / TICK_RATE);
     const events = this.events.filter(e => {
+      if (e.tick < this.tick - TICK_RATE) return false;
       if (e.type === 'footstep' || e.type === 'land' || e.type === 'jump' || e.type === 'weaponSound') {
         if (!viewer || e.who === viewerId) return false;
         return Math.hypot(e.x - viewer.char.x, e.z - viewer.char.z) < 45;

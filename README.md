@@ -81,13 +81,19 @@ Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
 ## Grafika
 
-ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **YUQORI**, **ULTRA** (GTAO + bloom, 4096 soya).
+ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **YUQORI** (2 × 1024 px soya), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
+
+Standart rejim: **TEZKOR + 60 FPS**. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
+
+Vite endi tizimning fayl hodisalaridan foydalanadi. Zarur bo‘lgan tarmoq disklari uchun `KONTIR_POLLING=1 npm run dev` bilan polling yoqiladi.
 
 ## Tekshiruv
 
 ```sh
 npm test               # movement, inventory, server qoidalari, lag comp, Socket.IO integratsiya
 npm run build
+# Serverni avtomatik ochib/yopadigan sinov (Chrome/Playwright kerak):
+CHROME_PATH="/path/to/chrome" npm run test:browser:local
 # haqiqiy brauzerda (dasturiy GL sekin, shuning uchun buy fazasini cho‘zamiz):
 KONTIR_TIMING='{"freeze":45,"warmup":3}' npm start &
 CHROME_PATH=/path/to/chrome npm run test:browser
@@ -100,3 +106,6 @@ CHROME_PATH=/path/to/chrome npm run test:browser
 - Snapshot barcha o‘yinchilar holatini yuboradi (anti-wallhack/visibility filtering yo‘q), login/rating/qayta ulanish sessiyasi, region matchmaker, sharding va anti-cheat production bosqichida.
 - Overtime (12–12) yo‘q — durang. Tashlab yuborilgan qurollarni olish (G) yo‘q; faqat C4 tushadi va olinadi.
 - Ovoz va soyalar sifati qurilmaga bog‘liq; **60+ FPS kafolat emas** (past sifat rejimi bor).
+
+
+2026-09-29 audit natijalari, xavfsizlik tuzatishlari, realizm va unumdorlik o‘zgarishlari: [docs/AUDIT.md](docs/AUDIT.md).

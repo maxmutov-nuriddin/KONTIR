@@ -116,3 +116,26 @@ test('GLB writer/parser round-trips triangles and markers', () => {
   assert.deepEqual(Array.from(parsed.meshes[0].positions), Array.from(m.positions));
   assert.equal(parsed.markers[0].name, 'spawn_T_1'); assert.equal(parsed.markers[0].z, 5);
 });
+
+test('non-unit ray directions still respect world-distance limits', () => {
+  assert.equal(collider.raycast(0, 2, 0, 0.1, 0, 0, 5), null);
+  assert.ok(Math.abs(collider.raycast(0, 2, 0, 0.1, 0, 0, 12).distance - 9.5) < 0.01);
+});
+
+test('GLB rejects truncated chunks, cyclic nodes and out-of-bounds accessors', () => {
+  const mesh = boxMesh('floor', 'stone', 0, 0, 0, 2, 1, 2);
+  const bytes = writeGLB({ materials: [{ name: 'stone', color: [1, 1, 1, 1], roughness: 1, metalness: 0 }], meshes: [mesh] });
+  assert.throws(() => parseGLB(bytes.slice(0, -4)), /length/);
+  const jsonLength = new DataView(bytes.buffer).getUint32(12, true);
+  const doc = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+  const rewrite = modify => {
+    const changed = structuredClone(doc); modify(changed);
+    const encoded = new TextEncoder().encode(JSON.stringify(changed)); const n = Math.ceil(encoded.length / 4) * 4;
+    const tail = bytes.subarray(20 + jsonLength), output = new Uint8Array(20 + n + tail.length);
+    output.set(bytes.subarray(0, 20)); output.fill(32, 20, 20 + n); output.set(encoded, 20); output.set(tail, 20 + n);
+    const view = new DataView(output.buffer); view.setUint32(8, output.length, true); view.setUint32(12, n, true);
+    return output;
+  };
+  assert.throws(() => parseGLB(rewrite(d => { d.nodes[0].children = [0]; })), /cyclic/);
+  assert.throws(() => parseGLB(rewrite(d => { d.accessors[0].byteOffset = 999999; })), /outside buffer/);
+});

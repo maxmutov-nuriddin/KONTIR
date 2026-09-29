@@ -21,7 +21,7 @@ export class MeshCollider {
     this.geometry = new BufferGeometry();
     this.geometry.setAttribute('position', new BufferAttribute(positions, 3));
     this.geometry.setIndex(new BufferAttribute(indices, 1));
-    this.bvh = new MeshBVH(this.geometry, { maxLeafTris: 6 });
+    this.bvh = new MeshBVH(this.geometry, { targetLeafSize: 6 });
     this.geometry.computeBoundingBox();
     this.bounds = this.geometry.boundingBox;
     this.triangleCount = indices.length / 3;
@@ -30,6 +30,8 @@ export class MeshCollider {
   /** Closest hit along a ray, or null. Returned normal always faces the ray origin. */
   raycast(ox, oy, oz, dx, dy, dz, far = 500) {
     rayOrigin.set(ox, oy, oz); rayDir.set(dx, dy, dz);
+    if (rayDir.lengthSq() < 1e-12) return null;
+    rayDir.normalize();
     ray.origin.copy(rayOrigin); ray.direction.copy(rayDir);
     const hit = this.bvh.raycastFirst(ray, DoubleSide, 0, far);
     if (!hit) return null;

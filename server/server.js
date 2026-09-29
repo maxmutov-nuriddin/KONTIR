@@ -1,6 +1,6 @@
 // KONTIR game server: HTTP (static + health), Socket.IO transport, matchmaker and the 64 Hz room tick loop.
 import { createServer as createHttpServer } from 'node:http';
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, realpath } from 'node:fs/promises';
 import { resolve, extname, sep, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -17,7 +17,7 @@ const normalizeTeam = value => (value === 'CT' || value === 'COUNTER_TERRORIST' 
 
 /** Loads manifest + GLBs once; physics (BVH) and navigation are built lazily per map. */
 export class MapLibrary {
-  constructor(dir) { this.dir = dir; this.manifest = null; this.cache = new Map(); }
+  constructor(dir) { this.dir = dir; this.manifest = null; this.cache = new Map(); this.pending = new Map(); }
   static async locate() {
     const candidates = [process.env.MAPS_DIR, resolve(here, '../client/public/maps'), resolve(here, '../dist/maps')].filter(Boolean);
     for (const dir of candidates) { try { await access(resolve(dir, 'manifest.json')); return dir; } catch { /* try next */ } }
@@ -33,23 +33,35 @@ export class MapLibrary {
     if (this.cache.has(id)) return this.cache.get(id);
     const meta = this.list().find(m => m.id === id);
     if (!meta) throw new Error(`unknown map ${id}`);
-    const bytes = new Uint8Array(await readFile(resolve(this.dir, meta.collision || meta.file)));
-    const data = buildMapData(meta, bytes);
-    data.nav = new Navigation(data.collider);
-    this.cache.set(id, data);
-    return data;
+    if (this.pending.has(id)) return this.pending.get(id);
+    const loading = (async () => {
+      const bytes = new Uint8Array(await readFile(resolve(this.dir, meta.collision || meta.file)));
+      const data = buildMapData(meta, bytes);
+      data.nav = new Navigation(data.collider);
+      this.cache.set(id, data);
+      return data;
+    })();
+    this.pending.set(id, loading);
+    try { return await loading; } finally { this.pending.delete(id); }
   }
 }
 
 /** Room registry + public quick-match queue. */
 export class Matchmaker {
-  constructor(library, { maxRooms = 24 } = {}) { this.library = library; this.rooms = new Map(); this.maxRooms = maxRooms; }
+  constructor(library, { maxRooms = 24 } = {}) { this.library = library; this.rooms = new Map(); this.maxRooms = maxRooms; this.pending = new Map(); this.publicPending = new Map(); }
   async create(code, mapId, options) {
-    if (this.rooms.size >= this.maxRooms) throw new Error('Server band.');
-    const map = await this.library.get(mapId);
-    const room = new Room(code, map, map.nav, options);
-    this.rooms.set(code, room);
-    return room;
+    if (this.rooms.has(code)) return this.rooms.get(code);
+    if (this.pending.has(code)) return this.pending.get(code);
+    // Reserve capacity before awaiting disk I/O: concurrent joins share one room.
+    if (this.rooms.size + this.pending.size >= this.maxRooms) throw new Error('Server band.');
+    const creating = (async () => {
+      const map = await this.library.get(mapId);
+      const room = new Room(code, map, map.nav, options);
+      this.rooms.set(code, room);
+      return room;
+    })();
+    this.pending.set(code, creating);
+    try { return await creating; } finally { this.pending.delete(code); }
   }
   /** Public room with a free slot on the requested map, else null. */
   findOpen(mapId) {
@@ -59,6 +71,16 @@ export class Matchmaker {
       if (!best || room.humans().length > best.humans().length) best = room;
     }
     return best;
+  }
+  async quick(mapId, options) {
+    const open = this.findOpen(mapId);
+    if (open) return open;
+    if (this.publicPending.has(mapId)) return this.publicPending.get(mapId);
+    let code;
+    do { code = 'Q' + randomBytes(3).toString('hex').toUpperCase(); } while (this.rooms.has(code) || this.pending.has(code));
+    const creating = this.create(code, mapId, { ...options, isPublic: true });
+    this.publicPending.set(mapId, creating);
+    try { return await creating; } finally { this.publicPending.delete(mapId); }
   }
   remove(code) { this.rooms.delete(code); }
 }
@@ -72,21 +94,34 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   const rooms = matchmaker.rooms;
   let serverStats = { ticks: 0, worstMs: 0 };
 
+  staticRoot = resolve(staticRoot);
+  // Both lexical and real paths must stay inside the public directory (including symlinks).
+  const publicFile = async (root, name) => {
+    const path = resolve(root, name);
+    if (path !== root && !path.startsWith(root + sep)) throw new Error('Outside public root');
+    const [base, actual] = await Promise.all([realpath(root), realpath(path)]);
+    if (actual !== base && !actual.startsWith(base + sep)) throw new Error('Outside public root');
+    return readFile(actual);
+  };
   const http = createHttpServer(async (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try { url = new URL(req.url, 'http://localhost'); decodeURIComponent(url.pathname); }
+    catch { res.writeHead(400); res.end(); return; }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
     if (url.pathname === '/health') {
       res.setHeader('Content-Type', 'application/json');
       return res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((n, r) => n + r.humans().length, 0), tickRate: 1 / DT, stepMs: [...rooms.values()].map(r => +r.stats.stepMs.toFixed(3)), worstMs: +serverStats.worstMs.toFixed(2) }));
     }
     if (url.pathname.startsWith('/maps/')) { // serve maps even without a client build
-      try { const data = await readFile(resolve(library.dir, decodeURIComponent(url.pathname.slice(6)).replace(/^\/+/, ''))); res.writeHead(200, { 'Content-Type': MIME[extname(url.pathname)] || 'application/octet-stream', 'Cache-Control': 'public, max-age=300' }); return res.end(data); }
+      try { const data = await publicFile(resolve(library.dir), decodeURIComponent(url.pathname.slice(6))); res.writeHead(200, { 'Content-Type': MIME[extname(url.pathname)] || 'application/octet-stream', 'Cache-Control': 'public, max-age=300' }); return res.end(data); }
       catch { res.writeHead(404); return res.end(); }
     }
     try {
       let path = resolve(staticRoot, '.' + decodeURIComponent(url.pathname));
       if (path !== staticRoot && !path.startsWith(staticRoot + sep)) { res.writeHead(403); return res.end(); }
       if (!extname(path)) path = resolve(staticRoot, 'index.html');
-      const data = await readFile(path);
+      const data = await publicFile(staticRoot, path);
       res.writeHead(200, { 'Content-Type': MIME[extname(path)] || 'application/octet-stream' });
       res.end(data);
     } catch { res.writeHead(404); res.end('Run npm run dev, or npm run build && npm start.'); }
@@ -95,6 +130,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
 
   function leave(socket) {
     const code = socket.data.room, room = rooms.get(code);
+    socket.data.joinVersion = (socket.data.joinVersion || 0) + 1;
     socket.data.room = null;
     if (!room) return;
     room.remove(socket.id); socket.leave(code);
@@ -105,15 +141,21 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('maps', (_, ack) => typeof ack === 'function' && ack({ maps: library.list().map(({ id, name, subtitle }) => ({ id, name, subtitle })) }));
     socket.on('join', async (request, ack) => {
       if (typeof ack !== 'function') return;
+      let ownsJoin = false;
       try {
         const now = performance.now();
         if (now - (socket.data.lastJoin ?? -10000) < 800) return ack({ error: 'Bir soniya kuting.' });
         socket.data.lastJoin = now;
+        if (socket.data.joining) return ack({ error: 'Ulanish davom etmoqda.' });
         if (socket.data.room) return ack({ error: 'Avval xonadan chiqing.' });
+        if (!request || typeof request !== 'object' || Array.isArray(request)) return ack({ error: 'Noto‘g‘ri so‘rov.' });
+        socket.data.joining = true; ownsJoin = true;
+        const joinVersion = socket.data.joinVersion || 0;
         const practice = request?.practice === true, quick = request?.quick === true;
+        if (practice && quick) return ack({ error: 'Bitta kirish usulini tanlang.' });
         const mapId = library.has(request?.mapId) ? request.mapId : library.list()[0].id;
         let room = null;
-        if (quick) room = matchmaker.findOpen(mapId);
+        if (quick) room = await matchmaker.quick(mapId, { timing });
         else if (!practice) {
           const code = String(request?.code ?? '').trim().toUpperCase();
           if (!/^[A-Z0-9]{4,8}$/.test(code)) return ack({ error: 'Xona kodi 4–8 harf yoki raqamdan iborat bo‘lsin.' });
@@ -124,6 +166,9 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
           const code = (practice ? 'P' : 'Q') + randomBytes(3).toString('hex').toUpperCase();
           room = await matchmaker.create(code, mapId, { isPublic: quick, practice, timing });
         }
+        while (quick && room.isFull() && socket.connected) room = await matchmaker.quick(mapId, { timing });
+        if (!socket.connected || joinVersion !== (socket.data.joinVersion || 0)) return;
+        if (room.practice && !practice) return ack({ error: 'Mashq xonasi shaxsiy.' });
         if (room.isFull()) return ack({ error: 'Xona to‘la (5 T + 5 CT).' });
         const name = String(request?.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
@@ -131,7 +176,8 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         if (practice) { room.fillBots(); room.start(); }
         socket.data.room = room.code; socket.join(room.code);
         ack({ ok: true, id: socket.id, code: room.code, team: player.team, snapshot: room.snapshot(socket.id) });
-      } catch (error) { ack({ error: error.message || 'Xatolik.' }); }
+      } catch (error) { if (!quiet) console.error('Join failed:', error); ack({ error: 'Xonaga ulanib bo‘lmadi.' }); }
+      finally { if (ownsJoin) socket.data.joining = false; }
     });
     socket.on('commands', batch => {
       const now = performance.now();
@@ -163,6 +209,13 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   const loop = setInterval(() => {
     const now = performance.now(), elapsed = Math.min(0.1, (now - previous) / 1000); previous = now;
     for (const [code, room] of rooms) {
+      // No humans: stop bot physics immediately, retain the room briefly for joins.
+      if (room.humans().length === 0) {
+        room.emptyAt ??= now;
+        if (now - room.emptyAt > 20000) matchmaker.remove(code);
+        continue;
+      }
+      room.emptyAt = null;
       room.accumulator += elapsed;
       let steps = 0;
       while (room.accumulator >= DT && steps++ < 7) {
@@ -174,7 +227,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       }
       if (room.humans().length === 0) { room.emptySince ??= room.tick; if (room.tick - room.emptySince > 64 * 20) matchmaker.remove(code); }
     }
-  }, 4);
+  }, 8);
   const probes = setInterval(() => {
     for (const socket of io.sockets.sockets.values()) {
       const started = performance.now();
@@ -186,7 +239,14 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     }
   }, 1000);
 
-  await new Promise(done => http.listen(port, host, done));
+  try {
+    await new Promise((done, reject) => {
+      http.once('error', reject);
+      http.listen(port, host, () => { http.off('error', reject); done(); });
+    });
+  } catch (error) {
+    clearInterval(loop); clearInterval(probes); io.close(); throw error;
+  }
   const address = http.address();
   if (!quiet) console.log(`KONTIR server: http://localhost:${address.port}  (64 tick, maps: ${library.list().map(m => m.id).join(', ')})`);
   const close = async () => { clearInterval(loop); clearInterval(probes); await new Promise(r => io.close(r)); http.closeAllConnections?.(); };
