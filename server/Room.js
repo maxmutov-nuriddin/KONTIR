@@ -29,7 +29,7 @@ export class Room {
     this.side = { A: 'TERRORIST', B: 'COUNTER_TERRORIST' };            // which squad currently plays which side
     this.wins = { A: 0, B: 0 }; this.lossStreak = { A: 0, B: 0 };
     this.bomb = { state: 'idle', carrier: null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
-    this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.nextGrenade = 1;
+    this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = []; this.nextGrenade = 1;
     this.events = []; this.eventId = 0; this.result = null; this.accumulator = 0;
     this.lag = new LagCompensator({ maxPlayers: RULES.maxPlayers });
     this.stats = { stepMs: 0, steps: 0 };
@@ -75,7 +75,7 @@ export class Room {
       id, name, team, squad, bot, index: this.nextIndex(), char: null, inv: new Inventory(team), health: 100, armor: 0, helmet: false, kit: false, money: RULES.startMoney,
       kills: 0, deaths: 0, assists: 0, alive: false, life: 0, queue: [], ack: -1, lastReceived: -1, lastCommandTick: this.tick, rtt: 80,
       cmd: neutralInput(), consumed: false, action: null, respawnTick: 0, damageBy: new Map(), flashUntil: 0, brain: bot ? new BotBrain(this) : null,
-      lastLook: { yaw: 0, pitch: 0 }, joinedTick: this.tick,
+      lastLook: { yaw: 0, pitch: 0 }, lastInteract: false, joinedTick: this.tick,
     };
     this.players.set(id, p);
     if (!this.host && !bot) this.host = id;
@@ -152,7 +152,7 @@ export class Room {
       this.lossStreak = { A: 0, B: 0 };
     }
     this.phase = 'buy'; this.phaseEnd = this.tick + secondsToTick(this.timing.freeze); this.result = null;
-    this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = [];
+    this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     for (const p of this.players.values()) {
       const keep = !fresh && !halftime && p.carry && p.alive;
       if (keep) { p.inv.resetTimers(); } else this.newLoadout(p);
@@ -199,7 +199,7 @@ export class Room {
   }
   resetToWarmup() {
     this.phase = 'warmup'; this.phaseEnd = this.tick + secondsToTick(this.timing.warmup); this.round = 0; this.epoch++;
-    this.wins = { A: 0, B: 0 }; this.result = null; this.grenades = []; this.smokes = []; this.fires = []; this.decoys = [];
+    this.wins = { A: 0, B: 0 }; this.result = null; this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     if (this.side.A !== 'TERRORIST') this.swapSides(false);
     this.bomb = { state: 'idle', carrier: null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
     for (const p of this.players.values()) { p.alive = false; this.newLoadout(p); p.money = RULES.maxMoney; this.respawn(p); p.kills = p.deaths = p.assists = 0; }
@@ -253,6 +253,8 @@ export class Room {
   kill(victim, attacker, weaponId, head) {
     victim.alive = false; victim.carry = null; victim.deaths++; victim.action = null; victim.respawnTick = this.tick + secondsToTick(2);
     if (this.bomb.carrier === victim.id) this.dropBomb(victim);
+    const gun = victim.inv.weaponId(SLOT.PRIMARY) || victim.inv.weaponId(SLOT.SECONDARY);
+    if (gun && this.phase !== 'warmup') { const ammo = { ...victim.inv.ammoOf(gun) }; victim.inv.slots[WEAPONS[gun].slot] = null; delete victim.inv.ammo[gun]; this.spawnDrop(victim, gun, ammo, 1.2); }
     let killer = null;
     if (attacker && attacker !== victim && attacker.team !== victim.team) {
       attacker.kills++; killer = attacker;
@@ -261,7 +263,86 @@ export class Room {
     } else if (attacker === victim) attacker.kills = Math.max(0, attacker.kills - 1);
     this.emit('kill', { killer: killer?.id || null, killerName: killer?.name || null, victim: victim.id, victimName: victim.name, weapon: weaponId || 'world', head: !!head, killerTeam: killer?.team || null, victimTeam: victim.team });
   }
-  dropBomb(p) { this.bomb = { ...this.bomb, state: 'dropped', carrier: null, x: p.char.x, y: p.char.y, z: p.char.z, vy: p.char.vy }; p.inv.remove('c4'); }
+  dropBomb(p, speed = 0) {
+    const c = p.char, f = this.throwVector(c, speed);
+    this.bomb = { ...this.bomb, state: 'dropped', carrier: null, x: c.x, y: c.y + (speed ? 1.2 : 0), z: c.z, vx: f.x, vy: speed ? f.y : c.vy, vz: f.z, droppedBy: p.id, pickupAfter: this.tick + secondsToTick(speed ? 0.8 : 0) };
+    p.inv.remove('c4');
+  }
+  /** Throw velocity from the view direction (slightly upward), plus the thrower's own motion. */
+  throwVector(c, speed) {
+    const pitch = Math.min(1.2, c.pitch + 0.25);
+    return { x: -Math.sin(c.yaw) * Math.cos(pitch) * speed + c.vx * 0.6, y: Math.sin(pitch) * speed + 1, z: -Math.cos(c.yaw) * Math.cos(pitch) * speed + c.vz * 0.6 };
+  }
+
+  // ------------------------------------------------------------------------------------ dropped weapons
+  spawnDrop(p, weapon, ammo, speed = 4.2) {
+    const c = p.char, v = this.throwVector(c, speed), eye = this.eye(p);
+    // start in front of the eye unless a wall is right there
+    const len = Math.hypot(v.x, v.z) || 1, dx = v.x / len, dz = v.z / len;
+    const clear = this.collider.wallDistance(eye.x, eye.y - 0.3, eye.z, dx, 0, dz, 0.6);
+    const off = Math.max(0, Math.min(0.45, clear - 0.2));
+    const d = { id: this.nextGrenade++, weapon, ammo, x: eye.x + dx * off, y: eye.y - 0.3, z: eye.z + dz * off, vx: v.x, vy: v.y, vz: v.z, yaw: c.yaw + Math.PI / 2, rest: 0,
+      owner: p.id, pickupAfter: this.tick + secondsToTick(0.9),   // only the thrower waits before re-collecting it
+ expires: this.tick + secondsToTick(90) };
+    this.drops.push(d);
+    if (this.drops.length > 40) this.drops.shift();
+    this.emit('dropped', { who: p.id, weapon, x: d.x, y: d.y, z: d.z });
+    return d;
+  }
+  /** Small rigid item: gravity, sub-stepped capsule contacts, damped bounce and ground friction. */
+  stepItem(o, r = 0.08) {
+    if (o.rest > 8) return;
+    o.vy -= GRAVITY * DT;
+    const speed = Math.hypot(o.vx, o.vy, o.vz), steps = Math.max(1, Math.ceil(speed * DT / 0.06)), sub = DT / steps, contacts = [];
+    const pos = { x: o.x, y: o.y, z: o.z };                       // o.y is the item's bottom (rests on the floor)
+    let ground = false;
+    for (let s = 0; s < steps; s++) {
+      pos.x += o.vx * sub; pos.y += o.vy * sub; pos.z += o.vz * sub;
+      contacts.length = 0;
+      if (this.collider.resolveCapsule(pos, r, r * 2, contacts, o.vx, o.vy, o.vz)) for (const n of contacts) {
+        const vn = o.vx * n.x + o.vy * n.y + o.vz * n.z;
+        if (vn >= 0) continue;
+        o.vx -= 1.25 * vn * n.x; o.vy -= 1.25 * vn * n.y; o.vz -= 1.25 * vn * n.z;
+        if (n.y > 0.7) ground = true;
+      }
+    }
+    if (ground) { const k = Math.max(0, 1 - 9 * DT); o.vx *= k; o.vz *= k; }
+    o.x = pos.x; o.y = pos.y; o.z = pos.z;
+    if (ground && Math.hypot(o.vx, o.vy, o.vz) < 0.35) { o.rest++; if (o.rest > 8) o.vx = o.vy = o.vz = 0; } else o.rest = 0;
+  }
+  stepDrops() {
+    if (!this.drops.length) return;
+    const floor = this.collider.bounds.min.y - 20;
+    this.drops = this.drops.filter(d => { this.stepItem(d); return d.y > floor && this.tick < d.expires; });
+    // walking over a gun picks it up when that slot is empty (CS rule)
+    for (const p of this.players.values()) {
+      if (!p.alive || this.phase === 'matchEnd') continue;
+      const d = this.drops.find(q => (q.owner !== p.id || this.tick >= q.pickupAfter) && !p.inv.slots[WEAPONS[q.weapon].slot] && this.near(p, q, 1.0));
+      if (d) this.pickUp(p, d);
+    }
+  }
+  near(p, o, radius) { const c = p.char; return Math.hypot(c.x - o.x, c.z - o.z) < radius && o.y - c.y > -0.6 && o.y - c.y < 1.4; }
+  /** 'E': the drop closest to the crosshair within reach (swaps with the same-slot weapon). */
+  aimedDrop(p) {
+    const eye = this.eye(p), c = p.char, f = { x: -Math.sin(c.yaw) * Math.cos(c.pitch), y: Math.sin(c.pitch), z: -Math.cos(c.yaw) * Math.cos(c.pitch) };
+    let best = null, bestScore = 0.86;
+    for (const d of this.drops) {
+      if (this.tick < d.pickupAfter && d.owner === p.id) continue;
+      const dx = d.x - eye.x, dy = d.y + 0.05 - eye.y, dz = d.z - eye.z, dist = Math.hypot(dx, dy, dz);
+      if (dist > 2.2) continue;
+      const score = (dx * f.x + dy * f.y + dz * f.z) / (dist || 1) + (dist < 0.9 ? 0.2 : 0);
+      if (score > bestScore && this.hasSight(eye, { x: d.x, y: d.y + 0.05, z: d.z }, true)) { best = d; bestScore = score; }
+    }
+    return best;
+  }
+  pickUp(p, d) {
+    const w = WEAPONS[d.weapon], held = p.inv.slots[w.slot];
+    if (held) { const ammo = { ...p.inv.ammoOf(held) }; p.inv.slots[w.slot] = null; delete p.inv.ammo[held]; this.spawnDrop(p, held, ammo, 2.2); }
+    this.drops = this.drops.filter(q => q !== d);
+    const select = !!held || p.inv.current === w.slot || (w.slot === SLOT.PRIMARY && !p.inv.weaponId(SLOT.PRIMARY));
+    p.inv.give(d.weapon, { ammo: d.ammo, select: select && !p.inv.pin });
+    this.emit('pickup', { who: p.id, weapon: d.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
+  }
 
   fireShot(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], c = p.char, origin = this.eye(p);
@@ -450,7 +531,7 @@ export class Room {
   objectives(p, cmd) {
     if (!p.alive || this.phase !== 'live') { p.action = null; return; }
     const c = p.char, b = this.bomb;
-    if (b.state === 'dropped' && p.team === 'TERRORIST' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 1.6 && !p.inv.weaponId(SLOT.OBJECTIVE) && this.hasSight(this.eye(p), { x: b.x, y: b.y + 0.15, z: b.z }, true)) {
+    if (b.state === 'dropped' && p.team === 'TERRORIST' && (b.droppedBy !== p.id || this.tick >= (b.pickupAfter || 0)) && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 1.6 && !p.inv.weaponId(SLOT.OBJECTIVE) && this.hasSight(this.eye(p), { x: b.x, y: b.y + 0.15, z: b.z }, true)) {
       b.state = 'carried'; b.carrier = p.id; p.inv.give('c4'); this.emit('bombPickup', { who: p.id });
     }
     const still = c.grounded && horizontalSpeed(c) < 0.4;
@@ -483,14 +564,8 @@ export class Room {
   stepDroppedBomb() {
     const b = this.bomb;
     if (b.state !== 'dropped') return;
-    b.vy = (b.vy || 0) - GRAVITY * DT;
-    const count = Math.max(1, Math.ceil(Math.abs(b.vy) * DT / 0.08));
-    for (let i = 0; i < count; i++) {
-      b.y += b.vy * DT / count;
-      const contacts = [];
-      this.collider.resolveCapsule(b, 0.12, 0.24, contacts, 0, b.vy, 0);
-      if (contacts.some(n => n.y > 0.7)) { b.vy = 0; break; }
-    }
+    b.vx ??= 0; b.vz ??= 0; b.vy ??= 0; b.rest ??= 0;
+    this.stepItem(b, 0.1);
   }
   explodeBomb() {
     const b = this.bomb;
@@ -512,7 +587,7 @@ export class Room {
       return cmd;
     }
     // Hold continuous input across brief packet jitter, never repeat button edges.
-    if (this.tick - p.lastExecutedTick <= 8) return { ...p.cmd, slot: 0, quick: false };
+    if (this.tick - p.lastExecutedTick <= 8) return { ...p.cmd, slot: 0, quick: false, drop: false };
     // Gravity, friction and weapon timers keep running even if a client stops sending.
     return { ...neutralInput(), ...p.lastLook, crouch: p.char.crouch > 0.5 };
   }
@@ -537,8 +612,11 @@ export class Room {
       if (e.type === 'shot') this.fireShot(p, e, cmd);
       else if (e.type === 'melee') this.melee(p, e, cmd);
       else if (e.type === 'throw') this.throwGrenade(p, e);
+      else if (e.type === 'drop') { if (e.weapon === 'c4') { if (this.bomb.carrier === p.id) this.dropBomb(p, 3.5); } else this.spawnDrop(p, e.weapon, e.ammo); }
       else if (e.type === 'reloadStart' || e.type === 'select' || e.type === 'quick' || e.type === 'dryfire' || e.type === 'reloaded') this.emit('weaponSound', { who: p.id, kind: e.type, weapon: e.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
     }
+    if (cmd.interact && !p.lastInteract && !p.action) { const d = this.aimedDrop(p); if (d) this.pickUp(p, d); }
+    p.lastInteract = !!cmd.interact;
     this.objectives(p, cmd);
     p.cmd = cmd;
     if (p.char.y < this.collider.bounds.min.y - 25 && p.alive) this.damage(p, null, 1000, 0, 'world', false);
@@ -578,7 +656,7 @@ export class Room {
     if (this.phase === 'warmup') for (const p of this.players.values()) p.money = RULES.maxMoney;
 
     // ---- world
-    this.stepDroppedBomb();
+    this.stepDroppedBomb(); this.stepDrops();
     for (let i = this.grenades.length - 1; i >= 0; i--) if (this.stepGrenade(this.grenades[i])) this.grenades.splice(i, 1);
     this.smokes = this.smokes.filter(s => this.tick < s.end);
     this.stepFires(); this.stepDecoys();
@@ -615,6 +693,7 @@ export class Room {
       scores: this.scores, side: this.side, half: this.round > RULES.halfRounds ? 2 : 1, result: this.result, practice: this.practice,
       bomb: { state: this.bomb.state, carrier: this.bomb.carrier, x: this.bomb.x, y: this.bomb.y, z: this.bomb.z, site: this.bomb.site, remaining: this.bomb.state === 'planted' ? Math.max(0, (this.bomb.explodeTick - this.tick) / TICK_RATE) : 0 },
       grenades: this.grenades.map(g => ({ id: g.id, type: g.type, x: +g.x.toFixed(2), y: +g.y.toFixed(2), z: +g.z.toFixed(2) })),
+      drops: this.drops.map(d => ({ id: d.id, weapon: d.weapon, x: +d.x.toFixed(2), y: +d.y.toFixed(2), z: +d.z.toFixed(2), yaw: +d.yaw.toFixed(2) })),
       fires: this.fires.map(f => ({ id: f.id, type: f.type, x: f.x, y: f.y, z: f.z, radius: f.radius, age: (this.tick - f.start) / TICK_RATE, left: (f.end - this.tick) / TICK_RATE })),
       smokes: this.smokes.map(s => ({ id: s.id, x: s.x, y: s.y, z: s.z, radius: s.radius, age: (this.tick - s.start) / TICK_RATE, left: (s.end - this.tick) / TICK_RATE })),
       events,

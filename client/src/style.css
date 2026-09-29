@@ -152,3 +152,8 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 .buy-cols strong { font-size: 16px; white-space: nowrap; flex: none; }
 .buy-cols b { font-size: 12px; }
 .buy-cols h4 { margin: 12px 0 8px; }
+
+/* 'E' pick-up prompt */
+#use-prompt { position: fixed; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); padding: 6px 12px; border-radius: 4px; background: #0b1214cc; color: #f0f3f1; font: 700 12px 'DM Sans', sans-serif; letter-spacing: .8px; pointer-events: none; opacity: 0; transition: opacity .12s; z-index: 5; white-space: nowrap; }
+#use-prompt.on { opacity: 1; }
+#use-prompt kbd { display: inline-block; min-width: 18px; margin-right: 6px; padding: 1px 5px; border: 1px solid #ffffff55; border-radius: 3px; text-align: center; color: var(--gold, #e3b04b); font: inherit; }

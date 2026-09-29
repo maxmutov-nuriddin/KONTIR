@@ -22,7 +22,7 @@ import { buildMapData } from '../shared/maps.js';
 import { applyPBR, recipeFor } from './src/materials.js';
 import { Effects } from './src/effects.js';
 import { animateOperator, buildOperator, holdWeapon } from './src/characters.js';
-import { buildWeaponRig } from './src/viewmodels.js';
+import { buildWeaponRigTP, buildWeaponRig } from './src/viewmodels.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -351,6 +351,37 @@ export class WorldEngine {
       const ctx = rig.parts.lcd.getContext('2d'), s = Math.max(0, Math.ceil(bomb.remaining));
       if (this._lcd !== s) { this._lcd = s; ctx.fillStyle = '#0d1a10'; ctx.fillRect(0, 0, 256, 96); ctx.fillStyle = '#5cff7a'; ctx.font = 'bold 64px monospace'; ctx.textAlign = 'center'; ctx.fillText(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, 128, 70); rig.parts.lcdTex.needsUpdate = true; }
     } else this.bombLight.intensity = 0;
+  }
+
+  /** Weapons lying on the ground: merged third-person rigs, lying on their side, smoothed toward the snapshot. */
+  updateDrops(list, dt) {
+    this.drops ??= new Map();
+    const seen = new Set();
+    for (const d of list || []) {
+      seen.add(d.id);
+      let e = this.drops.get(d.id);
+      if (!e) {
+        const rig = buildWeaponRigTP(d.weapon); rig.group.rotation.set(0, d.yaw, Math.PI / 2, 'YXZ');
+        rig.group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (!this.materials.has(o.material)) { this.materials.add(o.material); this.prepareMaterial(o.material); } } });
+        rig.group.position.set(d.x, d.y + 0.03, d.z); this.scene.add(rig.group);
+        e = { rig, spin: 0 }; this.drops.set(d.id, e);
+      }
+      const g = e.rig.group, k = Math.min(1, dt * 18);
+      g.position.x += (d.x - g.position.x) * k; g.position.y += (d.y + 0.03 - g.position.y) * k; g.position.z += (d.z - g.position.z) * k;
+    }
+    for (const [id, e] of this.drops) if (!seen.has(id)) { e.rig.group.removeFromParent(); this.drops.delete(id); }
+  }
+  /** Nearest dropped weapon in front of the camera within reach (client-side hint for the 'E' prompt). */
+  aimedDrop(list) {
+    const cam = this.camera, f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    let best = null, bestScore = 0.86;
+    for (const d of list || []) {
+      const dx = d.x - cam.position.x, dy = d.y + 0.05 - cam.position.y, dz = d.z - cam.position.z, dist = Math.hypot(dx, dy, dz);
+      if (dist > 2.2) continue;
+      const score = (dx * f.x + dy * f.y + dz * f.z) / (dist || 1) + (dist < 0.9 ? 0.2 : 0);
+      if (score > bestScore) { best = d; bestScore = score; }
+    }
+    return best;
   }
 
   // ------------------------------------------------------------------------------------------ actors

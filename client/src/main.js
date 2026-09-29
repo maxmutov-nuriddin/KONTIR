@@ -15,6 +15,7 @@ import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
 const store = { get: (k, d) => { try { return localStorage.getItem(`kontir.${k}`) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(`kontir.${k}`, v); } catch { /* private mode */ } } };
 const ui = new UI(), audio = new AudioEngine();
 let fireList = [], scopeK = 0;
+const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
 const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for battery/heat
 let world;
@@ -103,6 +104,8 @@ function handleEvent(e, me) {
     case 'melee': audio.swish(e.from, e.shooter === id); break;
     case 'pellet': world.effects.tracer(V.set(e.from.x, e.from.y - 0.1, e.from.z), e.to); if (e.wall) world.effects.impact(e.to, e.wall, 'wall'); break;
     case 'decoy': audio.gunshot(e.weapon, e, false); break;
+    case 'dropped': audio.throwSound({ x: e.x, y: e.y, z: e.z }, e.who === id); break;
+    case 'pickup': audio.draw({ x: e.x, y: e.y + 1, z: e.z }, e.who === id); if (e.who === id) ui.toast(`${WEAPONS[e.weapon]?.name || e.weapon} olindi.`); break;
     case 'throw': { if (e.who !== id) { const p = playerPos(e.who); if (p) audio.throwSound(p); } break; }
     case 'bounce': audio.bounce(e); break;
     case 'detonate': {
@@ -279,8 +282,14 @@ function frame(nowMs) {
       scopeK = 0; scopeEl.classList.remove('on'); controller.setZoomScale(1); if (world.camera.fov !== 74) { world.camera.fov = 74; world.camera.updateProjectionMatrix(); }
     }
     world.updateActors(network.remote(now), id, me?.team, dt);
-    if (!alive && specId) { const a = world.actors.get(specId); if (a) a.visible = false; } world.updateBomb(state.bomb, dt); world.effects.syncGrenades(state.grenades, dt); world.effects.syncFires(fireList, dt);
+    if (!alive && specId) { const a = world.actors.get(specId); if (a) a.visible = false; } world.updateBomb(state.bomb, dt); world.effects.syncGrenades(state.grenades, dt); world.effects.syncFires(fireList, dt); world.updateDrops(state.drops, dt);
     audio.setListener(world.camera);
+    // 'E' prompt for a weapon on the ground under the crosshair
+    const aimed = alive ? world.aimedDrop(state.drops) : null, key = aimed ? `${aimed.id}` : '';
+    if (key !== promptKey) {
+      promptKey = key; promptEl.classList.toggle('on', !!aimed);
+      if (aimed) { const w = WEAPONS[aimed.weapon], held = w && weapons.inventory.slots[w.slot]; promptEl.innerHTML = `<kbd>E</kbd> ${held ? `${WEAPONS[held]?.name || held} ⇄ ` : ''}${w?.name || aimed.weapon} olish`; }
+    }
     if (state.bomb.state === 'planted' && now - lastBeep > (state.bomb.remaining < 10 ? 250 : state.bomb.remaining < 20 ? 500 : 1000)) { lastBeep = now; audio.beep(state.bomb.remaining < 10); }
     // dynamic crosshair from the same inaccuracy model the server uses
     const w = weapons.inventory.weapon();
@@ -291,7 +300,7 @@ function frame(nowMs) {
       lastHud = nowMs; ui.update(state, id, weapons.hud(), { fps, drawCalls: world.renderer.info.render.calls });
       if (world.map?.radar && nowMs - lastRadar > 45) { lastRadar = nowMs; ui.drawRadar(state, { ...me, char: prediction.char, id }, world.map.radar, controller.yaw, world.map.sites); }
     }
-  } else if (world.map) { world.setMenuCamera(nowMs / 1000); world.updateBomb(null, dt); }
+  } else if (world.map) { if (promptKey) { promptKey = ''; promptEl.classList.remove('on'); } world.updateDrops([], dt); world.setMenuCamera(nowMs / 1000); world.updateBomb(null, dt); }
   if (debugCam) { world.setCamera(V.set(debugCam.x, debugCam.y, debugCam.z), debugCam.yaw, debugCam.pitch, 0); weapons.root.visible = false; }
   world.render(dt, debugCam ? false : playing ? alive : true);
 }

@@ -48,7 +48,7 @@ export class UI {
         <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
         <div class="hud-bottom">
           <div class="vitals"><div class="stat hp"><small>HP</small><strong id="health">100</strong></div><div class="stat ar"><small id="armor-label">ARMOR</small><strong id="armor">0</strong></div><div class="money" id="money">$800</div></div>
-          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>E</kbd> DEFUSE</span></div>
+          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
           <div class="weapons"><div id="slots"></div><div id="qswitch"><kbd>Q</kbd><span></span></div>
             <div class="ammo"><small id="weapon-name"></small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status"></small></div></div></div>
         <div class="telemetry"><span id="fps">60 FPS</span><span id="drawcalls">0 DC</span><span id="tickinfo">64 TICK</span></div>
@@ -85,7 +85,7 @@ export class UI {
       <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
       <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
-      <kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
+      <kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
   settings({ quality, sensitivity, volume, fpsLimit, onFpsLimit, onQuality, onSensitivity, onVolume }) {
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>

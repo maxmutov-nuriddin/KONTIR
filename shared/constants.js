@@ -67,7 +67,7 @@ export const smoothstep = t => t * t * (3 - 2 * t);
 export const neutralInput = () => ({
   forward: 0, right: 0, jump: false, crouch: false, walk: false,
   fire: false, fire2: false, reload: false, interact: false,
-  yaw: 0, pitch: 0, slot: 0, quick: false, viewTick: 0,
+  yaw: 0, pitch: 0, slot: 0, quick: false, drop: false, viewTick: 0,
 });
 
 const BOOLS = ['jump', 'crouch', 'walk', 'fire', 'fire2', 'reload', 'interact', 'quick'];
@@ -80,5 +80,6 @@ export function validCommand(c) {
   if (!Number.isInteger(c.slot) || c.slot < 0 || c.slot > 5) return false;
   if (!Number.isSafeInteger(c.viewTick) || c.viewTick < 0) return false;
   if (['epoch', 'life'].some(k => c[k] !== undefined && (!Number.isSafeInteger(c[k]) || c[k] < 0))) return false;
+  if (c.drop !== undefined && typeof c.drop !== 'boolean') return false;   // optional: older clients omit it
   return BOOLS.every(k => typeof c[k] === 'boolean');
 }

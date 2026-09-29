@@ -54,10 +54,14 @@ try {
   await page.keyboard.press('KeyB'); await page.locator('.buy-cols').waitFor();
   await page.click('[data-buy="kevlar"]');
   await page.waitForFunction(() => window.__KONTIR__.state.players.find(p => p.id === window.__KONTIR__.id).armor === 100);
-  await page.keyboard.press('Escape');                                   // closes the buy menu; the game re-captures the mouse
-  await page.waitForFunction(() => !document.querySelector('dialog').open && (window.__KONTIR__.controller.locked || !document.querySelector('#resume').classList.contains('hidden')));
-  if (await k(page, () => window.__KONTIR__.controller.locked)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !window.__KONTIR__.controller.locked); }
-  await page.click('#lock'); await page.waitForFunction(() => window.__KONTIR__.controller.locked);
+  await page.keyboard.press('Escape');                                   // closes the buy menu; the game tries to re-capture the mouse
+  await page.waitForFunction(() => !document.querySelector('dialog').open);
+  // either the game re-captured the mouse or it shows the resume button (pointer lock can be refused without a gesture)
+  for (let i = 0; i < 20 && !(await k(page, () => window.__KONTIR__.controller.locked)); i++) {
+    if (await page.locator('#lock').isVisible()) await page.click('#lock', { timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+  await page.waitForFunction(() => window.__KONTIR__.controller.locked);
 
   // --- weapon slots + 'Q' quick switch through the real input path
   const cur = () => k(page, () => [window.__KONTIR__.inventory.current, window.__KONTIR__.inventory.previous]);

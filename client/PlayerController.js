@@ -5,7 +5,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { MOVEMENT as M, clamp, lerp, smoothstep, neutralInput } from '../shared/constants.js';
 
 const KEY_SLOTS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'Tab', ...Object.keys(KEY_SLOTS)]);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'Tab', ...Object.keys(KEY_SLOTS)]);
 
 /**
  * Procedural weapon motion.
@@ -54,7 +54,7 @@ export class PlayerController {
     this.aim = new THREE.Object3D(); this.aim.rotation.order = 'YXZ';
     this.controls = new PointerLockControls(this.aim, domElement);
     this.controls.pointerSpeed = 0.6; this.controls.minPolarAngle = 0.03; this.controls.maxPolarAngle = Math.PI - 0.03;
-    this.keys = new Set(); this.edges = { slot: 0, quick: false, jump: false, reload: false, wheel: 0 };
+    this.keys = new Set(); this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 };
     this.fire = false; this.fire2 = false; this.firePressed = false; this.enabled = true;
     this.mouse = { dx: 0, dy: 0 }; this.viewmodel = new ViewmodelDynamics();
     this.crouchFactor = 0; this.stepOffset = new THREE.Vector3(); this.landDip = 0; this.vLandDip = 0; this.roll = 0;
@@ -72,7 +72,7 @@ export class PlayerController {
   get yaw() { return this.aim.rotation.y; }
   get pitch() { return this.aim.rotation.x; }
   setAim(yaw, pitch) { this.aim.rotation.set(pitch, yaw, 0, 'YXZ'); }
-  clearInput() { this.keys.clear(); this.fire = this.fire2 = this.firePressed = false; this.edges = { slot: 0, quick: false, jump: false, reload: false, wheel: 0 }; this.mouse.dx = this.mouse.dy = 0; }
+  clearInput() { this.keys.clear(); this.fire = this.fire2 = this.firePressed = false; this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.mouse.dx = this.mouse.dy = 0; }
 
   bind() {
     this.handlers = {
@@ -85,6 +85,7 @@ export class PlayerController {
         this.keys.add(e.code);
         if (e.code === 'Space') this.edges.jump = true;
         if (e.code === 'KeyQ') this.edges.quick = true;
+        if (e.code === 'KeyG') this.edges.drop = true;
         if (e.code === 'KeyR') this.edges.reload = true;
         if (KEY_SLOTS[e.code]) this.edges.slot = KEY_SLOTS[e.code];
         if (e.code === 'KeyB') this.callbacks.buy?.();
@@ -116,7 +117,7 @@ export class PlayerController {
   sampleCommand() {
     const c = neutralInput();
     c.yaw = this.yaw; c.pitch = this.pitch;
-    if (!this.locked || !this.enabled) { this.edges = { slot: 0, quick: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false; return c; }
+    if (!this.locked || !this.enabled) { this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false; return c; }
     const k = this.keys, e = this.edges;
     c.forward = Number(k.has('KeyW') || k.has('ArrowUp')) - Number(k.has('KeyS') || k.has('ArrowDown'));
     c.right = Number(k.has('KeyD') || k.has('ArrowRight')) - Number(k.has('KeyA') || k.has('ArrowLeft'));
@@ -125,9 +126,9 @@ export class PlayerController {
     c.walk = k.has('ShiftLeft') || k.has('ShiftRight');
     c.fire = this.fire || this.firePressed; c.fire2 = this.fire2;
     c.reload = k.has('KeyR') || e.reload; c.interact = k.has('KeyE');
-    c.slot = e.slot; c.quick = e.quick;
+    c.slot = e.slot; c.quick = e.quick; c.drop = !!e.drop;
     if (e.wheel && this.callbacks.wheel) { const s = this.callbacks.wheel(e.wheel); if (s) c.slot = s; }
-    this.edges = { slot: 0, quick: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false;
+    this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false;
     return c;
   }
 

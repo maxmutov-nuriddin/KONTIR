@@ -21,7 +21,7 @@ export class Inventory {
     this.util = null;
     this.current = 2; this.previous = 3;
     this.time = 0; this.drawUntil = 0; this.nextFire = 0; this.reloadUntil = 0; this.reloading = false;
-    this.pin = 0; this.pinStrength = 1; this.lastFire = false; this.lastFire2 = false; this.lastReload = false;
+    this.pin = 0; this.pinStrength = 1; this.lastFire = false; this.lastFire2 = false; this.lastReload = false; this.lastDrop = false;
     this.shots = 0; this.lastShot = -1e9; this.burst = 0; this.drawTicks = 1; this.reloadTicks = 1;
   }
 
@@ -53,7 +53,7 @@ export class Inventory {
 
   // ---- mutations ---------------------------------------------------------------------------------------
   /** Adds a weapon. Returns the id it displaced (primary / secondary), or null. */
-  give(id, { select = false } = {}) {
+  give(id, { select = false, ammo = null } = {}) {
     const w = WEAPONS[id];
     if (!w) return null;
     let displaced = null;
@@ -64,7 +64,7 @@ export class Inventory {
     } else {
       displaced = this.slots[w.slot] && this.slots[w.slot] !== id ? this.slots[w.slot] : null;
       this.slots[w.slot] = id;
-      if (w.kind === 'gun') this.ammo[id] = { mag: w.mag, reserve: w.reserve };
+      if (w.kind === 'gun') this.ammo[id] = ammo ? { mag: ammo.mag, reserve: ammo.reserve } : { mag: w.mag, reserve: w.reserve };
     }
     if (select) this.select(w.slot, { force: true });
     return displaced;
@@ -76,6 +76,15 @@ export class Inventory {
     if (w.kind === 'grenade') { this.grenades[id] = Math.max(0, this.grenades[id] - 1); if (this.grenades[id] === 0) this.util = GRENADES.find(g => this.grenades[g] > 0) || null; }
     else if (this.slots[w.slot] === id) this.slots[w.slot] = w.slot === SLOT.MELEE ? id : null;
     if (!this.has(this.current) || (this.weaponId() === null)) this.select(this.fallbackSlot(), { force: true });
+  }
+  /** 'G': throws the held gun (with its ammo) or the C4. Knife and grenades stay. Returns the event or null. */
+  drop() {
+    const id = this.weaponId(), w = id ? WEAPONS[id] : null;
+    if (!w || (w.kind !== 'gun' && w.kind !== 'objective') || this.pin) return null;
+    const ammo = w.kind === 'gun' ? { ...this.ammoOf(id) } : null;
+    this.slots[w.slot] = null; delete this.ammo[id]; this.reloading = false;
+    this.select(this.fallbackSlot(), { force: true });
+    return { type: 'drop', weapon: id, ammo };
   }
   fallbackSlot() {
     if (this.previous !== this.current && this.has(this.previous)) return this.previous;
@@ -128,6 +137,7 @@ export class Inventory {
     if (cmd.slot && this.select(cmd.slot)) events.push({ type: 'select', slot: this.current, weapon: this.weaponId() });
     else if (cmd.quick && this.quickSwitch()) events.push({ type: 'quick', slot: this.current, weapon: this.weaponId() });
 
+    if (cmd.drop && !this.lastDrop) { const d = this.drop(); if (d) events.push(d); }
     const w = this.weapon();
     // recoil recovery: after `recoilDelay` without firing the pattern index bleeds back to zero
     if (this.shots > 0 && w && this.time - this.lastShot > ticks(w.recoilDelay || 0.2)) {
@@ -185,6 +195,7 @@ export class Inventory {
     return this.finish(cmd, events);
   }
   finish(cmd, events) {
+    this.lastDrop = !!cmd.drop;
     this.lastFire = cmd.fire; this.lastFire2 = cmd.fire2; this.lastReload = cmd.reload;
     return events;
   }
@@ -202,7 +213,7 @@ export class Inventory {
       team: this.team, slots: { ...this.slots }, ammo: JSON.parse(JSON.stringify(this.ammo)), grenades: { ...this.grenades }, util: this.util,
       current: this.current, previous: this.previous, time: this.time, drawUntil: this.drawUntil, drawTicks: this.drawTicks || 1, nextFire: this.nextFire,
       reloadUntil: this.reloadUntil, reloadTicks: this.reloadTicks || 1, reloading: this.reloading, pin: this.pin, pinStrength: this.pinStrength,
-      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom,
+      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom,
     };
   }
   load(json) { Object.assign(this, JSON.parse(JSON.stringify(json))); return this; }

@@ -93,6 +93,13 @@ Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
 Molotov/Incendiary yerga tegishi bilan 7 s yonadigan zona hosil qiladi (har 0.5 s zarar; ustiga tushgan smoke o‘chiradi). Decoy egasining qurolidan soxta otish ovozlarini chiqaradi. Snayper miltiqlarida scope bo‘lmasa aniqlik juda past, otgandan keyin scope yopiladi; zoom paytida sichqoncha sezgirligi FOV bilan moslashadi.
 
+## Qurolni tashlash va olish
+
+- **G** — qo‘ldagi qurolni (o‘q-dorisi bilan) yoki C4 ni oldinga uloqtiradi; pichoq va granatalar tashlanmaydi.
+- **E** — nishonga olingan yerdagi qurolni oladi; o‘sha slotda qurol bo‘lsa, u almashinib yerga tushadi. Ekranda “E … olish” ko‘rsatmasi chiqadi.
+- Slot bo‘sh bo‘lsa, qurol ustidan yurib o‘tish kifoya (CS qoidasi). O‘lgan o‘yinchi asosiy (yo‘q bo‘lsa — pistol) qurolini tushiradi.
+- Hammasi server tomonida: fizika (sakrash, ishqalanish), olish masofasi va ko‘rinish tekshiriladi; raund boshida yerdagi qurollar tozalanadi. `tests/drops.test.js`.
+
 ## Ovoz
 
 O‘q ovozi endi oscillator “baraban” emas: `client/src/gunsynth.js` har bir qurol uchun offline DSP bilan stereo bufer yasaydi — tovushdan tez o‘qning N-to‘lqin “chaqmog‘i”, spektri 8 kHz dan tushadigan muzzle blast, filtrlangan shovqindan past chastotali bosim zarbasi, mexanizm shiqillashi (AWP/SSG bolt, Nova pump), devorlardan qaytgan aks-sadolar va qorayib boradigan “tail”; USP-S glushitel bilan. Har qurolga 3 xil variant, birinchi o‘qda to‘xtab qolmasligi uchun kerakli buferlar oldindan pishiriladi. `tests/gunsynth.test.js` spektr/dinamika xususiyatlarini tekshiradi.
