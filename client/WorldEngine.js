@@ -163,7 +163,7 @@ export class WorldEngine {
   }
   applyQualityTargets() {
     const r = this.renderer, q = this.quality;
-    r.setPixelRatio(Math.min(devicePixelRatio || 1, q.pixelRatio));
+    r.setPixelRatio(Math.min(devicePixelRatio || 1, q.pixelRatio) * (this.resScale ?? 1));
     r.shadowMap.enabled = q.shadows;
     this.disposeComposer();
     if (q.post) {
@@ -192,9 +192,15 @@ export class WorldEngine {
     this.resize();
     for (const m of this.materials) m.needsUpdate = true;
   }
+  /** Dynamic resolution: 0.6..1 of the tier's pixel ratio, applied only on meaningful changes (a resize reallocates targets). */
+  setResolutionScale(k) {
+    k = Math.round(Math.max(0.6, Math.min(1, k)) * 20) / 20;
+    if (k === (this.resScale ?? 1)) return false;
+    this.resScale = k; this.resize(); return true;
+  }
   resize() {
     const w = innerWidth, h = innerHeight;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio)); this.renderer.setSize(w, h, false);
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio) * (this.resScale ?? 1)); this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.viewCamera.aspect = w / h; this.viewCamera.updateProjectionMatrix();
     this.composer?.setPixelRatio(this.renderer.getPixelRatio()); this.composer?.setSize(w, h); this.csm?.updateFrustums();
   }

@@ -37,13 +37,14 @@ shared/        server va klient bir xil ishlatadigan deterministik kod
   movement.js    Source/GoldSrc harakati (friction, accelerate, airAccelerate, crouch, jump, step-up) — BVH kapsula
   collision.js   MeshCollider: BVH raycast, kapsula push-out, floorHeight, capsuleBlocked
   inventory.js   Slotlar, Q buffer, draw/reload/fire holat mashinasi, recoil pattern
-  weapons.js     AK-47, M4A4, Desert Eagle, Glock-18, Knife, HE/Flash/Smoke, C4; hitbox, zarar modeli
+  weapons.js     Qurol jadvali (pastda), recoil, scope, drob (pellet), hitbox, zarar modeli
   glb.js         Bog‘liqliksiz GLB o‘quvchi/yozuvchi (server ham xarita o‘qiy oladi)
 server/
   Room.js        5v5 xona, MR12 raund mashinasi, iqtisod, jang, granata, bomba
   LagCompensator.js  1000 ms ring buffer + interpolyatsiya (hitbox rewind)
   Bots.js, Navigation.js   Botlar (BVH’dan olingan navigatsiya grid)
-client/src/      prediction, network, ui, audio (protsedur), materials (PBR), viewmodels, characters, effects
+client/src/      prediction, network, ui, audio + gunsynth (DSP o‘q ovozi), materials (PBR), viewmodels + hands (qo‘l/qo‘lqop), characters (IK), effects
+client/viewer.html  Qurol ko‘rgichi: /viewer.html?w=ak47&mode=fp|rig|tp&team=CT
 tools/           build-maps.mjs va grid asosidagi xarita generatori
 ```
 
@@ -79,11 +80,30 @@ Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 
 
 Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
+## Do‘kon (B)
+
+| Guruh | T | CT | Ikkalasi |
+|---|---|---|---|
+| Pistol | Glock-18, Tec-9 | USP-S (glushitel), Five-SeveN | P250, Desert Eagle |
+| SMG | MAC-10 | MP9 | — |
+| Shotgun | — | — | Nova (9 ta drob) |
+| Rifle | Galil AR, AK-47 | FAMAS, M4A4 | SSG 08, AWP (scope: o‘ng tugma) |
+| Granata | Molotov | Incendiary | Decoy, Flashbang, HE, Smoke |
+| Jihoz | — | Defuse kit | Kevlar, Kevlar + dubulg‘a |
+
+Molotov/Incendiary yerga tegishi bilan 7 s yonadigan zona hosil qiladi (har 0.5 s zarar; ustiga tushgan smoke o‘chiradi). Decoy egasining qurolidan soxta otish ovozlarini chiqaradi. Snayper miltiqlarida scope bo‘lmasa aniqlik juda past, otgandan keyin scope yopiladi; zoom paytida sichqoncha sezgirligi FOV bilan moslashadi.
+
+## Ovoz
+
+O‘q ovozi endi oscillator “baraban” emas: `client/src/gunsynth.js` har bir qurol uchun offline DSP bilan stereo bufer yasaydi — tovushdan tez o‘qning N-to‘lqin “chaqmog‘i”, spektri 8 kHz dan tushadigan muzzle blast, filtrlangan shovqindan past chastotali bosim zarbasi, mexanizm shiqillashi (AWP/SSG bolt, Nova pump), devorlardan qaytgan aks-sadolar va qorayib boradigan “tail”; USP-S glushitel bilan. Har qurolga 3 xil variant, birinchi o‘qda to‘xtab qolmasligi uchun kerakli buferlar oldindan pishiriladi. `tests/gunsynth.test.js` spektr/dinamika xususiyatlarini tekshiradi.
+
 ## Grafika
 
 ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **YUQORI** (2 × 1024 px soya), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
 
-Standart rejim: **TEZKOR + 60 FPS**. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
+Qo‘llar: har bir qurol uchun barmoqlari egilgan qo‘lqopli qo‘l bitta geometriyaga “pishiriladi” (1 draw call), yeng tirsak nuqtasiga yo‘naltiriladi. Uchinchi shaxs operatorlar qurolni xuddi shu qo‘l pozalari bilan ushlaydi: yelka→tirsak→bilak ikki bo‘g‘inli analitik IK bilan har kadr qo‘lga yetkaziladi; qurol modeli material bo‘yicha bitta mesh’ga birlashtirilgan (keshlangan).
+
+Standart rejim: **YUQORI + 60 FPS**, dinamik ruxsat bilan: kadr vaqti maqsaddan 20 % oshsa ruxsat 0.6× gacha pasayadi, keyin qaytadi; shunda ham past bo‘lsa sifat bir pog‘ona tushadi. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
 
 Vite endi tizimning fayl hodisalaridan foydalanadi. Zarur bo‘lgan tarmoq disklari uchun `KONTIR_POLLING=1 npm run dev` bilan polling yoqiladi.
 

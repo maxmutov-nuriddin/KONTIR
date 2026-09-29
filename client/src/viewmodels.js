@@ -37,7 +37,7 @@ export function weaponMaterials() {
     glass: new THREE.MeshPhysicalMaterial({ color: 0x9fd2c0, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.42, clearcoat: 1 }),
     fuel: new THREE.MeshStandardMaterial({ color: 0xd8902a, roughness: 0.3, transparent: true, opacity: 0.85, emissive: 0x6a3a08, emissiveIntensity: 0.35 }),
     rag: std({ color: 0xb8ad90, roughness: 1, metalness: 0 }, null),
-    flame: new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    flame: new THREE.MeshBasicMaterial({ color: 0xc8501a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }),
     decoyYellow: std({ color: 0xc8a52a, metalness: 0.4, roughness: 0.5 }, null),
     incRed: std({ color: 0xa8321e, metalness: 0.45, roughness: 0.45 }, null),
     wireBlue: std({ color: 0x24457a, roughness: 0.6, metalness: 0 }, null),
@@ -380,7 +380,7 @@ function buildMolotov(M) {
   part(g, project(new THREE.LatheGeometry(profile.slice(0, 5).map(v => V2(v.x * 0.9, v.y)), 20), 6), M.fuel, 0, 0, 0);
   part(g, cylY(0.0125, 0.06, 10), M.rag, 0, 0.115, 0).scale.set(1, 1, 1);                            // rag wick
   const flame = new THREE.Group(); flame.position.set(0, 0.16, 0); g.add(flame); parts.flame = flame;
-  for (const [r, h, y] of [[0.022, 0.07, 0.035], [0.014, 0.05, 0.06]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), M.flame); c.position.y = y; flame.add(c); }
+  for (const [r, h, y] of [[0.013, 0.04, 0.02], [0.008, 0.03, 0.034]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12), M.flame); c.position.y = y; flame.add(c); }
   part(g, cylY(0.033, 0.004, 20), M.rag, 0, -0.06, 0);                                               // label band
   const label = part(g, cylY(0.0425, 0.03, 20), M.rag, 0, 0.03, 0); label.scale.set(1, 1, 1);
   return { group: g, muzzle: null, eject: null, parts, hands: {}, length: 0.28 };
