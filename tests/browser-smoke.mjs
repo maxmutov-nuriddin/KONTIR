@@ -97,7 +97,16 @@ try {
   await page.waitForFunction(a => window.__KONTIR__.inventory.ammo.glock.mag < a, ammo0);
   await page.screenshot({ path: 'test-results/game.png' });
   await page.keyboard.down('Tab'); assert.ok(await page.locator('#scoreboard').isVisible()); await page.keyboard.up('Tab');
-  console.log('PASS: menu, practice 5v5, buy, slots + Q quick-switch, speeds 250/130/100, crouch eye 1.65 -> 1.05, firing, scoreboard');
+  // --- comms: Y opens all-chat (server echoes it back), Z + digit sends a radio call
+  await page.keyboard.press('KeyY'); await page.locator('#chat-input').waitFor({ state: 'visible' });
+  await page.keyboard.type('salom jamoa'); await page.keyboard.press('Enter');
+  await page.locator('#chat-log', { hasText: 'salom jamoa' }).waitFor({ timeout: 10000 });
+  if (!(await k(page, () => window.__KONTIR__.controller.locked))) { await page.click('#lock').catch(() => {}); }
+  if (await k(page, () => window.__KONTIR__.controller.locked)) {
+    await page.keyboard.press('KeyZ'); await page.locator('#radio-menu').waitFor({ state: 'visible' });
+    await page.keyboard.press('Digit1'); await page.locator('#chat-log .cl', { hasText: '(radio)' }).waitFor({ timeout: 10000 });
+  }
+  console.log('PASS: menu, practice 5v5, buy, slots + Q quick-switch, speeds 250/130/100, crouch eye 1.65 -> 1.05, firing, scoreboard, chat/radio');
 
   // --- two humans: strict team allocation over real sockets
   await page.keyboard.press('Escape');

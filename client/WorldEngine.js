@@ -464,6 +464,7 @@ export class WorldEngine {
         a.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) { this.materials.add(m); this.prepareMaterial(m); } } });
         if (p.team === localTeam) { const l = this.label(p.name); a.add(l); l.position.y = 2.1; this.labels.set(p.id, l); }
       }
+      if (!p.char) { a.visible = false; continue; }                           // enemy not in line of sight (anti-wallhack)
       const c = p.char, speed = Math.hypot(c.vx, c.vz);
       a.position.set(c.x, c.y, c.z);
       holdWeapon(a, p.weapon);
@@ -474,7 +475,7 @@ export class WorldEngine {
     for (const [id, a] of this.actors) if (!seen.has(id)) { this.releaseTree(a); this.actors.delete(id); this.labels.delete(id); }
   }
   actorMuzzleWorld(id, out) {
-    const a = this.actors.get(id); if (!a) return null;
+    const a = this.actors.get(id); if (!a || !a.visible) return null;
     const rig = a.userData.rigs.get(a.userData.weaponId); if (!rig?.muzzle) return null;
     return rig.muzzle.getWorldPosition(out);
   }

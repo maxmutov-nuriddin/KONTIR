@@ -5,7 +5,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { MOVEMENT as M, clamp, lerp, smoothstep, neutralInput } from '../shared/constants.js';
 
 const KEY_SLOTS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'KeyF', 'Tab', ...Object.keys(KEY_SLOTS)]);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'KeyF', 'KeyY', 'KeyU', 'KeyZ', 'KeyX', 'Tab', ...Object.keys(KEY_SLOTS)]);
 
 /**
  * Procedural weapon motion.
@@ -82,6 +82,11 @@ export class PlayerController {
         if (GAME_KEYS.has(e.code) && (this.locked || e.code === 'Tab')) e.preventDefault();
         if (!this.locked) { if (e.code === 'KeyB' && !e.repeat) this.callbacks.buy?.(); if (e.code === 'Tab') this.callbacks.scoreboard?.(true); return; }
         if (e.repeat) return;
+        // comms: Y all-chat, U team chat, Z radio menu (digits pick a call while it is open), X ping at the crosshair
+        if (e.code === 'KeyY' || e.code === 'KeyU') { e.preventDefault(); this.clearInput(); this.callbacks.chat?.(e.code === 'KeyU'); return; }
+        if (e.code === 'KeyZ') { this.callbacks.radio?.(); return; }
+        if (e.code === 'KeyX') { this.callbacks.ping?.(); return; }
+        if (this.radioOpen && /^Digit[1-9]$/.test(e.code)) { this.callbacks.radioPick?.(Number(e.code.slice(5))); return; }
         this.keys.add(e.code);
         if (e.code === 'Space') this.edges.jump = true;
         if (e.code === 'KeyQ') this.edges.quick = true;
@@ -93,7 +98,7 @@ export class PlayerController {
         if (e.code === 'Tab') this.callbacks.scoreboard?.(true);
       },
       keyup: e => { this.keys.delete(e.code); if (e.code === 'Tab') this.callbacks.scoreboard?.(false); },
-      mousedown: e => { if (!this.locked) return; if (e.button === 0) { this.fire = true; this.firePressed = true; } if (e.button === 2) this.fire2 = true; },
+      mousedown: e => { if (!this.locked) return; if (e.button === 0) { this.fire = true; this.firePressed = true; } if (e.button === 2) this.fire2 = true; if (e.button === 1) { e.preventDefault(); this.callbacks.ping?.(); } },
       mouseup: e => { if (e.button === 0) this.fire = false; if (e.button === 2) this.fire2 = false; },
       mousemove: e => { if (this.locked) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY; } },
       wheel: e => { if (this.locked) { this.edges.wheel = Math.sign(e.deltaY); e.preventDefault(); } },

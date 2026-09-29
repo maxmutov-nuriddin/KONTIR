@@ -77,11 +77,11 @@ export class UI {
             <div class="team-score ct"><div class="alive" id="ct-alive"></div><b id="ct-score">0</b><small>CT</small></div></div>
           <div class="top-right"><button id="pause-button">ESC <span>MENYU</span></button><div id="killfeed"></div></div></div>
         <div id="crosshair" style="--gap:6px"><i></i><i></i><i></i><i></i></div><div id="hitmarker"><i></i><i></i><i></i><i></i></div><div id="damage-flash"></div><div id="dmg-dirs"></div><div id="flashbang"></div>
-        <div id="objective"></div><div id="interaction"><span></span><div><i></i></div></div><div id="round-banner"></div>
+        <div id="objective"></div><div id="interaction"><span></span><div><i></i></div></div><div id="round-banner"></div><div id="chat"><div id="chat-log"></div><form id="chat-form" hidden><span id="chat-scope">HAMMA</span><input id="chat-input" maxlength="120" autocomplete="off" spellcheck="false"></form></div><div id="radio-menu" hidden></div><div id="pings"></div>
         <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
         <div class="hud-bottom">
           <div class="vitals"><div class="stat hp"><small>HP</small><strong id="health">100</strong></div><div class="stat ar"><small id="armor-label">ARMOR</small><strong id="armor">0</strong></div><div class="money" id="money">$800</div></div>
-          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>F</kbd> KO‘RIK</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
+          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>F</kbd> KO‘RIK</span><span><kbd>Z</kbd> RADIO</span><span><kbd>X</kbd> PING</span><span><kbd>Y/U</kbd> CHAT</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
           <div class="weapons"><div id="slots"></div><div id="qswitch"><kbd>Q</kbd><span></span></div>
             <div class="ammo"><small id="weapon-name"></small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status"></small></div></div></div>
         <div class="telemetry"><span id="fps">60 FPS</span><span id="drawcalls">0 DC</span><span id="tickinfo">64 TICK</span></div>
@@ -234,7 +234,7 @@ export class UI {
       <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
       <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
-      <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
+      <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>Y / U</kbd><span>Chat: hammaga / faqat jamoaga</span><kbd>Z</kbd><span>Radio buyruqlari (keyin 1–9)</span><kbd>X / G‘ildirak tugmasi</kbd><span>Nishonga olingan joyni jamoaga belgilash (ping)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
   settings({ quality, sensitivity, volume, fpsLimit, onFpsLimit, onQuality, onSensitivity, onVolume }) {
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
@@ -362,12 +362,32 @@ export class UI {
     if (this.lastPhase !== state.phase) {
       this.lastPhase = state.phase; const banner = $('#round-banner');
       const winner = state.result?.winner;
-      banner.innerHTML = state.phase === 'post' || state.phase === 'matchEnd' ? `<strong class="${winner === 'TERRORIST' ? 't' : 'ct'}">${winner ? TEAM_LABEL[winner] + ' — RAUND SIZNIKI' : 'DURANG'}</strong><small>${REASONS[state.result?.reason] || ''}</small>`
-        : state.phase === 'live' ? '<strong>RAUND BOSHLANDI</strong>' : state.phase === 'buy' ? `<strong>RAUND ${state.round}</strong><small>JIHOZLANING · B</small>` : '';
+      banner.innerHTML = state.phase === 'post' || state.phase === 'matchEnd' ? `<strong class="${winner === 'TERRORIST' ? 't' : 'ct'}">${winner ? TEAM_LABEL[winner] + ' — RAUND SIZNIKI' : 'DURANG'}</strong><small>${REASONS[state.result?.reason] || ''}</small>${state.result?.mvp ? `<em class="mvp">★ MVP: ${esc(state.result.mvp.name)}${state.result.mvp.kills ? ` · ${state.result.mvp.kills} ta o‘ldirish` : ''}</em>` : ''}`
+        : state.phase === 'live' ? '<strong>RAUND BOSHLANDI</strong>' : state.phase === 'buy' ? `<strong>RAUND ${state.round}</strong><small>${state.overtime ? `OVERTIME ${state.overtime} · ` : ''}JIHOZLANING · B</small>` : '';
       gsap.killTweensOf(banner); gsap.set(banner, { opacity: banner.textContent ? 1 : 0 }); if (banner.textContent) gsap.to(banner, { opacity: 0, duration: 0.6, delay: 2.6 });
     }
     this.scoreboard(state, id);
   }
+  // ------------------------------------------------------------------------------------------- comms
+  chatLine({ name, text, team, teamOnly, dead, radio }) {
+    const row = document.createElement('div'); row.className = `cl ${team === 'TERRORIST' ? 't' : 'ct'}`;
+    row.innerHTML = `${dead ? '<i>*O‘LIK*</i> ' : ''}${teamOnly ? '<i>(JAMOA)</i> ' : ''}<b>${esc(name)}</b>${radio ? ' <i>(radio)</i>' : ''}: <span>${esc(text)}</span>`;
+    const log = $('#chat-log'); log.append(row); while (log.children.length > 8) log.firstChild.remove();
+    gsap.fromTo(row, { opacity: 0 }, { opacity: 1, duration: 0.15 }); setTimeout(() => gsap.to(row, { opacity: 0, duration: 0.6, onComplete: () => row.remove() }), 9000);
+  }
+  openChat(teamOnly, onSend, onClose) {
+    const form = $('#chat-form'), input = $('#chat-input');
+    form.hidden = false; $('#chat-scope').textContent = teamOnly ? 'JAMOA' : 'HAMMA'; input.value = ''; input.focus();
+    const close = () => { form.hidden = true; input.blur(); form.onsubmit = null; input.onkeydown = null; onClose(); };
+    form.onsubmit = e => { e.preventDefault(); const t = input.value.trim(); if (t) onSend(t); close(); };
+    input.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+  }
+  radioMenu(lines) {
+    const m = $('#radio-menu');
+    if (!lines) { m.hidden = true; return; }
+    m.hidden = false; m.innerHTML = `<small>RADIO · 1-${lines.length}</small>${lines.map((l, i) => `<div><kbd>${i + 1}</kbd> ${esc(l)}</div>`).join('')}<div><kbd>Z</kbd> yopish</div>`;
+  }
+
   drawRadar(state, me, radarMap, yaw, sites = []) {
     const c = this.radar, W = 220, R = 46, scale = W / 2 / R;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W, W); c.fillStyle = '#0d1516e6'; c.fillRect(0, 0, W, W);
@@ -378,7 +398,7 @@ export class UI {
     for (const s of sites) { const [x, z] = w2c(s.x, s.z); c.fillStyle = '#e9b64f'; c.save(); c.translate(x, z); c.rotate(-yaw); c.fillText(s.id, 0, 4); c.restore(); }
     const b = state.bomb; if (b.state === 'planted' || b.state === 'dropped') { const [x, z] = w2c(b.x, b.z); c.fillStyle = b.state === 'planted' ? '#ff3b2a' : '#e9b64f'; c.fillRect(x - 3, z - 3, 6, 6); }
     for (const p of state.players) {
-      if (!p.alive || p.id === me.id) continue; if (p.team !== me.team && !extraSeen.has(p.id)) continue;
+      if (!p.alive || p.id === me.id || !p.char) continue; if (p.team !== me.team && p.hidden) continue;   // enemies appear on radar only while spotted
       const [x, z] = w2c(p.char.x, p.char.z); c.fillStyle = p.team === 'TERRORIST' ? '#e0b45a' : '#6fb2e8'; c.beginPath(); c.arc(x, z, 3.4, 0, 7); c.fill();
       c.strokeStyle = c.fillStyle; c.beginPath(); c.moveTo(x, z); c.lineTo(x - Math.sin(p.char.yaw) * 8, z - Math.cos(p.char.yaw) * 8); c.stroke();
     }
@@ -387,9 +407,10 @@ export class UI {
   }
   scoreboard(state, id) {
     if ($('#scoreboard').classList.contains('hidden')) return;
-    $('#sb-title').textContent = `${state.scores.TERRORIST} : ${state.scores.COUNTER_TERRORIST} — RAUND ${state.round}`;
+    $('#sb-title').textContent = `${state.scores.TERRORIST} : ${state.scores.COUNTER_TERRORIST} — RAUND ${state.round}${state.overtime ? ` · OVERTIME ${state.overtime}` : ''}`;
     const me = state.players.find(p => p.id === id);
-    const team = t => `<table class="${t === 'TERRORIST' ? 't' : 'ct'}"><thead><tr><th>${TEAM_LABEL[t]}</th><th>$</th><th>K</th><th>A</th><th>D</th><th>PING</th></tr></thead><tbody>${state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<tr class="${p.id === id ? 'me' : ''} ${p.alive ? '' : 'dead'}"><td>${esc(p.name)}${p.bot ? ' · BOT' : ''}</td><td>${p.team === me?.team ? '$' + (p.money ?? 0) : '—'}</td><td>${p.kills}</td><td>${p.assists}</td><td>${p.deaths}</td><td>${p.bot ? '—' : p.rtt}</td></tr>`).join('')}</tbody></table>`;
+    const rounds = Math.max(1, (state.scores.TERRORIST || 0) + (state.scores.COUNTER_TERRORIST || 0));
+    const team = t => `<table class="${t === 'TERRORIST' ? 't' : 'ct'}"><thead><tr><th>${TEAM_LABEL[t]}</th><th>$</th><th>K</th><th>A</th><th>D</th><th>ADR</th><th>HS%</th><th>★</th><th>PING</th></tr></thead><tbody>${state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills || (b.damage || 0) - (a.damage || 0)).map(p => `<tr class="${p.id === id ? 'me' : ''} ${p.alive ? '' : 'dead'}"><td>${esc(p.name)}${p.bot ? ' · BOT' : ''}</td><td>${p.team === me?.team ? '$' + (p.money ?? 0) : '—'}</td><td>${p.kills}</td><td>${p.assists}</td><td>${p.deaths}</td><td>${Math.round((p.damage || 0) / rounds)}</td><td>${p.kills ? Math.round((p.hsKills || 0) / p.kills * 100) : 0}</td><td>${p.mvps || 0}</td><td>${p.bot ? '—' : p.rtt}</td></tr>`).join('')}</tbody></table>`;
     $('.sb-teams').innerHTML = team('TERRORIST') + team('COUNTER_TERRORIST');
   }
 }

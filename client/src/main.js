@@ -82,7 +82,7 @@ function receive(next) {
 }
 
 const V = new THREE.Vector3(), V2 = new THREE.Vector3();
-function playerPos(pid) { const p = state?.players.find(q => q.id === pid); return p ? { x: p.char.x, y: p.char.y + 1.4, z: p.char.z } : null; }
+function playerPos(pid) { const p = state?.players.find(q => q.id === pid); return p?.char ? { x: p.char.x, y: p.char.y + 1.4, z: p.char.z } : null; }
 function handleEvent(e, me) {
   switch (e.type) {
     case 'shot': {
@@ -98,6 +98,7 @@ function handleEvent(e, me) {
         world.effects.tracer(muzzle, e.to, true);
       }
       if (e.hit) world.effects.impact(e.to, {}, 'flesh'); else if (e.wall) world.effects.impact(e.to, e.wall, 'wall');
+      if (e.pen) { const d = V.set(e.to.x - e.from.x, e.to.y - e.from.y, e.to.z - e.from.z).normalize(); world.effects.impact(e.pen, { nx: d.x, ny: d.y, nz: d.z }, 'wall'); }
       break;
     }
     case 'hit':
@@ -114,6 +115,10 @@ function handleEvent(e, me) {
     case 'land': audio.land({ x: e.x, y: e.y, z: e.z }, false, e.speed); break;
     case 'weaponSound': { const pos = { x: e.x, y: e.y + 1.2, z: e.z }; if (e.kind === 'reloadStart') audio.reload(pos, false, e.weapon); else if (e.kind === 'select' || e.kind === 'quick') audio.draw(pos); break; }
     case 'melee': audio.swish(e.from, e.shooter === id); break;
+    case 'chat': ui.chatLine(e); audio.click(); break;
+    case 'radio': ui.chatLine({ name: e.name, text: RADIO[e.msg] || '…', team: e.team, teamOnly: true, radio: true }); audio.beep(false); break;
+    case 'ping': world.effects.ping(e, e.who === id ? '#8ee07a' : '#e5b96a', e.name); audio.beep(true); break;
+    case 'overtime': ui.toast(`OVERTIME ${e.set} · ${e.half}-yarim · har kimga $12 500`); break;
     case 'pellet': world.effects.tracer(V.set(e.from.x, e.from.y - 0.1, e.from.z), e.to); if (e.wall) world.effects.impact(e.to, e.wall, 'wall'); break;
     case 'decoy': audio.gunshot(e.weapon, e, false); break;
     case 'dropped': audio.throwSound({ x: e.x, y: e.y, z: e.z }, e.who === id); break;
@@ -213,6 +218,18 @@ function openBuy() {
   };
   render();
 }
+
+// ---------------------------------------------------------------------------------------------- comms: chat (Y / U), radio (Z), ping (X / middle mouse)
+const RADIO = ['Hujumga!', 'Orqaga chekinamiz', 'Meni yopib turing', 'Dushman ko‘rindi!', 'Hudud toza', 'Yordam kerak!', 'Tushunarli', 'Yo‘q', 'Bombani A ga olib boramiz', 'Bombani B ga olib boramiz'].slice(0, 9);
+controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, text => network.socket.emit('chat', { text, team: teamOnly }), () => {}); })
+  .on('radio', () => { if (!playing) return; controller.radioOpen = !controller.radioOpen; ui.radioMenu(controller.radioOpen ? RADIO : null); })
+  .on('radioPick', n => { controller.radioOpen = false; ui.radioMenu(null); if (RADIO[n - 1]) network.socket.emit('radio', n - 1); })
+  .on('ping', () => {
+    if (!playing || !world.map) return;
+    const f = V.set(0, 0, -1).applyQuaternion(world.camera.quaternion), o = world.camera.position;
+    const hit = world.map.collider.raycast(o.x, o.y, o.z, f.x, f.y, f.z, 90);
+    if (hit) network.socket.emit('ping', { x: hit.x, y: hit.y, z: hit.z });
+  });
 
 // ---------------------------------------------------------------------------------------------- matchmaking (CS2-style)
 let searchingMM = false, mode = store.get('mode', 'competitive');

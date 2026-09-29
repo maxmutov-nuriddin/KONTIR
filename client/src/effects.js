@@ -192,6 +192,11 @@ export class Effects {
       c.m.rotation.x += c.spin.x * dt; c.m.rotation.y += c.spin.y * dt;
       if (c.m.position.y < c.floor + 0.01) { c.m.position.y = c.floor + 0.01; c.vel.y *= -0.35; c.vel.x *= 0.6; c.vel.z *= 0.6; c.spin.multiplyScalar(0.5); }
     }
+    if (this.pings) for (let i = this.pings.length - 1; i >= 0; i--) {
+      const p = this.pings[i]; p.age += dt;
+      p.s.material.opacity = p.age < 3.4 ? 1 : Math.max(0, 1 - (p.age - 3.4) / 0.6);
+      if (p.age > 4) { p.s.removeFromParent(); p.s.material.map.dispose(); p.s.material.dispose(); this.pings.splice(i, 1); }
+    }
     for (const r of this.rings) {
       if (!r.live) continue;
       r.age += dt; const k = r.age / r.life; if (k >= 1) { r.live = false; r.m.visible = false; continue; }
@@ -224,6 +229,18 @@ export class Effects {
       }
     }
     for (const id of this.fires.keys()) if (!seen.has(id)) this.fires.delete(id);
+  }
+  /** Team ping: a marker visible through walls for 4 s (diamond + name), plus a short ground ring. */
+  ping(pos, color = '#e5b96a', label = '') {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 160; const g = c.getContext('2d');
+    g.fillStyle = color; g.strokeStyle = '#000a'; g.lineWidth = 6;
+    g.beginPath(); g.moveTo(64, 96); g.lineTo(40, 60); g.lineTo(64, 24); g.lineTo(88, 60); g.closePath(); g.stroke(); g.fill();
+    g.font = '700 22px DM Sans, Arial'; g.textAlign = 'center'; g.lineWidth = 5; g.strokeText(label, 64, 140); g.fillText(label, 64, 140);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false }));
+    s.scale.set(0.05, 0.0625, 1); s.position.set(pos.x, pos.y + 0.9, pos.z); s.renderOrder = 20; this.scene.add(s);
+    this.pings ??= []; this.pings.push({ s, age: 0 });
+    const ring = this.rings.find(r => !r.live); if (ring) { ring.live = true; ring.age = 0; ring.life = 0.6; ring.size = 1.2; ring.m.visible = true; ring.m.position.set(pos.x, pos.y + 0.05, pos.z); }
   }
   syncSmokes(list) {
     const seen = new Set(list.map(s => s.id));

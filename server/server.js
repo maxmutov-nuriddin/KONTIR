@@ -231,6 +231,9 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       socket.data.lastBuy = now;
       ack(rooms.get(socket.data.room)?.buy(socket.id, String(item)) || { error: 'Xona topilmadi.' });
     });
+    socket.on('chat', msg => { if (msg && typeof msg === 'object') rooms.get(socket.data.room)?.chat(socket.id, msg.text, msg.team === true); });
+    socket.on('radio', n => rooms.get(socket.data.room)?.radio(socket.id, n));
+    socket.on('ping', pt => { if (pt && typeof pt === 'object') rooms.get(socket.data.room)?.ping(socket.id, +pt.x, +pt.y, +pt.z); });
     socket.on('leave', () => leave(socket));
     socket.on('disconnect', () => { queue.leave(socket.id); leave(socket); });
   });

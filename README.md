@@ -76,11 +76,25 @@ tools/           build-maps.mjs va grid asosidagi xarita generatori
 | **Q** | Oxirgi qurolga qaytish (`currentSlot` ⇄ `previousSlot`) |
 | Sichqoncha g‘ildiragi | Keyingi/oldingi slot |
 | LMB / RMB | Otish · pichoq sanchish / kuchsiz granata |
-| R · B · E · Tab | Reload · Xarid · Defuse (ushlab) · Natijalar |
+| R · B · E · Tab | Reload · Xarid · Defuse (ushlab) / qurol olish · Natijalar |
+| **G** · **F** | Qurolni tashlash · Qurol ko‘rigi (inspect) |
+| **Y** / **U** | Umumiy chat / jamoa chati |
+| **Z** (+1–9) | Radio buyruqlari menyusi |
+| **X** / o‘rta tugma | Ping — nishon joyiga jamoaga belgi |
 
 ## Qoidalar (competitive MR12)
 
-Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 12 raunddan keyin tomonlar almashadi, pul 800 $ ga qaytadi, **13 raund** yutgan g‘olib (12–12 durang). G‘alaba: jamoani yo‘q qilish, **C4 portlashi (40 s)**, **defuse (10 s / kit 5 s)**, vaqt (CT). Plant: C4 (5-slot) bilan A/B hududida LMB’ni 3.2 s ushlab turing. Iqtisod: g‘alaba 3250 $, mag‘lubiyat 1400 → 3400 $ (ketma-ket), qurol bo‘yicha kill mukofoti.
+Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 12 raunddan keyin tomonlar almashadi, pul 800 $ ga qaytadi, **13 raund** yutgan g‘olib (12–12 bo‘lsa **overtime MR3**: 12 500 $ bilan, 4 raund yutgan g‘olib; yana teng bo‘lsa keyingi overtime). G‘alaba: jamoani yo‘q qilish, **C4 portlashi (40 s)**, **defuse (10 s / kit 5 s)**, vaqt (CT). Plant: C4 (5-slot) bilan A/B hududida LMB’ni 3.2 s ushlab turing. Iqtisod: g‘alaba 3250 $, mag‘lubiyat 1400 → 3400 $ (ketma-ket), qurol bo‘yicha kill mukofoti.
+
+Har raund oxirida **MVP**, natijalar jadvalida **K/A/D, ADR, HS%, ★ MVP**. O‘q qurolga qarab devor/qutidan **o‘tadi** (penetratsiya chuqurligi va zarar kamayishi `shared/weapons.js` da). Server **anti-wallhack**: dushman ko‘rinmasa uning koordinatalari va quroli snapshot’ga umuman yuborilmaydi (bosh/yon “peek” nurlari va 26 tick kechikish bilan). Jamoa chat/radio/ping faqat o‘z jamoasiga yetadi.
+
+### Demo profil
+
+Akkaunt hozircha yo‘q: birinchi ochilishda har kimga avtomatik **demo profil** beriladi (brauzerda saqlanadi) — ism, avatar rangi, XP/daraja, reyting (Kumush I … Global Elita), tangalar, qurol skinlari (finish) va boshlang‘ich pistolet/M4 tanlovi. Lobbi sahifalari: **O‘YNASH · JIHOZLAR · INVENTAR · DO‘KON · YANGILIKLAR**. Keyinchalik haqiqiy akkaunt `client/src/profile.js` dagi saqlashni server bilan almashtirish orqali qo‘shiladi.
+
+### Haqiqiy 3D modellar
+
+`client/public/models/{weapons,characters,props}` ga `.glb` qo‘ying → `npm run models` → o‘yin ularni avtomatik ishlatadi (yo‘q bo‘lsa protsedur modellar). Talablar va bepul manbalar: [docs/MODELS.md](docs/MODELS.md).
 
 ## Xaritalar va GLB pipeline
 
@@ -163,10 +177,9 @@ CHROME_PATH=/path/to/chrome npm run test:browser
 
 ## Hozirgi cheklovlar (halol ro‘yxat)
 
-- Valve xaritalari/modellari/ovozlari **yo‘q**: xarita GLB’ni siz beryapsiz; ovozlar protsedur (WebAudio), qurol/operator modellari primitivlardan yasalgan.
-- Zarba **hitscan**, devor penetratsiyasi yo‘q; hitbox’lar yaw bo‘yicha aylantirilgan quti (animatsiya bilan bog‘liq emas).
-- Snapshot barcha o‘yinchilar holatini yuboradi (anti-wallhack/visibility filtering yo‘q), login/rating/qayta ulanish sessiyasi, region matchmaker, sharding va anti-cheat production bosqichida.
-- Overtime (12–12) yo‘q — durang. Tashlab yuborilgan qurollarni olish (G) yo‘q; faqat C4 tushadi va olinadi.
+- Valve xaritalari/modellari/ovozlari **yo‘q**: xarita GLB’ni siz beryapsiz; ovozlar protsedur (WebAudio), qurol/operator modellari protsedur (haqiqiy GLB qo‘yilsa ular ishlatiladi).
+- Zarba **hitscan** (penetratsiya bor); hitbox’lar yaw bo‘yicha aylantirilgan quti (animatsiya bilan bog‘liq emas).
+- Login/serverdagi akkaunt (hozir demo profil lokal), qayta ulanish sessiyasi, region matchmaker, sharding va to‘liq anti-cheat production bosqichida.
 - Ovoz va soyalar sifati qurilmaga bog‘liq; **60+ FPS kafolat emas** (past sifat rejimi bor).
 
 

@@ -75,7 +75,7 @@ export class Room {
     const squad = this.squadOf(team);
     const p = {
       id, name, team, squad, bot, index: this.nextIndex(), char: null, inv: new Inventory(team), health: 100, armor: 0, helmet: false, kit: false, money: RULES.startMoney,
-      kills: 0, deaths: 0, assists: 0, alive: false, life: 0, queue: [], ack: -1, lastReceived: -1, lastCommandTick: this.tick, rtt: 80,
+      kills: 0, deaths: 0, assists: 0, damage: 0, hsKills: 0, mvps: 0, roundKills: 0, roundDamage: 0, seenBy: new Map(), alive: false, life: 0, queue: [], ack: -1, lastReceived: -1, lastCommandTick: this.tick, rtt: 80,
       cmd: neutralInput(), consumed: false, action: null, respawnTick: 0, damageBy: new Map(), flashUntil: 0, brain: bot ? new BotBrain(this) : null,
       lastLook: { yaw: 0, pitch: 0 }, lastInteract: false, joinedTick: this.tick,
     };
@@ -110,6 +110,42 @@ export class Room {
     }
   }
 
+  /** Chat (all / team), radio calls and map pings. Team-only messages are filtered per viewer in snapshot(). */
+  chat(id, text, teamOnly) {
+    const p = this.players.get(id); if (!p) return false;
+    const now = this.tick; if (now - (p.lastChat || -1e9) < TICK_RATE * 0.6) return false; p.lastChat = now;
+    const clean = String(text ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 120);
+    if (!clean) return false;
+    this.emit('chat', { who: id, name: p.name, team: p.team, teamOnly: !!teamOnly, dead: !p.alive, text: clean });
+    return true;
+  }
+  radio(id, msg) {
+    const p = this.players.get(id); if (!p || !p.alive || !Number.isInteger(msg) || msg < 0 || msg > 8) return false;
+    if (this.tick - (p.lastRadio || -1e9) < TICK_RATE * 1.2) return false; p.lastRadio = this.tick;
+    this.emit('radio', { who: id, name: p.name, team: p.team, teamOnly: true, msg, x: p.char.x, y: p.char.y, z: p.char.z });
+    return true;
+  }
+  ping(id, x, y, z) {
+    const p = this.players.get(id), b = this.collider.bounds; if (!p || !p.alive) return false;
+    if (![x, y, z].every(Number.isFinite) || x < b.min.x || x > b.max.x || z < b.min.z || z > b.max.z || y < b.min.y - 1 || y > b.max.y + 1) return false;
+    if (this.tick - (p.lastPing || -1e9) < TICK_RATE * 0.8) return false; p.lastPing = this.tick;
+    this.emit('ping', { who: id, name: p.name, team: p.team, teamOnly: true, x, y, z });
+    return true;
+  }
+
+  // ---- anti-wallhack: an enemy's position is only sent to players who can (nearly) see them
+  canSee(viewer, target) {
+    if (!viewer.alive) return true;                                             // dead players spectate
+    const last = target.seenBy.get(viewer.id);
+    if (last !== undefined && last === this.tick) return true;
+    const e = this.eye(viewer), c = target.char, lead = 0.12;
+    const tx = c.x + c.vx * lead, tz = c.z + c.vz * lead, vx = viewer.char.vx * lead, vz = viewer.char.vz * lead;
+    const side = { x: Math.cos(viewer.char.yaw) * 0.45, z: -Math.sin(viewer.char.yaw) * 0.45 };
+    const eyes = [{ x: e.x + vx, y: e.y, z: e.z + vz }, { x: e.x + side.x, y: e.y, z: e.z + side.z }, { x: e.x - side.x, y: e.y, z: e.z - side.z }];
+    const pts = [1.62, 1.1, 0.35].map(h => ({ x: tx, y: c.y + h * (1 - 0.33 * (c.crouch || 0)), z: tz }));
+    for (const a of eyes) for (const b of pts) if (this.hasSight(a, b)) { target.seenBy.set(viewer.id, this.tick); return true; }
+    return false;
+  }
   noise(p, range) { this.noises.push({ x: p.char.x, z: p.char.z, tick: this.tick, team: p.team, range }); if (this.noises.length > 40) this.noises.splice(0, this.noises.length - 40); }
 
   // ------------------------------------------------------------------------------------------- spawning
@@ -141,7 +177,7 @@ export class Room {
     // squads keep their original sides at the start of a match
     const swap = this.side.A !== 'TERRORIST';
     if (swap) this.swapSides(false);
-    for (const p of this.players.values()) { p.kills = p.deaths = p.assists = 0; p.money = RULES.startMoney; p.alive = false; this.newLoadout(p); }
+    for (const p of this.players.values()) { p.kills = p.deaths = p.assists = p.damage = p.hsKills = p.mvps = 0; p.money = RULES.startMoney; p.alive = false; this.newLoadout(p); }
     this.result = null;
     this.beginRound(true);
   }
@@ -158,11 +194,20 @@ export class Room {
       for (const p of this.players.values()) { p.money = RULES.startMoney; p.alive = false; this.newLoadout(p); }
       this.lossStreak = { A: 0, B: 0 };
     }
+    const otRound = this.round - RULES.halfRounds * 2;
+    if (otRound >= 1 && (otRound - 1) % 3 === 0) {
+      // each overtime half: sides swap (not at the very first OT round), everyone restarts with $12,500
+      if ((otRound - 1) % 6 === 3) this.swapSides(false);
+      for (const p of this.players.values()) { p.money = 12500; p.alive = false; this.newLoadout(p); }
+      this.lossStreak = { A: 0, B: 0 };
+      this.emit('overtime', { set: Math.floor((otRound - 1) / 6) + 1, half: (otRound - 1) % 6 < 3 ? 1 : 2 });
+    }
+    for (const p of this.players.values()) { p.roundKills = 0; p.roundDamage = 0; }
     this.phase = 'buy'; this.phaseEnd = this.tick + secondsToTick(this.timing.freeze); this.result = null;
     this.spawnShift = Math.floor(Math.random() * 10);
     this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     for (const p of this.players.values()) {
-      const keep = !fresh && !halftime && p.carry && p.alive;
+      const keep = !fresh && !halftime && !(otRound >= 1 && (otRound - 1) % 3 === 0) && p.carry && p.alive;
       if (keep) { p.inv.resetTimers(); } else this.newLoadout(p);
       p.carry = null; p.alive = false; this.respawn(p);
       p.inv.team = p.team;
@@ -196,21 +241,30 @@ export class Room {
     }
     for (const p of this.players.values()) p.action = null;
     this.result = { winner, reason };
-    const total = this.wins.A + this.wins.B;
-    const decided = this.wins[winSquad] >= RULES.roundsToWin || total >= RULES.halfRounds * 2;
+    // round MVP: bomb planter / defuser on those outcomes, else the winner with most kills (damage breaks ties)
+    const winners = [...this.players.values()].filter(p => p.team === winner);
+    let mvp = reason === 'defused' ? this.players.get(this.bomb.defuser) : reason === 'exploded' ? this.players.get(this.bomb.planter) : null;
+    if (!mvp || mvp.team !== winner) mvp = winners.sort((a, b) => b.roundKills - a.roundKills || b.roundDamage - a.roundDamage)[0] || null;
+    if (mvp) { mvp.mvps++; this.result.mvp = { id: mvp.id, name: mvp.name, kills: mvp.roundKills }; }
+    // MR12 + MR3 overtime: 13 wins takes regulation; 12-12 plays 6-round overtimes (first to 4 in the set) until decided
+    const total = this.wins.A + this.wins.B, regulation = RULES.halfRounds * 2;
+    let decided;
+    if (total <= regulation) decided = this.wins[winSquad] >= RULES.roundsToWin || (total === regulation && this.wins.A !== this.wins.B);
+    else { const set = Math.floor((total - regulation - 1) / 6); decided = this.wins[winSquad] >= RULES.halfRounds + 4 + set * 3; }
+    if (this.noOvertime && total >= regulation) decided = true;
     if (decided) {
       const draw = this.wins.A === this.wins.B;
       this.result = { winner: draw ? null : (this.wins.A > this.wins.B ? this.side.A : this.side.B), reason: draw ? 'draw' : 'match', match: true };
       this.phase = 'matchEnd'; this.phaseEnd = this.tick + secondsToTick(15);
     } else { this.phase = 'post'; this.phaseEnd = this.tick + secondsToTick(this.round === RULES.halfRounds ? RULES.halftimeSeconds : this.timing.post); }
-    this.emit('roundEnd', { winner, reason, scores: this.scores, match: !!this.result.match });
+    this.emit('roundEnd', { winner, reason, scores: this.scores, match: !!this.result.match, mvp: this.result.mvp || null });
   }
   resetToWarmup() {
     this.phase = 'warmup'; this.phaseEnd = this.tick + secondsToTick(this.timing.warmup); this.round = 0; this.epoch++;
     this.wins = { A: 0, B: 0 }; this.result = null; this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     if (this.side.A !== 'TERRORIST') this.swapSides(false);
     this.bomb = { state: 'idle', carrier: null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
-    for (const p of this.players.values()) { p.alive = false; this.newLoadout(p); p.money = RULES.maxMoney; this.respawn(p); p.kills = p.deaths = p.assists = 0; }
+    for (const p of this.players.values()) { p.alive = false; this.newLoadout(p); p.money = RULES.maxMoney; this.respawn(p); p.kills = p.deaths = p.assists = p.damage = p.hsKills = p.mvps = 0; }
   }
 
   // ------------------------------------------------------------------------------------------- economy
@@ -251,6 +305,7 @@ export class Room {
   }
   damage(victim, attacker, amount, armorLoss, weaponId, head, part = null) {
     if (!victim.alive) return false;
+    if (attacker && attacker !== victim && attacker.team !== victim.team) { const dealt = Math.min(amount, victim.health); attacker.damage += dealt; attacker.roundDamage += dealt; }
     victim.health = Math.max(0, victim.health - amount);
     victim.armor = Math.max(0, victim.armor - armorLoss);
     if (attacker) victim.damageBy.set(attacker.id, (victim.damageBy.get(attacker.id) || 0) + amount);
@@ -265,7 +320,7 @@ export class Room {
     if (gun && this.phase !== 'warmup') { const ammo = { ...victim.inv.ammoOf(gun) }; victim.inv.slots[WEAPONS[gun].slot] = null; delete victim.inv.ammo[gun]; this.spawnDrop(victim, gun, ammo, 1.2); }
     let killer = null;
     if (attacker && attacker !== victim && attacker.team !== victim.team) {
-      attacker.kills++; killer = attacker;
+      attacker.kills++; attacker.roundKills++; if (head) attacker.hsKills++; killer = attacker;
       attacker.money = Math.min(RULES.maxMoney, attacker.money + (this.phase === 'warmup' ? 0 : (WEAPONS[weaponId]?.kill ?? 300)));
       for (const [id, dmg] of victim.damageBy) { const a = this.players.get(id); if (a && a !== attacker && a.team !== victim.team && dmg >= 41) a.assists++; }
     } else if (attacker === victim) attacker.kills = Math.max(0, attacker.kills - 1);
@@ -361,22 +416,42 @@ export class Room {
     for (let i = 0; i < pellets; i++) {
       const dir = shotDirection(c.yaw, c.pitch, ev.punch, spread + (w.pelletSpread || 0) * (pellets > 1 ? 1 : 0) * Math.sqrt(random()), random);
       const wall = this.collider.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, 250);
-      let limit = wall ? wall.distance : 250, hit = null;
-      for (const t of this.players.values()) {
-        if (!t.alive || t.team === p.team || t.id === p.id) continue;
-        const pose = this.poseAt(t, viewTick);
-        if (!pose || (pose.life !== undefined && pose.life !== t.life)) continue;
-        const h = rayHitPlayer(origin, dir, pose, limit);
-        if (h && h.distance < limit) { limit = h.distance; hit = { target: t, part: h.part }; }
+      let limit = wall ? wall.distance : 250, hit = null, from = 0, dmgScale = 1, pen = null;
+      const scan = (start, end) => {
+        let best = null;
+        for (const t of this.players.values()) {
+          if (!t.alive || t.team === p.team || t.id === p.id) continue;
+          const pose = this.poseAt(t, viewTick);
+          if (!pose || (pose.life !== undefined && pose.life !== t.life)) continue;
+          const h = rayHitPlayer(origin, dir, pose, end);
+          if (h && h.distance >= start && h.distance < end && (!best || h.distance < best.distance)) best = { target: t, part: h.part, distance: h.distance };
+        }
+        return best;
+      };
+      hit = scan(0, limit);
+      // wall penetration: thin cover (crates, doors, low walls) up to the weapon's penetration depth, with damage loss
+      if (!hit && wall && (w.penetration ?? 0) > 0) {
+        const px = origin.x + dir.x * (limit + 0.01), py = origin.y + dir.y * (limit + 0.01), pz = origin.z + dir.z * (limit + 0.01);
+        const exit = this.collider.raycast(px, py, pz, dir.x, dir.y, dir.z, w.penetration + 0.02);
+        const thickness = exit ? exit.distance : Infinity;
+        if (thickness <= w.penetration) {
+          from = limit + 0.01 + thickness; dmgScale = Math.max(0.2, 0.85 - 0.6 * thickness / w.penetration);
+          const next = this.collider.raycast(origin.x + dir.x * (from + 0.01), origin.y + dir.y * (from + 0.01), origin.z + dir.z * (from + 0.01), dir.x, dir.y, dir.z, 250);
+          const end = from + 0.01 + (next ? next.distance : 250);
+          const h2 = scan(from, end);
+          pen = { x: origin.x + dir.x * from, y: origin.y + dir.y * from, z: origin.z + dir.z * from };
+          if (h2) { hit = h2; limit = h2.distance; } else limit = end;
+        }
       }
+      if (hit) limit = hit.distance;
       const to = { x: origin.x + dir.x * limit, y: origin.y + dir.y * limit, z: origin.z + dir.z * limit };
       if (hit) {
-        const dmg = computeDamage(w, limit, hit.part, hit.target.armor, hit.target.helmet);
+        const dmg0 = computeDamage(w, limit, hit.part, hit.target.armor, hit.target.helmet), dmg = { health: Math.max(1, Math.round(dmg0.health * dmgScale)), armor: Math.round(dmg0.armor * dmgScale) };
         const killed = this.damage(hit.target, p, dmg.health, dmg.armor, w.id, hit.part === 'head', hit.part);
         const acc = hits.get(hit.target.id) || { target: hit.target, part: hit.part, damage: 0, killed: false };
         acc.damage += dmg.health; acc.killed = acc.killed || killed; if (hit.part === 'head') acc.part = 'head'; hits.set(hit.target.id, acc);
       }
-      first = first || { to, hit: !!hit, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null };
+      first = first || { to, hit: !!hit, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null, pen };
       if (pellets > 1 && i > 0) this.emit('pellet', { shooter: p.id, from: origin, to, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null });
     }
     let info = null;
@@ -385,7 +460,7 @@ export class Room {
       info = info || rec;
       this.emit('hit', { attacker: p.id, target: h.target.id, part: h.part, damage: h.damage, killed: h.killed, from: { x: origin.x, z: origin.z } });
     }
-    this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to: first.to, hit: info, wall: first.wall });
+    this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to: first.to, hit: info, wall: first.wall, pen: first.pen || null });
     this.noise(p, w.suppressed ? 14 : 45);
   }
   melee(p, ev, cmd) {
@@ -550,7 +625,7 @@ export class Room {
         p.action = p.action?.kind === 'plant' ? p.action : { kind: 'plant', progress: 0 };
         p.action.progress += DT;
         if (p.action.progress >= RULES.plantSeconds) {
-          this.bomb = { state: 'planted', carrier: null, x: c.x, y: c.y, z: c.z, site: site.id, explodeTick: this.tick + secondsToTick(RULES.bombSeconds), plantedTick: this.tick };
+          this.bomb = { state: 'planted', carrier: null, x: c.x, y: c.y, z: c.z, site: site.id, explodeTick: this.tick + secondsToTick(RULES.bombSeconds), plantedTick: this.tick, planter: p.id };
           p.inv.remove('c4'); p.action = null; p.money = Math.min(RULES.maxMoney, p.money + RULES.plantBonus);
           this.emit('planted', { site: site.id, by: p.id, x: c.x, y: c.y, z: c.z });
         }
@@ -564,7 +639,7 @@ export class Room {
       if ([...this.players.values()].some(q => q !== p && q.alive && q.action?.kind === 'defuse')) { p.action = null; return; }
       p.action.progress += DT;
       if (p.action.progress >= need) {
-        b.state = 'defused'; p.action = null; p.money = Math.min(RULES.maxMoney, p.money + 300);
+        b.state = 'defused'; b.defuser = p.id; p.action = null; p.money = Math.min(RULES.maxMoney, p.money + 300);
         this.emit('defused', { by: p.id });
         this.endRound('COUNTER_TERRORIST', 'defused');
       }
@@ -691,6 +766,7 @@ export class Room {
     const remaining = Math.max(0, (this.phaseEnd - this.tick) / TICK_RATE);
     const events = this.events.filter(e => {
       if (e.tick < this.tick - TICK_RATE) return false;
+      if (e.teamOnly && viewer && e.team !== viewer.team) return false;
       if (e.type === 'footstep' || e.type === 'land' || e.type === 'jump' || e.type === 'weaponSound') {
         if (!viewer || e.who === viewerId) return false;
         return Math.hypot(e.x - viewer.char.x, e.z - viewer.char.z) < 45;
@@ -706,10 +782,14 @@ export class Room {
       fires: this.fires.map(f => ({ id: f.id, type: f.type, x: f.x, y: f.y, z: f.z, radius: f.radius, age: (this.tick - f.start) / TICK_RATE, left: (f.end - this.tick) / TICK_RATE })),
       smokes: this.smokes.map(s => ({ id: s.id, x: s.x, y: s.y, z: s.z, radius: s.radius, age: (this.tick - s.start) / TICK_RATE, left: (s.end - this.tick) / TICK_RATE })),
       events,
+      overtime: Math.max(0, Math.floor((this.round - RULES.halfRounds * 2 - 1) / 6) + 1),
       players: [...this.players.values()].map(p => {
         const mine = p.id === viewerId, mate = viewer && viewer.team === p.team;
+        // hidden enemies keep scoreboard data but no position (seen within the last ~0.4 s stays visible to avoid popping)
+        const hidden = !mine && !mate && viewer && p.alive && this.phase !== 'warmup' && !this.canSee(viewer, p) && this.tick - (p.seenBy.get(viewer.id) ?? -1e9) > 26;
         const base = { id: p.id, name: p.name, team: p.team, bot: p.bot, alive: p.alive, life: p.life, kills: p.kills, deaths: p.deaths, assists: p.assists, ack: p.ack,
-          char: mine ? { ...p.char, x: +p.char.x.toFixed(4), y: +p.char.y.toFixed(4), z: +p.char.z.toFixed(4) } : this.compactChar(p.char), weapon: p.inv.weaponId(), money: mate || mine ? p.money : undefined,
+          damage: p.damage, hsKills: p.hsKills, mvps: p.mvps, hidden: hidden || undefined,
+          char: hidden ? null : mine ? { ...p.char, x: +p.char.x.toFixed(4), y: +p.char.y.toFixed(4), z: +p.char.z.toFixed(4) } : this.compactChar(p.char), weapon: hidden ? null : p.inv.weaponId(), money: mate || mine ? p.money : undefined,
           health: mate || mine || !p.alive ? p.health : undefined, armor: mine ? p.armor : undefined, flashed: p.flashUntil > this.tick, rtt: Math.round(p.rtt) };
         if (mine) Object.assign(base, { inv: p.inv.toJSON(), helmet: p.helmet, kit: p.kit, action: p.action, flashLeft: Math.max(0, (p.flashUntil - this.tick) / TICK_RATE) });
         return base;

@@ -67,7 +67,7 @@ export class Network {
     const old = new Map(a.players.map(p => [p.id, p]));
     return b.players.map(p => {
       const prev = old.get(p.id);
-      if (!prev || prev.alive !== p.alive || Math.hypot(p.char.x - prev.char.x, p.char.y - prev.char.y, p.char.z - prev.char.z) > 3) return p;
+      if (!p.char || !prev?.char || prev.alive !== p.alive || Math.hypot(p.char.x - prev.char.x, p.char.y - prev.char.y, p.char.z - prev.char.z) > 3) return p;
       const char = { ...p.char };
       for (const axis of ['x', 'y', 'z', 'crouch', 'pitch']) char[axis] = prev.char[axis] + (char[axis] - prev.char[axis]) * alpha;
       char.yaw = prev.char.yaw + angleDelta(p.char.yaw, prev.char.yaw) * alpha;
