@@ -25,10 +25,22 @@ export class Network {
   }
   async join(request) {
     await this.connect();
-    const result = await this.request('join', request);
+    return this.adopt(await this.request('join', request));
+  }
+  /** Takes over a room assignment (from 'join' or from matchmaking's 'queue:ready'). */
+  adopt(result) {
     this.id = result.id; this.lastSent = -1; this.latest = result.snapshot; this.frames = [result.snapshot]; this.received = performance.now();
     return result;
   }
+  // ---- matchmaking
+  async queueJoin(request, handlers) {
+    await this.connect();
+    for (const ev of ['queue:status', 'queue:found', 'queue:accepted', 'queue:ready', 'queue:failed', 'queue:requeued']) this.socket.off(ev);
+    for (const [ev, fn] of Object.entries(handlers)) this.socket.on(`queue:${ev}`, fn);
+    return this.request('queue:join', request);
+  }
+  queueLeave() { if (this.socket.connected) this.socket.emit('queue:leave'); }
+  queueAccept(matchId) { this.socket.emit('queue:accept', matchId); }
   request(event, payload) {
     return new Promise((resolve, reject) => this.socket.timeout(8000).emit(event, payload, (error, response) => {
       if (error) reject(new Error('Server javob bermadi.')); else if (response?.error) reject(new Error(response.error)); else resolve(response);

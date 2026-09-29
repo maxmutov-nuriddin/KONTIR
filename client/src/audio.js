@@ -1,6 +1,8 @@
 // Fully procedural spatial audio (no asset files): layered noise/oscillator voices through HRTF panners,
 // distance low-pass and a shared convolution reverb tail.
 import { SHOT_PROFILES, synthShot } from './gunsynth.js';
+import { cuesFor } from './reload.js';
+import { WEAPONS } from '../../shared/weapons.js';
 
 export class AudioEngine {
   constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); }
@@ -130,13 +132,41 @@ export class AudioEngine {
   land(pos, own = false, speed = 4) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.1 }); this.noise(d, { dur: 0.16, type: 'lowpass', freq: 700, gain: Math.min(1, 0.3 + speed * 0.04), decay: 0.15 }); this.tone(d, { dur: 0.14, from: 90, to: 45, gain: 0.5 }); }
   jump(pos, own = false) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.05 }); this.noise(d, { dur: 0.1, type: 'bandpass', freq: 500, q: 0.6, gain: 0.25, decay: 0.09 }); }
   draw(pos, own = false) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.05 }); this.noise(d, { dur: 0.08, type: 'bandpass', freq: 2400, q: 2.5, gain: 0.45, decay: 0.07 }); this.noise(d, { start: 0.11, dur: 0.06, type: 'bandpass', freq: 1500, q: 3, gain: 0.35, decay: 0.05 }); this.tone(d, { start: 0.02, dur: 0.05, type: 'square', from: 900, to: 500, gain: 0.05 }); }
-  reload(pos, own = false) {
-    if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.05 });
-    this.noise(d, { dur: 0.06, type: 'bandpass', freq: 1400, q: 3, gain: 0.5, decay: 0.05 });                       // mag release
-    this.noise(d, { start: 0.6, dur: 0.08, type: 'bandpass', freq: 900, q: 2, gain: 0.55, decay: 0.07 });           // mag in
-    this.tone(d, { start: 0.6, dur: 0.05, type: 'square', from: 500, to: 300, gain: 0.06 });
-    this.noise(d, { start: 1.35, dur: 0.06, type: 'bandpass', freq: 2200, q: 4, gain: 0.5, decay: 0.05 });          // bolt
-    this.noise(d, { start: 1.42, dur: 0.06, type: 'bandpass', freq: 1200, q: 4, gain: 0.5, decay: 0.05 });
+  /**
+   * Reload foley. Own reloads are triggered cue-by-cue by the animation (WeaponManager 'foley' events); remote reloads
+   * schedule the same cue table over that weapon's reload time. Assumes a full (empty-mag) reload for remote players.
+   */
+  reload(pos, own = false, weapon = 'ak47') {
+    if (!this.ctx || own) return;
+    const w = WEAPONS[weapon], seconds = w?.reload || 2.5;
+    for (const [at, kind] of cuesFor(weapon, { full: true, shells: Math.min(8, w?.mag || 4) })) setTimeout(() => this.foley(kind, pos, false, weapon), at * seconds * 1000);
+  }
+  /** One mechanical sound. Heavier weapons sound lower; pistols brighter. */
+  foley(kind, pos = null, own = true, weapon = 'ak47') {
+    if (!this.ctx) return;
+    const w = WEAPONS[weapon], heavy = w?.slot === 1 ? 1 : 0, f = heavy ? 0.85 + Math.random() * 0.08 : 1.1 + Math.random() * 0.1;
+    const d = this.out(own ? null : pos, { reverb: 0.06 }), g = own ? 1 : 0.8;
+    const click = (at, freq, q, gain, dur = 0.018) => this.noise(d, { start: at, dur, type: 'bandpass', freq: freq * f, q, gain: gain * g, attack: 0.0008, decay: dur * 0.9 });
+    const thud = (at, freq, gain, dur = 0.05) => this.noise(d, { start: at, dur, type: 'lowpass', freq: freq * f, gain: gain * g, attack: 0.001, decay: dur });
+    const scrape = (at, f0, f1, gain, dur = 0.08) => this.noise(d, { start: at, dur, type: 'bandpass', freq: f0 * f, sweepTo: f1 * f, q: 2.2, gain: gain * g, attack: 0.01, decay: dur });
+    const ring = (at, freq, gain, dur = 0.07) => this.tone(d, { start: at, dur, type: 'triangle', from: freq * f, to: freq * f * 0.97, gain: gain * g * 0.25 });
+    switch (kind) {
+      case 'magOut': click(0, 2100, 5, 0.55); scrape(0.012, 900, 1500, 0.35, 0.09); thud(0.07, 600, 0.2); break;
+      case 'magTouch': scrape(0, 1200, 1700, 0.18, 0.05); break;
+      case 'magIn': scrape(0, 1400, 900, 0.3, 0.05); thud(0.045, 700, 0.75, 0.06); click(0.05, 3300, 6, 0.6); ring(0.05, 2400, 0.4); break;
+      case 'boltBack': scrape(0, 1100, 2300, 0.5, 0.07); click(0.07, 2800, 5, 0.55); break;
+      case 'boltFwd': thud(0, 900, 0.8, 0.05); click(0.003, 3600, 4, 0.8, 0.022); ring(0.005, 3100, 0.5, 0.09); break;
+      case 'boltUp': click(0, 2500, 6, 0.45); break;
+      case 'slide': thud(0, 1100, 0.7, 0.04); click(0.002, 4200, 4, 0.85, 0.02); ring(0.004, 3600, 0.45, 0.08); break;
+      case 'shell': click(0, 2600, 5, 0.4, 0.015); thud(0.02, 800, 0.45, 0.04); scrape(0.01, 1500, 1100, 0.2, 0.04); break;
+      case 'pumpBack': scrape(0, 700, 1500, 0.55, 0.08); click(0.075, 2300, 4, 0.6); break;
+      case 'pumpFwd': scrape(0, 1500, 800, 0.5, 0.07); thud(0.06, 800, 0.8, 0.05); click(0.065, 3100, 4, 0.7); break;
+      case 'cylinderOut': click(0, 3000, 6, 0.5); scrape(0.01, 2000, 2600, 0.25, 0.05); break;
+      case 'shellsOut': for (let i = 0; i < 6; i++) this.tone(d, { start: 0.02 + i * 0.025 + Math.random() * 0.01, dur: 0.05, type: 'triangle', from: 4200 + Math.random() * 900, gain: 0.05 * g }); break;
+      case 'shellsIn': scrape(0, 1600, 1200, 0.25, 0.06); click(0.06, 2600, 5, 0.4); break;
+      case 'cylinderIn': thud(0, 1000, 0.6, 0.04); click(0.004, 3400, 5, 0.75); break;
+      default: click(0, 2000, 4, 0.4);
+    }
   }
   dry(own = true) { if (!this.ctx) return; const d = this.out(null, { reverb: 0 }); this.tone(d, { dur: 0.04, type: 'square', from: 1800, to: 900, gain: 0.08 }); this.noise(d, { dur: 0.03, type: 'highpass', freq: 3000, gain: 0.25, decay: 0.025 }); void own; }
   swish(pos, own = false) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.05 }); this.noise(d, { dur: 0.22, type: 'bandpass', freq: 500, sweepTo: 3200, q: 1.2, gain: 0.5, attack: 0.05, decay: 0.2 }); }

@@ -100,7 +100,7 @@ function handleEvent(e, me) {
     case 'footstep': audio.footstep({ x: e.x, y: e.y + 0.1, z: e.z }, false, 1); break;
     case 'jump': audio.jump({ x: e.x, y: e.y, z: e.z }); break;
     case 'land': audio.land({ x: e.x, y: e.y, z: e.z }, false, e.speed); break;
-    case 'weaponSound': { const pos = { x: e.x, y: e.y + 1.2, z: e.z }; if (e.kind === 'reloadStart') audio.reload(pos); else if (e.kind === 'select' || e.kind === 'quick') audio.draw(pos); break; }
+    case 'weaponSound': { const pos = { x: e.x, y: e.y + 1.2, z: e.z }; if (e.kind === 'reloadStart') audio.reload(pos, false, e.weapon); else if (e.kind === 'select' || e.kind === 'quick') audio.draw(pos); break; }
     case 'melee': audio.swish(e.from, e.shooter === id); break;
     case 'pellet': world.effects.tracer(V.set(e.from.x, e.from.y - 0.1, e.from.z), e.to); if (e.wall) world.effects.impact(e.to, e.wall, 'wall'); break;
     case 'decoy': audio.gunshot(e.weapon, e, false); break;
@@ -134,7 +134,7 @@ weapons.on('shot', e => {
   from.addScaledVector(right, 0.16).addScaledVector(fwd, 0.35);
   if (rig?.eject && prediction) world.effects.casing(from, right.clone().multiplyScalar(1.2).add(new THREE.Vector3(0, 0.6, 0)), prediction.char.y);
 });
-weapons.on('reload', () => audio.reload(null, true)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
+weapons.on('reload', () => {}).on('foley', f => audio.foley(f.kind, null, true, f.weapon)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
 controller.on('inspect', () => { if (weapons.inspect()) audio.draw(null, true); }).on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
 controller.on('lock', () => { audio.unlock(); audio.warmShots([weapons.inventory.weaponId(1), weapons.inventory.weaponId(2)].filter(Boolean)); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
 
@@ -146,7 +146,14 @@ async function join(options) {
   try {
     const result = await network.join({ name: options.name || 'Operator', code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: selectedMap, team });
     if (my !== generation) { network.leave(); return; }
-    id = result.id; state = result.snapshot;
+    await enter(result, my);
+  } catch (error) {
+    if (my === generation) { ui.hideBusy(); ui.toast(error.message); const el = document.querySelector('#join-error'); if (el) el.textContent = error.message; network.leave(); }
+  } finally { if (my === generation) { joining = false; ui.hideBusy(); const b = document.querySelector('#join-submit'); if (b) b.disabled = false; } }
+}
+/** Loads the room's map, prewarms shaders and hands control to the game loop (shared by join and matchmaking). */
+async function enter(result, my) {
+  id = result.id; state = result.snapshot;
     await loadMapById(state.mapId, true);
     if (!network.socket.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
     if (my !== generation) { network.leave(); return; }
@@ -158,10 +165,7 @@ async function join(options) {
     state = network.latest || state;
     playing = true; lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
     ui.showGame(world.map.name); ui.hideBusy(); receive(state);
-    if (state.phase !== 'warmup') ui.resume(true);
-  } catch (error) {
-    if (my === generation) { ui.hideBusy(); ui.toast(error.message); const el = document.querySelector('#join-error'); if (el) el.textContent = error.message; network.leave(); }
-  } finally { if (my === generation) { joining = false; ui.hideBusy(); const b = document.querySelector('#join-submit'); if (b) b.disabled = false; } }
+  if (state.phase !== 'warmup') ui.resume(true);
 }
 function leave() {
   generation++; joining = false; playing = false; controller.unlock(); network.leave();
@@ -195,10 +199,50 @@ function openBuy() {
   render();
 }
 
+// ---------------------------------------------------------------------------------------------- matchmaking (CS2-style)
+let searchingMM = false, mode = store.get('mode', 'competitive');
+const pool = new Set(JSON.parse(store.get('pool', '[]') || '[]'));
+async function startSearch() {
+  if (searchingMM || playing || joining) return;
+  const name = document.querySelector('#lobby-name').value.trim() || 'Operator'; store.set('name', name);
+  searchingMM = true; audio.unlock();
+  ui.searching({ mode, elapsed: 0, inQueue: 1 });
+  try {
+    await network.queueJoin({ name, mode, maps: [...ui.pool] }, {
+      status: st => { if (searchingMM) ui.searching(st); },
+      found: f => { audio.beep(true); ui.matchFound(f, () => network.queueAccept(f.matchId)); },
+      accepted: a => ui.matchAccepted(a.accepted),
+      requeued: r => { ui.hideMatchFound(); ui.toast(r.reason); },
+      failed: r => { ui.hideMatchFound(); stopSearch(false); ui.toast(r.reason); },
+      ready: async result => {
+        ui.hideMatchFound(); stopSearch(false);
+        const my = ++generation; joining = true;
+        try { network.adopt(result); ui.showBusy('MATCH YUKLANMOQDA…'); await enter(result, my); }
+        catch (error) { ui.toast(error.message); network.leave(); }
+        finally { joining = false; ui.hideBusy(); }
+      },
+    });
+  } catch (error) { stopSearch(false); ui.toast(error.message); }
+}
+function stopSearch(notify = true) { if (notify) network.queueLeave(); searchingMM = false; ui.searching(null); }
+document.querySelector('#search-cancel').onclick = () => stopSearch(true);
+document.querySelector('#go').onclick = () => {
+  if (mode === 'competitive' || mode === 'casual') startSearch();
+  else if (mode === 'practice') { stopSearch(searchingMM); join({ practice: true, name: store.get('name', 'Operator') }); }
+  else document.querySelector('#online').click();
+};
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (searchingMM) stopSearch(true); mode = b.dataset.mode; store.set('mode', mode); ui.setMode(mode); });
+{
+  const nameEl = document.querySelector('#lobby-name'), avatar = document.querySelector('#avatar');
+  nameEl.value = store.get('name', 'Operator'); avatar.textContent = (nameEl.value[0] || 'O').toUpperCase();
+  nameEl.oninput = () => { store.set('name', nameEl.value.trim() || 'Operator'); avatar.textContent = (nameEl.value.trim()[0] || 'O').toUpperCase(); };
+  ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
+}
+
 // ---------------------------------------------------------------------------------------------- UI wiring
 const nameInput = () => document.querySelector('#operator-name')?.value || store.get('name', 'Operator');
-document.querySelector('#practice').onclick = () => join({ practice: true, name: store.get('name', 'Operator') });
-document.querySelector('#quick').onclick = () => join({ quick: true, name: store.get('name', 'Operator') });
+document.querySelector('#practice').onclick = () => { if (searchingMM) stopSearch(true); join({ practice: true, name: store.get('name', 'Operator') }); };
+document.querySelector('#quick').onclick = () => { if (searchingMM) stopSearch(true); join({ quick: true, name: store.get('name', 'Operator') }); };
 document.querySelector('#online').onclick = () => {
   ui.dialog(`<small class="eyebrow">MULTIPLAYER</small><h2>Xonaga qo‘shiling.</h2><p>Yangi xona oching yoki do‘stingiz bilan bir xil kodni kiriting. Har jamoada 5 o‘rin bor; T / CT ni server tenglashtiradi.</p>
     <form id="join-form"><label for="operator-name">OPERATOR NOMI</label><input id="operator-name" value="" maxlength="18" required><label for="room-input">XONA KODI</label><input id="room-input" value="OPS001" minlength="4" maxlength="8" pattern="[A-Za-z0-9]{4,8}" required><div id="join-error" role="alert"></div><button id="join-submit" class="primary full">XONAGA KIRISH →</button></form>`);
@@ -314,7 +358,9 @@ world.renderer.setAnimationLoop(frame);
   try {
     const manifest = await (await fetch('/maps/manifest.json')).json();
     maps = manifest.maps.filter(m => m.valid !== false); selectedMap = maps.find(m => m.id === selectedMap)?.id || maps[0].id;
-    ui.setMaps(maps, selectedMap, async mapId => { selectedMap = mapId; try { await loadMapById(mapId); } catch (e) { ui.toast(e.message); } });
+    for (const id of [...pool]) if (!maps.some(m => m.id === id)) pool.delete(id);
+    if (!pool.size) for (const m of maps) pool.add(m.id);
+    ui.setMaps(maps, selectedMap, async mapId => { selectedMap = mapId; try { await loadMapById(mapId); } catch (e) { ui.toast(e.message); } }, pool);
     await loadMapById(selectedMap, true);
   } catch (error) { ui.toast(`Xaritalarni yuklab bo‘lmadi: ${error.message}`); }
   ui.ready();

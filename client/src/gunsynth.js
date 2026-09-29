@@ -31,6 +31,18 @@ export const SHOT_PROFILES = {
   tec9: P({ length: 0.6, fcStart: 6000, fcEnd: 1300, tauF: 0.012, tau1: 0.008, tau2: 0.038, subFc: 150, subTau: 0.028, sub: 0.6, crack: 0.2, crackMs: 0.4, mech: 0.006, mechAmp: 0.25, tail: 0.2, tailAmp: 0.12 }),
   mp9: P({ length: 0.6, fcStart: 5200, fcEnd: 1000, tauF: 0.012, tau1: 0.008, tau2: 0.04, subFc: 145, subTau: 0.028, sub: 0.6, crack: 0.1, crackMs: 0.4, mech: 0.005, mechAmp: 0.22, tail: 0.18, tailAmp: 0.11, level: 0.78 }),
   mac10: P({ length: 0.6, fcStart: 5600, fcEnd: 1100, tauF: 0.012, tau1: 0.008, tau2: 0.04, subFc: 130, subTau: 0.03, sub: 0.7, crack: 0.15, crackMs: 0.4, mech: 0.005, mechAmp: 0.24, tail: 0.2, tailAmp: 0.12, level: 0.82 }),
+  m4a1s: P({ length: 0.6, fcStart: 2400, fcEnd: 600, tauF: 0.02, tau1: 0.01, tau2: 0.05, mix2: 0.3, subFc: 120, subTau: 0.03, sub: 0.5, crack: 0.35, crackMs: 0.45, mech: 0.008, mechAmp: 0.5, tail: 0.14, tailAmp: 0.08, echoes: [[0.05, 0.18], [0.12, 0.1]], drive: 1.2, level: 0.66 }),
+  aug: P({ length: 0.9, fcStart: 7000, fcEnd: 950, tauF: 0.018, tau1: 0.011, tau2: 0.06, subFc: 110, subTau: 0.04, sub: 1.0, crack: 0.95, crackMs: 0.5, tail: 0.32, tailAmp: 0.17 }),
+  sg553: P({ length: 0.95, fcStart: 6400, fcEnd: 850, tauF: 0.02, tau1: 0.013, tau2: 0.07, subFc: 100, subTau: 0.045, sub: 1.2, crack: 0.95, crackMs: 0.55, tail: 0.34, tailAmp: 0.17 }),
+  ump45: P({ length: 0.65, fcStart: 5200, fcEnd: 900, tauF: 0.014, tau1: 0.01, tau2: 0.045, subFc: 115, subTau: 0.035, sub: 0.9, crack: 0.1, crackMs: 0.4, mech: 0.006, mechAmp: 0.22, tail: 0.2, tailAmp: 0.12, level: 0.82 }),
+  p90: P({ length: 0.6, fcStart: 7200, fcEnd: 1300, tauF: 0.011, tau1: 0.007, tau2: 0.035, subFc: 150, subTau: 0.026, sub: 0.55, crack: 0.5, crackMs: 0.35, tail: 0.18, tailAmp: 0.11, level: 0.78 }),
+  mp7: P({ length: 0.6, fcStart: 7600, fcEnd: 1400, tauF: 0.011, tau1: 0.007, tau2: 0.034, subFc: 155, subTau: 0.025, sub: 0.5, crack: 0.45, crackMs: 0.35, tail: 0.18, tailAmp: 0.11, level: 0.78 }),
+  xm1014: P({ length: 1.2, fcStart: 5200, fcEnd: 480, tauF: 0.03, tau1: 0.022, tau2: 0.11, mix2: 0.4, subFc: 76, subTau: 0.08, sub: 1.8, crack: 0.3, crackMs: 0.9, mech: 0.03, mechAmp: 0.2, tail: 0.45, tailAmp: 0.2, drive: 1.9 }),
+  mag7: P({ length: 1.3, fcStart: 5000, fcEnd: 460, tauF: 0.032, tau1: 0.024, tau2: 0.12, mix2: 0.4, subFc: 72, subTau: 0.09, sub: 2.0, crack: 0.3, crackMs: 0.9, cycle: 0.4, cycleAmp: 0.3, tail: 0.5, tailAmp: 0.22, drive: 2.0 }),
+  sawedoff: P({ length: 1.3, fcStart: 4600, fcEnd: 420, tauF: 0.035, tau1: 0.026, tau2: 0.13, mix2: 0.45, subFc: 68, subTau: 0.1, sub: 2.2, crack: 0.2, crackMs: 1.0, cycle: 0.42, cycleAmp: 0.3, tail: 0.5, tailAmp: 0.22, drive: 2.1 }),
+  negev: P({ length: 0.95, fcStart: 6200, fcEnd: 800, tauF: 0.02, tau1: 0.014, tau2: 0.075, subFc: 90, subTau: 0.05, sub: 1.4, crack: 0.95, crackMs: 0.6, mech: 0.01, mechAmp: 0.2, tail: 0.38, tailAmp: 0.18 }),
+  cz75: P({ length: 0.62, fcStart: 6700, fcEnd: 1200, tauF: 0.013, tau1: 0.008, tau2: 0.042, subFc: 140, subTau: 0.03, sub: 0.72, crack: 0.2, crackMs: 0.4, tail: 0.2, tailAmp: 0.13 }),
+  r8: P({ length: 1.2, fcStart: 6000, fcEnd: 600, tauF: 0.028, tau1: 0.021, tau2: 0.1, subFc: 78, subTau: 0.075, sub: 1.8, crack: 0.5, crackMs: 0.7, mech: 0.0, mechAmp: 0.05, tail: 0.5, tailAmp: 0.2, drive: 1.8 }),
   nova: P({ length: 1.4, fcStart: 5000, fcEnd: 450, tauF: 0.032, tau1: 0.024, tau2: 0.12, mix2: 0.4, subFc: 72, subTau: 0.09, sub: 2.0, crack: 0.3, crackMs: 0.9, cycle: 0.42, cycleAmp: 0.32, tail: 0.5, tailAmp: 0.22, drive: 2.0 }),
 };
 

@@ -26,14 +26,27 @@ export class UI {
         <header><a class="brand" href="#"><b>◩</b> KONTIR<span>TACTICAL OPERATIONS</span></a>
           <nav><button class="active" id="play-nav">O‘YNASH</button><button id="guide-nav">QO‘LLANMA ↗</button></nav>
           <div class="header-right"><span><i></i> 64 TICK · SERVER AUTHORITATIVE</span><button id="settings" class="square" aria-label="Sozlamalar">⚙</button></div></header>
-        <div class="hero"><div class="eyebrow"><i></i> 5 vs 5 · MR12 · BOMBA OBYEKTI</div><h1>HAR BIR<br>SONIYA<br><em>HAL QILADI.</em></h1>
-          <p>Bitta jamoa. Bitta maqsad.<br>Rejangni tuz va operatsiyani boshla.</p>
-          <div class="hero-meta"><span>5 <b>VS</b> 5</span><span>15 s BUY</span><span>1:55 RAUND</span><span>40 s BOMBA</span></div></div>
-        <div class="menu-bottom">
-          <div class="maps"><div class="section-label">01 / OPERATSIYA HUDUDI <span id="map-count"></span></div><div class="map-options" id="map-options"></div></div>
-          <div class="deploy"><div class="section-label">02 / KIRISH USULI</div>
-            <div class="deploy-actions"><button id="practice" class="primary">MASHQ · 5v5 BOTLAR ${arrow}</button><button id="quick" class="secondary">TEZKOR O‘YIN ${arrow}</button><button id="online" class="secondary">XONA KODI ${arrow}</button></div>
-            <div class="deploy-foot"><span><i></i> STRICT 5 T + 5 CT</span><button id="team">TERRORIST ⇄</button></div></div></div>
+        <div class="lobby">
+          <div class="lobby-main">
+            <div class="mode-tabs" id="mode-tabs">
+              <button data-mode="competitive" class="on"><b>COMPETITIVE</b><small>5v5 · MR12 · real o‘yinchilar</small></button>
+              <button data-mode="casual"><b>CASUAL</b><small>tezroq topiladi · bo‘sh joyga bot</small></button>
+              <button data-mode="practice"><b>MASHQ</b><small>5v5 botlar bilan</small></button>
+              <button data-mode="private"><b>XUSUSIY XONA</b><small>do‘stlar bilan kod orqali</small></button>
+            </div>
+            <div class="map-toolbar"><div class="section-label">XARITALAR <span id="map-count"></span></div><span id="pool-hint"></span><button id="map-all" class="text-button">Hammasini tanlash</button></div>
+            <div class="map-grid" id="map-options"></div>
+          </div>
+          <aside class="lobby-side">
+            <div class="party"><div class="party-head"><small>PARTIYA</small><span id="party-count">1 / 5</span></div>
+              <div class="party-me"><div class="avatar" id="avatar">O</div><div><input id="lobby-name" maxlength="18" spellcheck="false" aria-label="Operator nomi"><small id="lobby-rank">KONTIR OPERATOR</small></div></div>
+              <div class="party-slots"><i>+</i><i>+</i><i>+</i><i>+</i></div></div>
+            <div class="side-block"><small>TOMON AFZALLIGI (mashq / xona)</small><button id="team">TERRORIST ⇄</button></div>
+            <div class="side-block quick-row"><button id="practice" class="secondary">MASHQ ${arrow}</button><button id="quick" class="secondary">TEZKOR ${arrow}</button><button id="online" class="secondary">KOD ${arrow}</button></div>
+            <div id="search-status" class="hidden"><div><small id="search-mode">COMPETITIVE</small><strong id="search-time">0:00</strong><span id="search-info">Qidirilmoqda…</span></div><button id="search-cancel" aria-label="Bekor qilish">×</button></div>
+            <button id="go" class="go">IZLASH</button>
+          </aside>
+        </div>
         <footer><span>SERVER-AUTHORITATIVE · LAG COMPENSATION 1000 MS</span><span>GLB + BVH · CSM SOYALAR · PBR</span><span>v0.2</span></footer>
       </section>
       <section id="hud" class="hidden">
@@ -63,18 +76,72 @@ export class UI {
     $('#close').onclick = () => this.modal.close(); this.modal.addEventListener('click', e => { if (e.target === this.modal && !this.locked) this.modal.close(); });
     $('.brand').onclick = e => e.preventDefault();
   }
-  ready() { gsap.to('#loader', { autoAlpha: 0, duration: 0.5, onComplete: () => $('#loader')?.remove() }); gsap.from('.hero > *', { opacity: 0, y: 20, stagger: 0.09, duration: 0.7, ease: 'power3.out' }); gsap.from('.menu-bottom', { opacity: 0, y: 20, duration: 0.7, delay: 0.2 }); }
+  ready() { gsap.to('#loader', { autoAlpha: 0, duration: 0.5, onComplete: () => $('#loader')?.remove() }); gsap.from('.lobby-main > *', { opacity: 0, y: 16, stagger: 0.07, duration: 0.6, ease: 'power3.out' }); gsap.from('.lobby-side', { opacity: 0, x: 20, duration: 0.6, delay: 0.15 }); }
   setLoading(fraction, label) { const bar = $('#loader-bar'); if (bar) bar.style.width = `${Math.round(fraction * 100)}%`; const t = $('#loader-text'); if (t && label) t.textContent = label.toUpperCase(); }
   showBusy(text) { this.busy ||= document.createElement('div'); this.busy.id = 'busy'; this.busy.textContent = text; if (!this.busy.isConnected) document.body.append(this.busy); }
   hideBusy() { this.busy?.remove(); }
   dialog(html, locked = false) { this.content.innerHTML = html; this.locked = locked; $('#close').hidden = locked; if (!this.modal.open) this.modal.showModal(); gsap.fromTo(this.modal, { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.2 }); }
   toast(text) { const el = $('#toast'); el.textContent = text; gsap.killTweensOf(el); gsap.set(el, { autoAlpha: 1 }); gsap.to(el, { autoAlpha: 0, delay: 3.5, duration: 0.3 }); }
 
-  setMaps(maps, selected, onSelect) {
-    $('#map-count').textContent = `${maps.length} XARITA`;
-    $('#map-options').innerHTML = maps.map((m, i) => `<button data-map="${esc(m.id)}" class="map-card ${m.id === selected ? 'selected' : ''}"><div class="map-preview m${i % 4}"><span>${esc(m.id.slice(0, 1).toUpperCase())}</span></div><div><strong>${esc(m.name)}</strong><small>${esc(m.subtitle || '')}</small></div><b>↗</b></button>`).join('');
-    document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-map]').forEach(x => x.classList.toggle('selected', x === b)); onSelect(b.dataset.map); });
+  /**
+   * Map grid. Matchmaking modes treat cards as a multi-select pool (checkboxes); practice / private pick one map.
+   * Every click also previews that map in the menu background (onSelect).
+   */
+  setMaps(maps, selected, onSelect, pool = new Set(maps.map(m => m.id))) {
+    this.maps = maps; this.pool = pool; this.selectedMap = selected;
+    $("#map-count").textContent = ` · ${maps.length}`;
+    $('#map-options').innerHTML = maps.map(m => `<button data-map="${esc(m.id)}" class="map-card ${m.id === selected ? 'selected' : ''} ${pool.has(m.id) ? 'pooled' : ''}"><canvas width="160" height="100" data-thumb="${esc(m.id)}"></canvas><i class="check"></i><div><strong>${esc(m.name)}</strong><small>${esc(m.subtitle || '')}</small></div></button>`).join('');
+    document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => {
+      const mid = b.dataset.map;
+      if (this.mode === 'competitive' || this.mode === 'casual') { if (this.pool.has(mid) && this.pool.size > 1) this.pool.delete(mid); else this.pool.add(mid); b.classList.toggle('pooled', this.pool.has(mid)); this.onPool?.(this.pool); }
+      document.querySelectorAll('[data-map]').forEach(x => x.classList.toggle('selected', x === b)); this.selectedMap = mid; onSelect(mid);
+      this.poolHint();
+    });
+    $('#map-all').onclick = () => { for (const m of maps) this.pool.add(m.id); document.querySelectorAll('[data-map]').forEach(x => x.classList.add('pooled')); this.onPool?.(this.pool); this.poolHint(); };
+    for (const m of maps) this.drawThumb(m.id);
+    this.poolHint();
   }
+  poolHint() { if (!this.pool) return; const mm = this.mode === 'competitive' || this.mode === 'casual'; $('#pool-hint').textContent = mm ? `${this.pool.size} ta xarita tanlangan — shulardan biri o‘ynaladi` : 'Bitta xaritani tanlang'; $('#map-all').hidden = !mm; document.querySelector('#map-options').classList.toggle('pool-mode', mm); }
+  /** Top-down preview drawn from the map's ASCII layout (walls, floor, sites, spawns). */
+  async drawThumb(id) {
+    const canvas = document.querySelector(`[data-thumb="${CSS.escape(id)}"]`); if (!canvas) return;
+    const g = canvas.getContext('2d'), grad = g.createLinearGradient(0, 0, 160, 100); grad.addColorStop(0, '#2b3533'); grad.addColorStop(1, '#141b1c'); g.fillStyle = grad; g.fillRect(0, 0, 160, 100);
+    let text = ''; try { const r = await fetch(`/maps/${id}.txt`); if (r.ok) text = await r.text(); } catch { /* user GLB without layout */ }
+    const rows = text.trim().split('\n').filter(Boolean); if (!rows.length) { g.fillStyle = '#e5b96a'; g.font = '700 38px Barlow Condensed, sans-serif'; g.fillText(id.slice(0, 2).toUpperCase(), 16, 62); return; }
+    const cols = Math.max(...rows.map(r => r.length)), cell = Math.min(150 / cols, 92 / rows.length), ox = (160 - cols * cell) / 2, oy = (100 - rows.length * cell) / 2;
+    const color = ch => ('#23'.includes(ch) ? null : ch === 'A' || ch === 'B' ? '#d98a3a' : ch === 't' ? '#e5b96a' : ch === 'x' ? '#5c8fd6' : ch === 'R' ? '#6f6a5c' : '#b8a888');
+    rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const col = color(row[c]); if (!col) continue; g.fillStyle = col; g.fillRect(ox + c * cell, oy + r * cell, cell + 0.4, cell + 0.4); } });
+    g.fillStyle = '#0008'; g.fillRect(0, 76, 160, 24);
+  }
+  setMode(mode) {
+    this.mode = mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    $('#go').textContent = { competitive: 'IZLASH', casual: 'IZLASH', practice: 'BOSHLASH', private: 'XONAGA KIRISH' }[mode];
+    this.poolHint();
+  }
+  /** Search state (top of the side panel), CS2 style: mode, mm:ss, players searching. */
+  searching(info) {
+    const box = $('#search-status');
+    if (!info) { box.classList.add('hidden'); $('#go').disabled = false; $('#go').classList.remove('searching'); return; }
+    box.classList.remove('hidden'); $('#go').disabled = true; $('#go').classList.add('searching');
+    $('#search-mode').textContent = info.mode === 'casual' ? 'CASUAL' : 'COMPETITIVE';
+    $('#search-time').textContent = `${Math.floor(info.elapsed / 60)}:${String(info.elapsed % 60).padStart(2, '0')}`;
+    $('#search-info').textContent = `Qidirilmoqda · navbatda ${info.inQueue ?? 1} o‘yinchi`;
+  }
+  /** "YOUR MATCH IS READY" overlay with ACCEPT, one dot per player and a countdown bar. */
+  matchFound(found, onAccept) {
+    this.hideMatchFound();
+    const el = document.createElement('div'); el.id = 'match-found';
+    el.innerHTML = `<div class="mf-card"><small>${found.mode === 'casual' ? 'CASUAL' : 'COMPETITIVE'} · ${esc(found.mapName)}</small><h2>O‘YININGIZ TAYYOR!</h2>
+      <div class="mf-dots">${Array.from({ length: found.players }, () => '<i></i>').join('')}${Array.from({ length: Math.max(0, found.size - found.players) }, () => '<i class="bot" title="bot"></i>').join('')}</div>
+      <button id="mf-accept" class="primary">QABUL QILISH</button><div class="mf-bar"><i></i></div><span id="mf-info">${found.players} ta o‘yinchi · bo‘sh joylarga bot qo‘shiladi</span></div>`;
+    document.body.append(el);
+    gsap.fromTo(el.querySelector('.mf-card'), { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.25, ease: 'back.out(2)' });
+    gsap.fromTo(el.querySelector('.mf-bar i'), { scaleX: 1 }, { scaleX: 0, duration: Math.max(1, found.acceptSeconds), ease: 'none' });
+    el.querySelector('#mf-accept').onclick = () => { el.querySelector('#mf-accept').disabled = true; el.querySelector('#mf-accept').textContent = 'QABUL QILINDI'; onAccept(); };
+  }
+  matchAccepted(n) { document.querySelectorAll('#match-found .mf-dots i:not(.bot)').forEach((d, i) => d.classList.toggle('on', i < n)); const info = $('#mf-info'); if (info) info.textContent = `${n} ta o‘yinchi qabul qildi`; }
+  hideMatchFound() { document.querySelector('#match-found')?.remove(); }
   showMenu() { this.modal.close(); this.menu.classList.remove('hidden'); this.hud.classList.add('hidden'); document.body.classList.remove('playing'); this.lastPhase = ''; $('#killfeed').replaceChildren(); $('#scoreboard').classList.add('hidden'); }
   showGame(name) { this.modal.close(); this.menu.classList.add('hidden'); this.hud.classList.remove('hidden'); document.body.classList.add('playing'); $('#location-label').textContent = name; this.lastPhase = ''; this.lastHealth = 100; gsap.fromTo('.hud-top,.hud-bottom', { opacity: 0 }, { opacity: 1, duration: 0.4 }); }
   resume(show) { $('#resume').classList.toggle('hidden', !show); }

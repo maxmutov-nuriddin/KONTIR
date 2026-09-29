@@ -76,7 +76,7 @@ const HOLD = {
   grenade: { p: [0.13, 0.3, -0.22], r: [0.1, 0, 0], s: 1 },
   c4: { p: [0.02, 0.24, -0.26], r: [0.3, 0, 0], s: 1 },
 };
-const holdStyle = id => (['glock', 'usp', 'deagle', 'p250', 'fiveseven', 'tec9'].includes(id) ? 'pistol' : ['knife'].includes(id) ? 'knife' : ['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'].includes(id) ? 'grenade' : id === 'c4' ? 'c4' : 'rifle');
+const holdStyle = id => (['glock', 'usp', 'deagle', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'].includes(id) ? 'pistol' : ['knife'].includes(id) ? 'knife' : ['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'].includes(id) ? 'grenade' : id === 'c4' ? 'c4' : 'rifle');
 
 /** Puts the requested weapon in the operator's hands (hands are placed on the weapon's grips; arms are solved by IK each frame). */
 export function holdWeapon(actor, weaponId) {

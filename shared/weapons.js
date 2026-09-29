@@ -46,7 +46,7 @@ export const WEAPONS = Object.freeze({
     mag: 12, reserve: 24, reload: 2.2, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.2, recoilRate: 6, viewKick: 1,
     spread: { stand: 0.0014, crouch: 0.0008, move: 0.01, air: 0.04, burst: 0.001, burstMax: 0.006 }, model: 'usp' }),
   awp: gun({ id: 'awp', name: 'AWP', slot: 1, team: null, price: 4750, kill: 100, damage: 115, armorRatio: 1.95, range: 0.99, interval: 1.46, auto: false,
-    mag: 10, reserve: 30, reload: 3.67, drawTime: 1200, recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1, viewKick: 2,
+    mag: 10, reserve: 30, reload: 3.67, drawTime: 1200, recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1, viewKick: 2, scope: [40, 15], unscoped: 0.08, unzoomOnShot: true,
     spread: { stand: 0.0002, crouch: 0.0001, move: 0.2, air: 0.5, burst: 0.0001, burstMax: 0.0001 }, model: 'awp' }),
   famas: gun({ id: 'famas', name: 'FAMAS', slot: 1, team: 'COUNTER_TERRORIST', price: 2050, kill: 300, damage: 30, armorRatio: 1.4, range: 0.96, interval: 0.09, auto: true,
     mag: 25, reserve: 90, reload: 3.3, drawTime: 900, recoil: M4A4_PATTERN, recoilDelay: 0.2, recoilRate: 7, viewKick: 1,
@@ -75,6 +75,42 @@ export const WEAPONS = Object.freeze({
   tec9: gun({ id: 'tec9', name: 'TEC-9', slot: 2, team: 'TERRORIST', price: 500, kill: 300, damage: 33, armorRatio: 1.8, range: 0.79, interval: 0.1, auto: false,
     mag: 24, reserve: 120, reload: 2.4, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.18, recoilRate: 7, viewKick: 1,
     spread: { stand: 0.0018, crouch: 0.001, move: 0.014, air: 0.05, burst: 0.0015, burstMax: 0.009 }, model: 'tec9' }),
+  m4a1s: gun({ id: 'm4a1s', name: 'M4A1-S', slot: 1, team: 'COUNTER_TERRORIST', price: 2900, kill: 300, damage: 38, armorRatio: 1.4, range: 0.94, interval: 0.1, auto: true,
+    mag: 20, reserve: 80, reload: 3.1, drawTime: 1000, recoil: scaled(M4A4_PATTERN, 0.85), recoilDelay: 0.2, recoilRate: 7.5, viewKick: 0.9, suppressed: true,
+    spread: { stand: 0.0012, crouch: 0.0007, move: 0.0095, air: 0.045, burst: 0.0003, burstMax: 0.003 }, model: 'm4a1s' }),
+  aug: gun({ id: 'aug', name: 'AUG', slot: 1, team: 'COUNTER_TERRORIST', price: 3300, kill: 300, damage: 28, armorRatio: 1.8, range: 0.96, interval: 0.09, auto: true,
+    mag: 30, reserve: 90, reload: 3.8, drawTime: 1000, recoil: scaled(M4A4_PATTERN, 0.9), recoilDelay: 0.2, recoilRate: 7.5, viewKick: 0.9, scope: [45],
+    spread: { stand: 0.0012, crouch: 0.0007, move: 0.01, air: 0.045, burst: 0.0003, burstMax: 0.0035 }, model: 'aug' }),
+  sg553: gun({ id: 'sg553', name: 'SG 553', slot: 1, team: 'TERRORIST', price: 3000, kill: 300, damage: 30, armorRatio: 2.0, range: 0.98, interval: 0.09, auto: true,
+    mag: 30, reserve: 90, reload: 2.8, drawTime: 1000, recoil: scaled(AK47_PATTERN, 0.9), recoilDelay: 0.22, recoilRate: 7, viewKick: 1, scope: [45],
+    spread: { stand: 0.0013, crouch: 0.0008, move: 0.011, air: 0.05, burst: 0.0004, burstMax: 0.004 }, model: 'sg553' }),
+  ump45: gun({ id: 'ump45', name: 'UMP-45', slot: 1, team: null, price: 1200, kill: 600, damage: 35, armorRatio: 1.3, range: 0.85, interval: 0.09, auto: true,
+    mag: 25, reserve: 100, reload: 3.1, drawTime: 900, recoil: scaled(AK47_PATTERN, 0.7), recoilDelay: 0.18, recoilRate: 8, viewKick: 1,
+    spread: { stand: 0.002, crouch: 0.0012, move: 0.009, air: 0.04, burst: 0.0005, burstMax: 0.005 }, model: 'ump45' }),
+  p90: gun({ id: 'p90', name: 'P90', slot: 1, team: null, price: 2350, kill: 300, damage: 26, armorRatio: 1.38, range: 0.86, interval: 0.07, auto: true,
+    mag: 50, reserve: 100, reload: 3.3, drawTime: 1000, recoil: scaled(M4A4_PATTERN, 0.7), recoilDelay: 0.16, recoilRate: 9, viewKick: 0.8,
+    spread: { stand: 0.0022, crouch: 0.0014, move: 0.008, air: 0.04, burst: 0.0004, burstMax: 0.005 }, model: 'p90' }),
+  mp7: gun({ id: 'mp7', name: 'MP7', slot: 1, team: null, price: 1500, kill: 600, damage: 29, armorRatio: 1.25, range: 0.85, interval: 0.08, auto: true,
+    mag: 30, reserve: 120, reload: 3.1, drawTime: 900, recoil: scaled(M4A4_PATTERN, 0.75), recoilDelay: 0.16, recoilRate: 8.5, viewKick: 0.85,
+    spread: { stand: 0.0017, crouch: 0.001, move: 0.008, air: 0.04, burst: 0.0004, burstMax: 0.0045 }, model: 'mp7' }),
+  xm1014: gun({ id: 'xm1014', name: 'XM1014', slot: 1, team: null, price: 2000, kill: 900, damage: 20, pellets: 6, pelletSpread: 0.032, armorRatio: 1.6, range: 0.7, interval: 0.35, auto: true,
+    mag: 7, reserve: 32, reload: 3.6, drawTime: 900, recoil: SHOTGUN_PATTERN, recoilDelay: 0.3, recoilRate: 4, viewKick: 1.4,
+    spread: { stand: 0.001, crouch: 0.0007, move: 0.012, air: 0.04, burst: 0.001, burstMax: 0.004 }, model: 'xm1014' }),
+  mag7: gun({ id: 'mag7', name: 'MAG-7', slot: 1, team: 'COUNTER_TERRORIST', price: 1300, kill: 900, damage: 30, pellets: 8, pelletSpread: 0.03, armorRatio: 1.5, range: 0.45, interval: 0.85, auto: false,
+    mag: 5, reserve: 32, reload: 2.5, drawTime: 900, recoil: SHOTGUN_PATTERN, recoilDelay: 0.4, recoilRate: 3, viewKick: 1.6,
+    spread: { stand: 0.001, crouch: 0.0007, move: 0.012, air: 0.04, burst: 0.001, burstMax: 0.004 }, model: 'mag7' }),
+  sawedoff: gun({ id: 'sawedoff', name: 'SAWED-OFF', slot: 1, team: 'TERRORIST', price: 1100, kill: 900, damage: 32, pellets: 8, pelletSpread: 0.045, armorRatio: 1.5, range: 0.45, interval: 0.85, auto: false,
+    mag: 7, reserve: 32, reload: 3.4, drawTime: 900, recoil: SHOTGUN_PATTERN, recoilDelay: 0.4, recoilRate: 3, viewKick: 1.6,
+    spread: { stand: 0.0015, crouch: 0.001, move: 0.014, air: 0.04, burst: 0.001, burstMax: 0.004 }, model: 'sawedoff' }),
+  negev: gun({ id: 'negev', name: 'NEGEV', slot: 1, team: null, price: 1700, kill: 300, damage: 35, armorRatio: 1.42, range: 0.97, interval: 0.075, auto: true,
+    mag: 150, reserve: 200, reload: 5.7, drawTime: 1300, recoil: scaled(AK47_PATTERN, 0.8), recoilDelay: 0.3, recoilRate: 5, viewKick: 1.1,
+    spread: { stand: 0.004, crouch: 0.003, move: 0.02, air: 0.06, burst: 0.00015, burstMax: 0.006 }, model: 'negev' }),
+  cz75: gun({ id: 'cz75', name: 'CZ75-AUTO', slot: 2, team: null, price: 500, kill: 100, damage: 31, armorRatio: 1.55, range: 0.85, interval: 0.1, auto: true,
+    mag: 12, reserve: 12, reload: 2.7, drawTime: 500, recoil: GLOCK_PATTERN, recoilDelay: 0.18, recoilRate: 7, viewKick: 1,
+    spread: { stand: 0.002, crouch: 0.0012, move: 0.014, air: 0.05, burst: 0.0018, burstMax: 0.01 }, model: 'cz75' }),
+  r8: gun({ id: 'r8', name: 'R8 REVOLVER', slot: 2, team: null, price: 600, kill: 300, damage: 86, armorRatio: 1.864, range: 0.91, interval: 0.5, auto: false,
+    mag: 8, reserve: 8, reload: 2.3, drawTime: 800, recoil: DEAGLE_PATTERN, recoilDelay: 0.35, recoilRate: 4, viewKick: 1.3,
+    spread: { stand: 0.0018, crouch: 0.0011, move: 0.02, air: 0.07, burst: 0.004, burstMax: 0.02 }, model: 'r8' }),
   knife: Object.freeze({ id: 'knife', kind: 'melee', melee: true, name: 'KNIFE', slot: 3, team: null, price: 0, kill: 1500, damage: 40, stabDamage: 65, backstab: 180,
     range: 1.7, interval: 0.5, stabInterval: 1.1, drawTime: 400, model: 'knife', recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1, mag: 0, reserve: 0 }),
   he: Object.freeze({ id: 'he', kind: 'grenade', melee: false, name: 'HE GRENADE', slot: 4, team: null, price: 300, kill: 300, damage: 98, radius: 8.5, fuse: 1.6, max: 1, drawTime: 600, model: 'he', mag: 0, reserve: 0, recoilTable: [{ yaw: 0, pitch: 0 }], recoil: [[0, 0]], recoilDelay: 0, recoilRate: 1 }),
@@ -91,11 +127,14 @@ export const MAX_GRENADES = 4;
 export const BUY_ITEMS = Object.freeze({
   glock: { price: 200, team: 'TERRORIST', group: 'PISTOLS' }, usp: { price: 200, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
   p250: { price: 300, group: 'PISTOLS' }, tec9: { price: 500, team: 'TERRORIST', group: 'PISTOLS' }, fiveseven: { price: 500, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },
-  deagle: { price: 700, group: 'PISTOLS' },
+  cz75: { price: 500, group: 'PISTOLS' }, deagle: { price: 700, group: 'PISTOLS' }, r8: { price: 600, group: 'PISTOLS' },
   mac10: { price: 1050, team: 'TERRORIST', group: 'SMGS' }, mp9: { price: 1250, team: 'COUNTER_TERRORIST', group: 'SMGS' },
-  nova: { price: 1050, group: 'HEAVY' },
+  ump45: { price: 1200, group: 'SMGS' }, mp7: { price: 1500, group: 'SMGS' }, p90: { price: 2350, group: 'SMGS' },
+  nova: { price: 1050, group: 'HEAVY' }, sawedoff: { price: 1100, team: 'TERRORIST', group: 'HEAVY' }, mag7: { price: 1300, team: 'COUNTER_TERRORIST', group: 'HEAVY' },
+  xm1014: { price: 2000, group: 'HEAVY' }, negev: { price: 1700, group: 'HEAVY' },
   galil: { price: 2000, team: 'TERRORIST', group: 'RIFLES' }, famas: { price: 2050, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
-  ak47: { price: 2700, team: 'TERRORIST', group: 'RIFLES' }, m4a4: { price: 3100, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
+  ak47: { price: 2700, team: 'TERRORIST', group: 'RIFLES' }, m4a4: { price: 3100, team: 'COUNTER_TERRORIST', group: 'RIFLES' }, m4a1s: { price: 2900, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
+  sg553: { price: 3000, team: 'TERRORIST', group: 'RIFLES' }, aug: { price: 3300, team: 'COUNTER_TERRORIST', group: 'RIFLES' },
   ssg08: { price: 1700, group: 'RIFLES' }, awp: { price: 4750, group: 'RIFLES' },
   decoy: { price: 50, group: 'GRENADES' }, flash: { price: 200, group: 'GRENADES' }, he: { price: 300, group: 'GRENADES' }, smoke: { price: 300, group: 'GRENADES' },
   molotov: { price: 400, team: 'TERRORIST', group: 'GRENADES' }, incendiary: { price: 500, team: 'COUNTER_TERRORIST', group: 'GRENADES' },
@@ -114,10 +153,11 @@ export function samplePattern(weapon, shots) {
 export function inaccuracy(weapon, { speed = 0, grounded = true, crouch = 0, burst = 0, zoom = 0 }) {
   const s = weapon.spread;
   if (!s) return 0;
-  if (weapon.scope && !zoom) return weapon.unscoped ?? 0.05;
+  if (weapon.scope && !zoom && weapon.unscoped !== undefined) return weapon.unscoped;   // snipers; AUG / SG 553 stay accurate unscoped
+  const zoomK = weapon.scope && zoom && weapon.unscoped === undefined ? 0.7 : 1;
   const base = s.stand + (s.crouch - s.stand) * crouch;
   const move = grounded ? s.move * Math.min(1, speed / (250 * UNIT)) : s.air;
-  return base + move + Math.min(s.burstMax, burst * s.burst);
+  return (base + move + Math.min(s.burstMax, burst * s.burst)) * zoomK;
 }
 
 /** Aim direction after applying recoil offset and a random deviation. yaw: positive = left (three.js). */

@@ -7,6 +7,8 @@ import { Inventory } from '../shared/inventory.js';
 import { GRENADES, SLOT, WEAPONS } from '../shared/weapons.js';
 import { DT } from '../shared/constants.js';
 import { buildArms, buildWeaponRig, poseArms } from './src/viewmodels.js';
+import { aimSleeve } from './src/hands.js';
+import { cuesFor, reloadStyle } from './src/reload.js';
 
 const ease = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 const seg = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
@@ -16,6 +18,10 @@ const REST = {
   ak47: { p: [0.1, -0.1, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 }, galil: { p: [0.1, -0.1, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 },
   m4a4: { p: [0.1, -0.105, -0.48], r: [0.04, 0.05, 0.0], s: 0.85 }, famas: { p: [0.1, -0.1, -0.48], r: [0.04, 0.05, 0.0], s: 0.85 }, awp: { p: [0.105, -0.115, -0.56], r: [0.04, 0.05, 0.0], s: 0.82 },
   deagle: { p: [0.075, -0.1, -0.42], r: [0.02, 0.05, 0.0] }, glock: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, usp: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] },
+  m4a1s: { p: [0.1, -0.105, -0.5], r: [0.04, 0.05, 0.0], s: 0.82 }, aug: { p: [0.1, -0.1, -0.44], r: [0.04, 0.05, 0.0], s: 0.85 }, sg553: { p: [0.1, -0.1, -0.5], r: [0.04, 0.05, 0.0], s: 0.85 },
+  ump45: { p: [0.1, -0.1, -0.44], r: [0.04, 0.05, 0.0], s: 0.92 }, p90: { p: [0.1, -0.1, -0.4], r: [0.04, 0.05, 0.0], s: 0.9 }, mp7: { p: [0.1, -0.1, -0.42], r: [0.04, 0.05, 0.0], s: 0.95 },
+  xm1014: { p: [0.1, -0.095, -0.5], r: [0.04, 0.05, 0.0], s: 0.82 }, mag7: { p: [0.1, -0.095, -0.46], r: [0.04, 0.05, 0.0], s: 0.85 }, sawedoff: { p: [0.1, -0.095, -0.44], r: [0.04, 0.05, 0.0], s: 0.9 },
+  negev: { p: [0.105, -0.115, -0.52], r: [0.04, 0.05, 0.0], s: 0.8 }, cz75: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, r8: { p: [0.075, -0.1, -0.42], r: [0.02, 0.05, 0.0] },
   mp9: { p: [0.1, -0.1, -0.44], r: [0.04, 0.05, 0.0], s: 0.95 }, mac10: { p: [0.1, -0.1, -0.44], r: [0.04, 0.05, 0.0], s: 0.95 },
   nova: { p: [0.1, -0.095, -0.5], r: [0.04, 0.05, 0.0], s: 0.82 }, ssg08: { p: [0.105, -0.115, -0.54], r: [0.04, 0.05, 0.0], s: 0.82 },
   p250: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, fiveseven: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, tec9: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] },
@@ -78,7 +84,12 @@ export class WeaponManager {
     else if (e.type === 'melee') { this.melee = 1; this.emit('melee', e); }
     else if (e.type === 'throw') { this.throwT = 1; this.emit('throw', e); }
     else if (e.type === 'select' || e.type === 'quick') this.emit('draw', e);
-    else if (e.type === 'reloadStart') this.emit('reload', e);
+    else if (e.type === 'reloadStart') {
+      const w = WEAPONS[e.weapon], a = this.inventory.ammoOf(e.weapon);
+      const full = a.mag === 0, shells = Math.max(1, Math.min(8, (w?.mag || 0) - a.mag));
+      this.reloadAnim = { id: e.weapon, style: reloadStyle(e.weapon), full, shells, cues: cuesFor(e.weapon, { full, shells }), last: 0 };
+      this.emit('reload', e);
+    }
     else if (e.type === 'dryfire') this.emit('dry', e);
     else if (e.type === 'pin') this.emit('pin', e);
   }
@@ -94,6 +105,7 @@ export class WeaponManager {
   /** Toggle mesh visibility: activeWeaponMesh.visible = true, every other rig hidden. */
   setActive(id, force = false) {
     if (id === this.activeId && !force) return;
+    if (this.activeRig) this.animateReload(this.activeRig, -1);
     for (const r of this.rigs.values()) r.group.visible = false;
     this.activeId = id; this.activeWeaponMesh = null;
     if (!id) return;
@@ -133,16 +145,8 @@ export class WeaponManager {
     const w = inv.weapon(), gun = w?.kind === 'gun';
     if (gun) { p.z += 0.03 * this.kick; p.y += 0.004 * this.kick; r.x += 0.055 * this.kick; r.z += Math.sin(this.kick * 9) * 0.006; }
     if (rig.parts.slide) rig.parts.slide.position.z = this.kick > 0.25 ? 0.035 * Math.min(1, this.kick) : 0;
-    // reload choreography
-    if (gun && inv.reloading) {
-      const t = inv.reloadProgress(), tilt = ease(seg(t, 0.05, 0.2)) - ease(seg(t, 0.8, 0.97));
-      r.z -= 0.5 * tilt; r.x += 0.22 * tilt; r.y += 0.25 * tilt; p.y -= 0.05 * tilt; p.x -= 0.03 * tilt;
-      const out = ease(seg(t, 0.15, 0.32)) - ease(seg(t, 0.55, 0.72));
-      if (rig.parts.mag) { rig.parts.mag.position.y = (rig.parts.mag.userData.y0 ??= rig.parts.mag.position.y) - 0.26 * out; rig.parts.mag.visible = out < 0.9; }
-      const bolt = Math.sin(seg(t, 0.78, 0.92) * Math.PI);
-      if (rig.parts.bolt) rig.parts.bolt.position.z = (rig.parts.bolt.userData.z0 ??= rig.parts.bolt.position.z) + 0.045 * bolt;
-      if (rig.parts.slide) rig.parts.slide.position.z = 0.03 * bolt;
-    } else if (rig.parts.mag) { rig.parts.mag.position.y = rig.parts.mag.userData.y0 ?? rig.parts.mag.position.y; rig.parts.mag.visible = true; if (rig.parts.bolt && rig.parts.bolt.userData.z0 !== undefined) rig.parts.bolt.position.z = rig.parts.bolt.userData.z0; }
+    // reload choreography: the left hand really fetches the magazine (or shells), sounds fire on animation cues
+    this.animateReload(rig, gun && inv.reloading ? inv.reloadProgress() : -1, p, r);
     // knife swing
     this.melee = Math.max(0, this.melee - dt * 3.2);
     if (w?.kind === 'melee' && this.melee > 0) { const s = Math.sin((1 - this.melee) * Math.PI); r.z += -1.2 * s; r.y += 0.7 * s; r.x += 0.5 * s; p.x -= 0.12 * s; p.z -= 0.08 * s; }
@@ -184,6 +188,91 @@ export class WeaponManager {
     // C4 display when planting
     void GRENADES;
     this.lastDt = dt;
+  }
+
+  /**
+   * t in [0,1] while reloading, -1 otherwise (restores the rest pose). Moves the rig (tilt), the magazine / bolt / slide /
+   * pump parts and the left hand in weapon space; the sleeve is re-aimed at the elbow every frame.
+   */
+  animateReload(rig, t, p, r) {
+    const left = this.arms.userData.left, parts = rig.parts, R = this.reloadAnim;
+    const mag = parts.mag, bolt = parts.bolt, slide = parts.slide, pump = parts.pump;
+    if (mag) mag.userData.p0 ??= mag.position.clone();
+    if (bolt) bolt.userData.p0 ??= bolt.position.clone();
+    if (pump) pump.userData.p0 ??= pump.position.clone();
+    if (t < 0 || !R || R.id !== this.activeId) {
+      if (this.reloading) {
+        this.reloading = false;
+        if (mag) mag.position.copy(mag.userData.p0);
+        if (bolt) bolt.position.copy(bolt.userData.p0);
+        if (pump) pump.position.copy(pump.userData.p0);
+        if (this.shell) this.shell.visible = false;
+        if (left?.userData.rest) { left.position.copy(left.userData.rest.p); left.rotation.copy(left.userData.rest.r); aimSleeve(left); }
+      }
+      if (t < 0) this.reloadAnim = null;
+      return;
+    }
+    this.reloading = true;
+    // sound cues crossed since last frame
+    for (const [at, kind] of R.cues) if (R.last < at && t >= at) this.emit('foley', { kind, weapon: R.id });
+    R.last = t;
+    const S = R.style, rest = left?.userData.rest;
+    const tilt = ease(seg(t, 0.0, 0.14)) - ease(seg(t, 0.86, 1.0));
+    const hand = new THREE.Vector3().copy(rest?.p || new THREE.Vector3());
+    const mix = (a, b, k) => hand.copy(a).lerp(b, k);
+    if (S === 'shotgun') {
+      // weapon rolls to expose the loading port; the hand shuttles shells from below into it
+      r.z -= 0.55 * tilt; r.x += 0.12 * tilt; p.y -= 0.02 * tilt; p.x -= 0.02 * tilt;
+      const port = new THREE.Vector3(0.0, -0.045, -0.02), below = new THREE.Vector3(-0.04, -0.2, 0.08);
+      const n = R.shells, a = 0.12, b = 0.8, u = (t - a) / (b - a);
+      if (!this.shell) { this.shell = new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.0095, 0.062, 10).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x8e1d17, roughness: 0.5 })); this.shell.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0098, 0.0098, 0.014, 10).rotateX(Math.PI / 2).translate(0, 0, 0.024), new THREE.MeshStandardMaterial({ color: 0xc9a24e, metalness: 1, roughness: 0.3 }))); }
+      if (this.shell.parent !== left) left.add(this.shell);
+      if (u >= 0 && u < 1) {
+        const k = (u * n) % 1;                                     // 0..1 within one shell cycle
+        const go = ease(seg(k, 0.0, 0.45)), push = ease(seg(k, 0.45, 0.8)), back = ease(seg(k, 0.8, 1));
+        hand.copy(rest.p).lerp(below, 1 - go).lerp(port, go * (1 - back)); hand.z -= 0.03 * push;
+        this.shell.visible = k < 0.8; this.shell.position.set(0.0, -0.02, -0.06);
+      } else { this.shell.visible = false; hand.copy(rest.p).lerp(below, ease(seg(t, 0.02, 0.12)) - ease(seg(t, 0.8, 0.9))); }
+      if (pump && R.full) pump.position.z = pump.userData.p0.z + 0.085 * (ease(seg(t, 0.84, 0.88)) - ease(seg(t, 0.9, 0.94)));
+      if (R.full) { const pk = ease(seg(t, 0.84, 0.88)) - ease(seg(t, 0.9, 0.94)); hand.z += 0.085 * pk; }
+    } else if (S === 'pistol' || S === 'revolver') {
+      r.z -= 0.25 * tilt; r.x += 0.28 * tilt; p.y -= 0.01 * tilt;
+      const magOut = mag ? new THREE.Vector3(0, -0.34, 0.08) : null;
+      // old mag drops free, the support hand brings a fresh one up into the grip and slaps it home
+      if (mag) {
+        const drop = ease(seg(t, 0.12, 0.3)), rise = ease(seg(t, 0.42, 0.6)), seat = ease(seg(t, 0.6, 0.64));
+        const d = new THREE.Vector3().copy(magOut).multiplyScalar(t < 0.36 ? drop : 1 - rise).addScaledVector(new THREE.Vector3(0, 0.02, 0), -(1 - seat) * (t > 0.6 ? 1 : 0));
+        mag.position.copy(mag.userData.p0).add(d);
+      }
+      const grab = new THREE.Vector3().copy(mag?.userData.p0 || rest.p).add(new THREE.Vector3(-0.02, -0.05, 0.01));
+      const k1 = ease(seg(t, 0.14, 0.34)), k2 = ease(seg(t, 0.4, 0.62)), k3 = ease(seg(t, 0.68, 0.9));
+      if (t < 0.38) mix(rest.p, new THREE.Vector3().copy(grab).add(magOut), k1);
+      else if (t < 0.66) mix(new THREE.Vector3().copy(grab).add(magOut), grab, k2);
+      else mix(grab, rest.p, k3);
+      if (slide) slide.position.z = R.full ? (t < 0.74 ? 0.035 : 0.035 * (1 - ease(seg(t, 0.74, 0.77)))) : 0;
+    } else {
+      // rifle / smg / bolt-action: tilt, grab the mag, pull it out of view, bring the new one, seat it, cycle the action
+      r.z -= 0.42 * tilt; r.x += 0.2 * tilt; r.y += 0.2 * tilt; p.y -= 0.035 * tilt; p.x -= 0.025 * tilt;
+      const out = new THREE.Vector3(-0.03, -0.36, 0.14), m0 = mag?.userData.p0 || new THREE.Vector3(0, -0.04, -0.05);
+      const grip = new THREE.Vector3().copy(m0).add(new THREE.Vector3(-0.022, -0.1, 0.0));
+      const pull = ease(seg(t, 0.22, 0.38)), back = ease(seg(t, 0.46, 0.6)), seat = ease(seg(t, 0.6, 0.66));
+      const disp = new THREE.Vector3();
+      if (t < 0.42) disp.copy(out).multiplyScalar(pull); else disp.copy(out).multiplyScalar(1 - back).add(new THREE.Vector3(0, -0.02 * (1 - seat), 0));
+      if (t < 0.2) mix(rest.p, grip, ease(seg(t, 0.06, 0.2)));
+      else if (t < 0.66) hand.copy(grip).add(disp);
+      if (mag) mag.position.copy(m0).add(t >= 0.2 && t < 0.66 ? disp : new THREE.Vector3());
+      if (t >= 0.62 && t < 0.68) { p.y += 0.006 * Math.sin(seg(t, 0.62, 0.68) * Math.PI); }           // seating jolt
+      const cyc = R.full || S === 'bolt';
+      const boltPt = new THREE.Vector3().copy(bolt?.userData.p0 || grip).add(new THREE.Vector3(0.028, 0.0, 0.01));
+      if (t >= 0.66) {
+        if (cyc) {
+          if (t < 0.76) mix(grip, boltPt, ease(seg(t, 0.66, 0.76)));
+          else if (t < 0.9) { hand.copy(boltPt); const pb = ease(seg(t, 0.78, 0.82)) - ease(seg(t, 0.85, 0.87)); hand.z += 0.05 * pb; if (bolt) bolt.position.z = bolt.userData.p0.z + 0.05 * pb; }
+          else mix(boltPt, rest.p, ease(seg(t, 0.9, 0.99)));
+        } else mix(grip, rest.p, ease(seg(t, 0.68, 0.86)));
+      }
+    }
+    if (left?.visible && rest) { left.position.copy(hand); aimSleeve(left); }
   }
 
   /** 'F': weapon inspect (CS-style). Ignored while drawing, reloading, firing or holding a pulled grenade. */

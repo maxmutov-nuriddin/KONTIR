@@ -93,21 +93,30 @@ export function poseArms(arms, rig) {
     const wrap = arms.userData[key], pose = rig.hands[key];
     wrap.visible = !!pose;
     if (!pose) continue;
-    const { hand, sleeve, name } = wrap.userData;
+    const { hand, name } = wrap.userData;
     hand.geometry = handGeometry(name, pose.grip || (key === 'left' ? 'cup' : 'grip'));
     wrap.position.set(...pose.p); wrap.rotation.set(...pose.r);
-    wrap.updateMatrix();
-    // wrist point in the wrap's parent (weapon) space
-    const wrist = V.set(0, 0, 0.09).applyMatrix4(wrap.matrix);
-    const elbow = new THREE.Vector3(...(pose.elbow || [pose.p[0] + (key === 'right' ? 0.08 : -0.12), pose.p[1] - 0.3, pose.p[2] + 0.55]));
-    const len = elbow.clone().sub(wrist).length();
-    // sleeve lives in the wrap's local space: express the world direction inversely
-    const inv = new THREE.Matrix4().copy(wrap.matrix).invert();
-    const elbowLocal = elbow.applyMatrix4(inv), wristLocal = new THREE.Vector3(0, 0, 0.09);
-    const dl = elbowLocal.clone().sub(wristLocal).normalize();
-    sleeve.position.copy(wristLocal);
-    Q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dl); sleeve.quaternion.copy(Q);
-    sleeve.scale.set(1, 1, len);
-    void E;
+    wrap.userData.rest = { p: wrap.position.clone(), r: wrap.rotation.clone(), grip: pose.grip || (key === 'left' ? 'cup' : 'grip') };
+    wrap.userData.elbow = new THREE.Vector3(...(pose.elbow || [pose.p[0] + (key === 'right' ? 0.08 : -0.12), pose.p[1] - 0.3, pose.p[2] + 0.55]));
+    aimSleeve(wrap);
   }
+}
+
+const _inv = new THREE.Matrix4(), _el = new THREE.Vector3(), _wl = new THREE.Vector3(0, 0, 0.09), _dir = new THREE.Vector3(), _z = new THREE.Vector3(0, 0, 1);
+/**
+ * Re-aims a hand's sleeve from its wrist toward the elbow point (weapon space). Call after moving the hand (reload,
+ * inspect) so the forearm follows instead of swinging rigidly with the hand.
+ */
+export function aimSleeve(wrap, elbow = wrap.userData.elbow) {
+  const { sleeve } = wrap.userData;
+  wrap.updateMatrix();
+  const wrist = V.set(0, 0, 0.09).applyMatrix4(wrap.matrix);
+  const len = _el.copy(elbow).sub(wrist).length();
+  _inv.copy(wrap.matrix).invert();
+  _el.copy(elbow).applyMatrix4(_inv);
+  _dir.copy(_el).sub(_wl).normalize();
+  sleeve.position.copy(_wl);
+  Q.setFromUnitVectors(_z, _dir); sleeve.quaternion.copy(Q);
+  sleeve.scale.set(1, 1, len);
+  void E;
 }

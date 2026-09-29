@@ -10,6 +10,7 @@ import { DT, RULES, TEAM_IDS, validCommand } from '../shared/constants.js';
 import { buildMapData } from '../shared/maps.js';
 import { Navigation } from './Navigation.js';
 import { Room } from './Room.js';
+import { MatchQueue } from './Queue.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.txt': 'text/plain' };
@@ -88,9 +89,10 @@ export class Matchmaker {
 /** KONTIR_TIMING='{"freeze":40,"warmup":5}' shortens/lengthens phases (seconds) for tests and private servers. */
 const envTiming = () => { try { return process.env.KONTIR_TIMING ? JSON.parse(process.env.KONTIR_TIMING) : undefined; } catch { return undefined; } };
 
-export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming() } = {}) {
+export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming(), queue: queueOptions = {} } = {}) {
   const library = await new MapLibrary(await MapLibrary.locate()).init();
   const matchmaker = new Matchmaker(library);
+  const queue = new MatchQueue({ mapIds: library.list().map(m => m.id), ...queueOptions });
   const rooms = matchmaker.rooms;
   let serverStats = { ticks: 0, worstMs: 0 };
 
@@ -111,7 +113,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
     if (url.pathname === '/health') {
       res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((n, r) => n + r.humans().length, 0), tickRate: 1 / DT, stepMs: [...rooms.values()].map(r => +r.stats.stepMs.toFixed(3)), worstMs: +serverStats.worstMs.toFixed(2) }));
+      return res.end(JSON.stringify({ ok: true, searching: queue.searching(), rooms: rooms.size, players: [...rooms.values()].reduce((n, r) => n + r.humans().length, 0), tickRate: 1 / DT, stepMs: [...rooms.values()].map(r => +r.stats.stepMs.toFixed(3)), worstMs: +serverStats.worstMs.toFixed(2) }));
     }
     if (url.pathname.startsWith('/maps/')) { // serve maps even without a client build
       try { const data = await publicFile(resolve(library.dir), decodeURIComponent(url.pathname.slice(6))); res.writeHead(200, { 'Content-Type': MIME[extname(url.pathname)] || 'application/octet-stream', 'Cache-Control': 'public, max-age=300' }); return res.end(data); }
@@ -138,6 +140,20 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
 
   io.on('connection', socket => {
     socket.data.window = performance.now(); socket.data.packets = 0;
+    // ---- matchmaking (CS2-style: map pool -> search -> ACCEPT -> room)
+    socket.on('queue:join', (request, ack) => {
+      if (typeof ack !== 'function') return;
+      if (socket.data.room) return ack({ error: 'Avval o‘yindan chiqing.' });
+      if (!request || typeof request !== 'object') return ack({ error: 'Noto‘g‘ri so‘rov.' });
+      const name = String(request.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
+      const maps = Array.isArray(request.maps) ? request.maps.filter(m => typeof m === 'string').slice(0, 16) : null;
+      const e = queue.join(socket.id, { name, maps, mode: request.mode === 'casual' ? 'casual' : 'competitive' });
+      socket.data.queued = true;
+      ack({ ok: true, ...queue.status(socket.id), maps: [...e.maps] });
+    });
+    socket.on('queue:leave', () => { queue.leave(socket.id); socket.data.queued = false; });
+    socket.on('queue:accept', matchId => { const m = queue.accept(socket.id, String(matchId)); if (m) for (const p of m.players) io.to(p).emit('queue:accepted', { matchId: m.id, accepted: m.accepted.size, total: m.players.length }); });
+    socket.on('queue:decline', matchId => queue.decline(socket.id, String(matchId)));
     socket.on('maps', (_, ack) => typeof ack === 'function' && ack({ maps: library.list().map(({ id, name, subtitle }) => ({ id, name, subtitle })) }));
     socket.on('join', async (request, ack) => {
       if (typeof ack !== 'function') return;
@@ -148,6 +164,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         socket.data.lastJoin = now;
         if (socket.data.joining) return ack({ error: 'Ulanish davom etmoqda.' });
         if (socket.data.room) return ack({ error: 'Avval xonadan chiqing.' });
+        queue.leave(socket.id);
         if (!request || typeof request !== 'object' || Array.isArray(request)) return ack({ error: 'Noto‘g‘ri so‘rov.' });
         socket.data.joining = true; ownsJoin = true;
         const joinVersion = socket.data.joinVersion || 0;
@@ -201,7 +218,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       ack(rooms.get(socket.data.room)?.buy(socket.id, String(item)) || { error: 'Xona topilmadi.' });
     });
     socket.on('leave', () => leave(socket));
-    socket.on('disconnect', () => leave(socket));
+    socket.on('disconnect', () => { queue.leave(socket.id); leave(socket); });
   });
 
   // ---- 64 Hz fixed-step loop (setInterval drives, an accumulator keeps simulation time exact)
@@ -228,6 +245,47 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       if (room.humans().length === 0) { room.emptySince ??= room.tick; if (room.tick - room.emptySince > 64 * 20) matchmaker.remove(code); }
     }
   }, 8);
+  // ---- matchmaking pump (1 Hz): status to searchers, found / ready / expired transitions
+  async function startMatch(m) {
+    const alive = m.players.map(id => io.sockets.sockets.get(id)).filter(s => s?.connected && !s.data.room);
+    if (!alive.length) return;
+    let room;
+    try {
+      let code; do { code = 'M' + randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
+      room = await matchmaker.create(code, m.mapId, { timing, isPublic: false });
+    } catch (error) { for (const s of alive) s.emit('queue:failed', { reason: 'Server band. Qayta qidiring.' }); return; }
+    room.match = { mode: m.mode, id: m.id };
+    // random, balanced sides like a real matchmade game
+    const order = alive.map(s => s).sort(() => Math.random() - 0.5);
+    order.forEach((s, i) => {
+      const e = s.data.queueName || 'Operator';
+      const player = room.add(s.id, e, i % 2 ? 'COUNTER_TERRORIST' : 'TERRORIST');
+      if (!player) return;
+      s.data.room = room.code; s.data.queued = false; s.join(room.code);
+    });
+    room.fillBots(); room.start();
+    for (const s of order) {
+      const p = room.players.get(s.id); if (!p) continue;
+      s.emit('queue:ready', { ok: true, id: s.id, code: room.code, team: p.team, mode: m.mode, snapshot: room.snapshot(s.id) });
+    }
+  }
+  const pump = setInterval(() => {
+    for (const a of queue.tick()) {
+      const { match: m } = a;
+      if (a.type === 'found') {
+        const meta = library.list().find(x => x.id === m.mapId);
+        for (const p of m.players) {
+          const s = io.sockets.sockets.get(p); if (s) s.data.queueName = queue.entries.get(p)?.name;
+          io.to(p).emit('queue:found', { matchId: m.id, mapId: m.mapId, mapName: meta?.name || m.mapId, mode: m.mode, players: m.players.length, size: m.size, acceptSeconds: Math.round((m.deadline - Date.now()) / 1000) });
+        }
+      } else if (a.type === 'ready') startMatch(m).catch(error => { if (!quiet) console.error('match start failed', error); });
+      else if (a.type === 'expired') {
+        for (const p of a.dropped) { io.to(p).emit('queue:failed', { reason: 'Match qabul qilinmadi.' }); const s = io.sockets.sockets.get(p); if (s) s.data.queued = false; }
+        for (const p of a.requeued) io.to(p).emit('queue:requeued', { reason: 'Kimdir qabul qilmadi — qidiruv davom etmoqda.' });
+      }
+    }
+    for (const e of queue.entries.values()) if (!e.matchId) io.to(e.id).emit('queue:status', queue.status(e.id));
+  }, queueOptions.pumpMs || 1000);
   const probes = setInterval(() => {
     for (const socket of io.sockets.sockets.values()) {
       const started = performance.now();
@@ -245,12 +303,12 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       http.listen(port, host, () => { http.off('error', reject); done(); });
     });
   } catch (error) {
-    clearInterval(loop); clearInterval(probes); io.close(); throw error;
+    clearInterval(loop); clearInterval(probes); clearInterval(pump); io.close(); throw error;
   }
   const address = http.address();
   if (!quiet) console.log(`KONTIR server: http://localhost:${address.port}  (64 tick, maps: ${library.list().map(m => m.id).join(', ')})`);
-  const close = async () => { clearInterval(loop); clearInterval(probes); await new Promise(r => io.close(r)); http.closeAllConnections?.(); };
-  return { http, io, rooms, matchmaker, library, port: address.port, close };
+  const close = async () => { clearInterval(loop); clearInterval(probes); clearInterval(pump); await new Promise(r => io.close(r)); http.closeAllConnections?.(); };
+  return { http, io, rooms, matchmaker, library, queue, port: address.port, close };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -32,11 +32,19 @@ Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near:
 const ground = new THREE.Mesh(new THREE.CircleGeometry(30, 48), new THREE.MeshStandardMaterial({ color: 0xb59c6f, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
 let camera, tick;
+/** ?reload=0.45 freezes the reload animation at that progress (empty magazine => full reload with bolt / slide). */
+function forceReload(wm) {
+  const at = q.get('reload'); if (at === null) return;
+  const inv = wm.inventory, a = inv.ammoOf(id); if (a) { a.mag = 0; a.reserve = 90; }
+  wm.react({ type: 'reloadStart', weapon: id });
+  inv.reloading = true; inv.reloadProgress = () => Number(at);
+}
 if (mode === 'rig') {
   // rig inspection: the first-person rig (weapon + sleeves + hands) seen from outside
   const vs = new THREE.Scene(); vs.background = new THREE.Color(0x8c9aa1); environment(vs, sunDir); vs.environmentIntensity = 0.7;
   vs.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.4)); vs.environmentIntensity = 0.9; { const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); vs.add(rim); } const l = new THREE.DirectionalLight(0xffe1b0, 3.5); l.position.set(-1.5, 3, 2); vs.add(l);
   const wm = new WeaponManager(vs, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
+  forceReload(wm);
   const dyn = new ViewmodelDynamics(); camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 20);
   const cam = new THREE.Vector3(...(q.get('cam') || '0.9,0.35,0.5').split(',').map(Number)), at = new THREE.Vector3(...(q.get('at') || '0.1,-0.15,-0.4').split(',').map(Number));
   tick = dt => { wm.update(dt, dyn); camera.position.copy(cam); camera.lookAt(at); renderer.clear(); renderer.render(vs, camera); };
@@ -51,6 +59,7 @@ if (mode === 'rig') {
   const wm = new WeaponManager(viewScene, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
   const dyn = new ViewmodelDynamics(); const grid = new THREE.GridHelper(4, 16, 0x556, 0x445); grid.position.set(0, -0.6, -1); if (q.get('grid')) viewScene.add(grid);
   window.__wm = wm;
+  forceReload(wm);
   tick = dt => { wm.update(dt, dyn); renderer.clear(); renderer.render(viewScene, camera); };
 } else {
   camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 100);
