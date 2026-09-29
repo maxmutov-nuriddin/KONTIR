@@ -337,6 +337,15 @@ export class GridMap {
           for (const [a, b, y0, y1] of [[u - 0.1, u, y - 0.1, y + 1.6], [u + w, u + w + 0.1, y - 0.1, y + 1.6], [u - 0.1, u + w + 0.1, y + 1.5, y + 1.6], [u - 0.14, u + w + 0.14, y - 0.14, y - 0.04]]) box('wood_dark', a, b, y0, y1, 0, a === u - 0.14 ? 0.16 : 0.09);
           box('wood_dark', u + w / 2 - 0.03, u + w / 2 + 0.03, y, y + 1.5, 0, 0.08);
           if (rnd() < 0.5) { box('plaster_blue', u - 0.75, u - 0.1, y - 0.05, y + 1.55, 0.02, 0.09); box('plaster_blue', u + w + 0.1, u + w + 0.75, y - 0.05, y + 1.55, 0.02, 0.09); }
+          if (y > 3 && rnd() < 0.45) { // balcony under an upper-floor window: slab, corbels, railing with balusters
+            const b0 = u - 0.35, b1 = u + w + 0.35, by = y - 0.18;
+            box('stone_base', b0, b1, by - 0.14, by, 0, 0.85, 1);
+            for (const cu of [b0 + 0.1, b1 - 0.22]) box('stone_base', cu, cu + 0.12, by - 0.55, by - 0.14, 0, 0.5, 1);
+            box('wood_dark', b0, b1, by + 0.95, by + 1.02, 0.78, 0.85, 1);
+            for (let bu = b0 + 0.05; bu < b1 - 0.02; bu += 0.19) box('wood_dark', bu, bu + 0.04, by, by + 0.95, 0.79, 0.83, 1);
+            box('wood_dark', b0, b0 + 0.05, by, by + 0.95, 0, 0.85, 1); box('wood_dark', b1 - 0.05, b1, by, by + 0.95, 0, 0.85, 1);
+            if (rnd() < 0.5) box(rnd() < 0.5 ? 'cloth_red' : 'cloth_cream', b0 + 0.3, b0 + 0.9, by + 0.2, by + 1.0, 0.86, 0.88, 1); // rug drying on the rail
+          }
         } else if (roll < 0.58) { // door with arch frame
           const u = cell * 0.3, w = 1.3;
           box('wood_dark', u - 0.12, u + w + 0.12, 0, 2.7, 0, 0.1); box('wood', u, u + w, 0, 2.55, 0.05, 0.14, 1);
@@ -347,11 +356,34 @@ export class GridMap {
           box('wood_dark', u, u + 0.1, 0, 2.9, 1.6, 1.7); box('wood_dark', u + w - 0.1, u + w, 0, 2.9, 1.6, 1.7);
         } else if (roll < 0.78 && h - nb > 6) { // wall pipe + vent
           box('metal', cell * 0.8, cell * 0.8 + 0.14, 0, h - 0.4, 0.1, 0.24, 1); box('metal', cell * 0.15, cell * 0.55, 4.6, 5.3, 0.08, 0.3, 1);
+        } else if (roll < 0.85 && h - nb > 4) { // split AC unit: casing, fan grille, bracket, condensate pipe
+          const u = cell * (0.2 + rnd() * 0.35), y = 2.5 + rnd() * 0.6;
+          box('plaster_white', u, u + 0.9, y, y + 0.62, 0.06, 0.4, 1);
+          box('metal', u + 0.12, u + 0.62, y + 0.08, y + 0.54, 0.4, 0.42, 1);
+          for (let g = 0; g < 4; g++) box('window_dark', u + 0.16, u + 0.58, y + 0.13 + g * 0.1, y + 0.16 + g * 0.1, 0.42, 0.43, 1);
+          box('metal', u + 0.05, u + 0.85, y - 0.06, y, 0.02, 0.44, 1);
+          box('metal', u + 0.8, u + 0.84, 0.4, y, 0.06, 0.1, 1);
+        } else if (roll < 0.91) { // shop sign board on brackets + wall lamp
+          const u = cell * 0.15, w = cell * 0.7, y = 3.05, col = ['plaster_blue', 'cloth_red', 'container_yellow', 'container_green'][Math.floor(rnd() * 4)];
+          box('wood_dark', u - 0.05, u + w + 0.05, y - 0.05, y + 0.75, 0.02, 0.1, 1);
+          box(col, u, u + w, y, y + 0.7, 0.1, 0.13, 1);
+          for (let t = 0; t < 3; t++) box('plaster_white', u + 0.25 + t * w * 0.3, u + 0.25 + t * w * 0.3 + w * 0.2, y + 0.25, y + 0.45, 0.13, 0.14, 1); // lettering blocks
+          box('metal', u + w / 2 - 0.03, u + w / 2 + 0.03, y + 0.95, y + 1.0, 0, 0.45, 1); box('cloth_cream', u + w / 2 - 0.1, u + w / 2 + 0.1, y + 0.75, y + 0.95, 0.35, 0.55, 1);
+        } else if (h - nb > 4) { // weathering: patched plaster, exposed brick, electric box with cable
+          const u = cell * rnd() * 0.6, y = 0.9 + rnd() * 2.2;
+          box(rnd() < 0.5 ? 'brick' : 'plaster_white', u, u + 0.6 + rnd() * 0.8, y, y + 0.4 + rnd() * 0.6, 0, 0.025, 1);
+          if (rnd() < 0.6) { box('container_grey', cell * 0.7, cell * 0.7 + 0.45, 1.3, 1.9, 0.02, 0.2, 1); box('window_dark', cell * 0.7 + 0.2, cell * 0.7 + 0.24, 1.9, h - 0.5, 0.05, 0.08, 1); }
         }
       }
       // roof clutter for skyline (only on facades that face an open street)
       if (!this.faces(c, r).length) continue;
       if (h >= 5.5 && rnd() < 0.09) { const cx = xa + cell / 2, cz = za + cell / 2; this.addCyl('metal', cx, h, cz, 0.7, 1.6, { sides: 10 }); this.addCyl('rust_metal', cx, h + 1.6, cz, 0.8, 0.12, { sides: 10 }); }
+      else if (h >= 5.5 && rnd() < 0.07) { // satellite dish on a stub mast
+        const cx = xa + cell * 0.6, cz = za + cell * 0.4; this.addCyl('metal', cx, h, cz, 0.05, 1.1, { sides: 6 });
+        const dish = cylMesh('c', 'plaster_white', 0, -0.03, 0, 0.55, 0.06, 12, 1); rotateMesh(dish, { rx: 1.1, ry: rnd() * 6.28 }); for (let i = 0; i < dish.positions.length; i += 3) { dish.positions[i] += cx; dish.positions[i + 1] += h + 1.2; dish.positions[i + 2] += cz; } this.decor.push(dish);
+      } else if (h >= 5.5 && rnd() < 0.1) { // parapet merlons along the roof edge
+        for (let k = 0; k < 3; k++) this.addDecor('sand_wall', xa + k * cell / 3 + 0.15, h, za + 0.1, xa + k * cell / 3 + 0.75, h + 0.45, za + 0.5, 1);
+      }
       else if (h >= 5.5 && rnd() < 0.06) { this.addDecor('wood_dark', xa + 0.6, h, za + 0.6, xa + 0.7, h + 2.2, za + 0.7); this.addDecor('metal', xa + 0.2, h + 1.9, za + 0.65, xa + 1.4, h + 1.95, za + 0.66); }
     }
   }

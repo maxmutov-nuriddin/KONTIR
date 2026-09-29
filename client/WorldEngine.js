@@ -137,6 +137,9 @@ export class WorldEngine {
   }
   prepareMaterial(m) {
     // Rebuild hooks once; repeated quality changes must not stack GLSL patches.
+    // dispose() drops the renderer's per-material program map: otherwise a program cached under the same key (e.g. CSM on
+    // -> off -> on) is reused with the uniform set of the last compile, which lacks CSM_cascades and crashes the upload.
+    m.dispose();
     m.onBeforeCompile = THREE.Material.prototype.onBeforeCompile;
     m.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey;
     this.csm?.setupMaterial(m);

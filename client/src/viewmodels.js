@@ -608,10 +608,35 @@ function rigFromModel(id, gltf) {
   return { group, muzzle: find('muzzle') || marker(group, 0, 0.03, box.min.z, 'muzzle'), eject: find('eject'), parts, hands, length: box.max.z - box.min.z, fromModel: true };
 }
 
+/** Detail pass for guns: receiver cross-pins (trigger/hammer/takedown) with domed heads on both sides and a stamped
+ *  data plate, found from the largest direct-child mesh (the receiver in every builder). Tiny geometry, shared material. */
+const NO_PINS = new Set(['knife', 'he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy', 'c4']);
+const pinGeo = new THREE.CylinderGeometry(0.0026, 0.0026, 1, 10).rotateZ(Math.PI / 2), headGeo = new THREE.SphereGeometry(0.0034, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2);
+pinGeo.userData.shared = headGeo.userData.shared = true;
+const tmpBox = new THREE.Box3(), tmpSize = new THREE.Vector3();
+function addPins(g, M) {
+  let best = null, vol = 0;
+  for (const o of g.children) {
+    if (!o.isMesh || o.geometry.type !== 'RoundedBoxGeometry' || o.material === M.wood || o.material === M.rubber) continue;
+    o.updateMatrix(); tmpBox.copy(o.geometry.boundingBox || (o.geometry.computeBoundingBox(), o.geometry.boundingBox)).applyMatrix4(o.matrix);
+    tmpBox.getSize(tmpSize); const v = tmpSize.x * tmpSize.y * tmpSize.z;
+    if (v > vol && tmpSize.z > tmpSize.x) { vol = v; best = tmpBox.clone(); }
+  }
+  if (!best) return;
+  const { min, max } = best, w = max.x - min.x, len = max.z - min.z, h = max.y - min.y;
+  for (const t of [0.3, 0.55, 0.78]) {
+    const y = min.y + h * (t === 0.55 ? 0.62 : 0.3), z = min.z + len * t;
+    const pin = part(g, pinGeo, M.metal, (min.x + max.x) / 2, y, z); pin.scale.x = w + 0.003;
+    for (const sx of [-1, 1]) { const hd = part(g, headGeo, M.metal, (min.x + max.x) / 2 + sx * (w / 2 + 0.0012), y, z); if (sx < 0) hd.rotation.y = Math.PI; }
+  }
+  part(g, box(0.0012, h * 0.22, len * 0.16, 0.0004), M.metal, max.x + 0.0006, min.y + h * 0.5, min.z + len * 0.42); // data plate
+}
+
 export function buildWeaponRig(id) {
   const model = models.weapon(id);
   if (model) { const rig = rigFromModel(id, model); rig.id = id; rig.group.name = `weapon_${id}`; return rig; }
   const M = weaponMaterials(), rig = BUILDERS[id](M);
+  if (!NO_PINS.has(id)) addPins(rig.group, M);
   rig.id = id; rig.group.name = `weapon_${id}`;
   rig.hands = HANDS[HAND_CLASS[id] || 'ak47'];
   return rig;
