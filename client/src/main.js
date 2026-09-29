@@ -230,7 +230,8 @@ async function enter(result, my) {
     state = network.latest || state;
     playing = true; friends.applyMic(); lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
     ui.showGame(world.map.name); ui.hideBusy(); receive(state);
-  if (state.phase !== 'warmup') ui.resume(true);
+  // straight into the game: no deploy screen; if the browser refuses the lock, any click on the scene captures the mouse
+  ui.resume(false); if (state.phase !== 'warmup') { try { controller.lock(); } catch { /* click fallback */ } }
 }
 function leave() {
   generation++; joining = false; playing = false; friends.applyMic(); controller.unlock(); network.leave();
@@ -386,8 +387,19 @@ document.querySelector('#settings').onclick = () => ui.settings({ quality: world
   onQuality: q => { world.setQuality(q); store.set('quality', q); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
 ui.modal.addEventListener('close', () => { controller.capture = null; });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
+// click anywhere on the game view (not on UI) captures the mouse; Esc once = pause menu, Esc again = back to the game
+addEventListener('mousedown', e => {
+  if (!playing || controller.locked || ui.modal.open || state?.phase === 'warmup' || resultShown || !$paused()) return;
+  if (e.target.closest?.('button, input, select, dialog, a, #friends, #chat-form, #call-bar, .party-invite')) return;
+  audio.unlock(); try { controller.lock(); } catch { /* ignore */ }
+});
+const $paused = () => document.querySelector('#resume').classList.contains('hidden');
+addEventListener('keydown', e => {
+  if (e.code !== 'Escape' || !playing || controller.locked || ui.modal.open || $paused()) return;
+  e.preventDefault(); ui.resume(false); try { controller.lock(); } catch { /* next click locks */ }
+});
 document.querySelector('#leave').onclick = leave; document.querySelector('#pause-button').onclick = () => { controller.unlock(); ui.resume(true); };
-document.addEventListener('pointerlockerror', () => { ui.toast('Pointer Lock bloklandi. Oynani faollashtirib, qayta bosing.'); if (playing && !ui.modal.open) ui.resume(true); });
+document.addEventListener('pointerlockerror', () => { if (playing && !ui.modal.open) ui.toast('Sichqonchani yoqish uchun ekranni bosing.'); });
 ui.modal.addEventListener('cancel', e => { if (ui.locked) { e.preventDefault(); if (state?.phase === 'warmup') leave(); } });
 ui.modal.addEventListener('close', () => {
   if (isBuyOpen) {

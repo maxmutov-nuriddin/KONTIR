@@ -58,7 +58,8 @@ try {
   await page.click('#practice');
   await page.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
   assert.equal((await k(page, () => window.__KONTIR__.state.players.length)), 10, 'practice fills 5v5 with bots');
-  await page.click('#lock'); await page.waitForFunction(() => window.__KONTIR__.controller.locked);
+  if (!(await k(page, () => window.__KONTIR__.controller.locked))) await page.mouse.click(640, 300);
+  await page.waitForFunction(() => window.__KONTIR__.controller.locked);
   await page.waitForFunction(() => window.__KONTIR__.state.phase === 'buy');
 
   // --- buy menu (T starts with $800: kevlar is affordable)
@@ -69,7 +70,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('dialog').open);
   // either the game re-captured the mouse or it shows the resume button (pointer lock can be refused without a gesture)
   for (let i = 0; i < 20 && !(await k(page, () => window.__KONTIR__.controller.locked)); i++) {
-    if (await page.locator('#lock').isVisible()) await page.click('#lock', { timeout: 2000 }).catch(() => {});
+    if (await page.locator('#lock').isVisible()) await page.click('#lock', { timeout: 2000 }).catch(() => {}); else if (!(await k(page, () => window.__KONTIR__.controller.locked))) await page.mouse.click(640, 300);
     await page.waitForTimeout(300);
   }
   await page.waitForFunction(() => window.__KONTIR__.controller.locked);
@@ -111,7 +112,7 @@ try {
   await page.keyboard.press('KeyY'); await page.locator('#chat-input').waitFor({ state: 'visible' });
   await page.keyboard.type('salom jamoa'); await page.keyboard.press('Enter');
   await page.locator('#chat-log', { hasText: 'salom jamoa' }).waitFor({ timeout: 10000 });
-  if (!(await k(page, () => window.__KONTIR__.controller.locked))) { await page.click('#lock').catch(() => {}); }
+  if (!(await k(page, () => window.__KONTIR__.controller.locked))) { await page.mouse.click(640, 300); }
   if (await k(page, () => window.__KONTIR__.controller.locked)) {
     await page.keyboard.press('KeyZ'); await page.locator('#radio-menu').waitFor({ state: 'visible' });
     await page.keyboard.press('Digit1'); await page.locator('#chat-log .cl', { hasText: '(radio)' }).waitFor({ timeout: 10000 });
