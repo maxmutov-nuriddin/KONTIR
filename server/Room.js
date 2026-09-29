@@ -219,7 +219,7 @@ export class Room {
     // hand the bomb to a terrorist
     const ts = this.teamPlayers('TERRORIST').filter(p => p.alive);
     for (const p of ts) if (p.inv.weaponId(SLOT.OBJECTIVE)) p.inv.remove('c4');
-    const carrier = ts.find(p => !p.bot) || ts[0];
+    const carrier = ts.length ? ts[Math.floor(Math.random() * ts.length)] : null; // random T each round (bots plant too)
     this.bomb = { state: carrier ? 'carried' : 'idle', carrier: carrier?.id || null, x: 0, y: 0, z: 0, site: null, explodeTick: 0 };
     if (carrier) carrier.inv.give('c4');
     for (const p of this.players.values()) if (p.brain) { p.brain.newRound(); p.brain.buy(p); }
