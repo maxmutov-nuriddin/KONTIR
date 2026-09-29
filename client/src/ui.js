@@ -26,7 +26,7 @@ export class UI {
         <header class="topbar">
           <div class="tb-left"><button id="nav-home" class="tb-icon" title="Bosh sahifa" aria-label="Bosh sahifa">⌂</button><button id="settings" class="tb-icon" title="Sozlamalar" aria-label="Sozlamalar">⚙</button><button id="fullscreen" class="tb-icon" title="To‘liq ekran" aria-label="To‘liq ekran">⛶</button></div>
           <nav class="tb-nav"><button data-view="inventory">INVENTAR</button><button data-view="loadout">LOADOUT</button><button data-view="play" id="play-nav" class="tb-play">O‘YNASH</button><button data-view="store">DO‘KON</button><button data-view="news">YANGILIKLAR</button></nav>
-          <div class="tb-right"><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
+          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
         </header>
         <aside class="rail">
           <div class="rail-me"><div class="avatar" id="rail-avatar">O</div><span class="rail-level" id="rail-level">1</span></div>
@@ -181,7 +181,10 @@ export class UI {
     $('#rail-level').textContent = lvl;
     for (const el of [$('#rail-avatar'), $('#avatar')]) if (el) { el.textContent = (p.name[0] || 'O').toUpperCase(); el.style.background = `linear-gradient(135deg, hsl(${p.hue} 70% 62%), hsl(${(p.hue + 40) % 360} 60% 38%))`; }
     const nameEl = $('#lobby-name'); if (nameEl && document.activeElement !== nameEl) nameEl.value = p.name;
-    $('#lobby-rank').textContent = `${rankOf(p.rating)} · DEMO`;
+    if (nameEl) nameEl.disabled = !p.demo; // account names are fixed (unique username)
+    $('#lobby-rank').textContent = `${rankOf(p.rating)} · ${p.demo ? 'DEMO' : 'PRO'}`;
+    $('.pc-demo').textContent = p.demo ? 'DEMO · progress saqlanmaydi' : 'AKKAUNT · serverda saqlanadi';
+    const acc = $('#account-btn'); if (acc) acc.textContent = p.demo ? 'KIRISH' : p.name;
   }
   /** Right rail: squad of practice partners shown like a friends list. */
   renderFriends(names) { $('#rail-friends').innerHTML = names.map((n, i) => `<div class="friend" title="${esc(n)} · bot"><span style="background:hsl(${(i * 67) % 360} 45% 40%)">${esc(n[0])}</span><i></i></div>`).join(''); }
@@ -206,8 +209,41 @@ export class UI {
   renderStore(p, finishes, icon, onBuy) {
     const demo = { standard: 'ak47', desert: 'ak47', forest: 'm4a4', urban: 'ump45', arctic: 'awp', tiger: 'deagle', crimson: 'm4a1s', cobalt: 'glock', emerald: 'usp', fade: 'p90', carbon: 'aug', gold: 'deagle' };
     $('#view-store').innerHTML = `<div class="page"><div class="page-head"><small>DO‘KON</small><h2>Skinlar</h2><p>Demo tangalar (◈) har bir match uchun beriladi: qatnashish, o‘ldirish va g‘alaba. Haqiqiy pul yo‘q.</p></div>
-      <div class="store-grid">${Object.entries(finishes).filter(([id]) => id !== 'standard').map(([id, f]) => { const own = p.owned.includes(id); return `<div class="store-item ${own ? 'own' : ''}"><img alt="" src="${icon(demo[id] || 'ak47', id)}"><b>${esc(f.name)}</b><button data-buy-fin="${id}" ${own || p.coins < f.price ? 'disabled' : ''}>${own ? 'SIZDA BOR' : `◈ ${f.price}`}</button></div>`; }).join('')}</div></div>`;
+      ${p.demo ? '<div class="store-lock"><b>SKIN UCHUN AKKAUNT KERAK</b><span>Skin olish uchun akkaunt kerak. Demo rejimda skinlar yo‘q.</span><button data-auth class="primary">KIRISH</button></div>' : ''}
+      <div class="store-grid">${Object.entries(finishes).filter(([id]) => id !== 'standard').map(([id, f]) => { const own = p.owned.includes(id); return `<div class="store-item ${own ? 'own' : ''}"><img alt="" src="${icon(demo[id] || 'ak47', id)}"><b>${esc(f.name)}</b><button data-buy-fin="${id}" ${p.demo || own || p.coins < f.price ? 'disabled' : ''}>${own ? 'SIZDA BOR' : `◈ ${f.price}`}</button></div>`; }).join('')}</div></div>`;
+    document.querySelector('#view-store [data-auth]')?.addEventListener('click', () => this.onAuth?.());
     document.querySelectorAll('[data-buy-fin]').forEach(b => b.onclick = () => onBuy(b.dataset.buyFin));
+  }
+  /** Sign in / register / demo. onSubmit(mode, username, password) resolves to an error message or null. */
+  auth({ canClose, onSubmit, onDemo }) {
+    this.dialog(`<small class="eyebrow">KONTIR</small><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
+      <div class="auth-tabs"><button data-am="login" class="on">KIRISH</button><button data-am="register">RO‘YXATDAN O‘TISH</button></div>
+      <form id="auth-form"><label for="auth-user">Foydalanuvchi nomi</label><input id="auth-user" maxlength="16" autocomplete="username" spellcheck="false" required>
+        <label for="auth-pass">Parol</label><input id="auth-pass" type="password" maxlength="64" autocomplete="current-password" required>
+        <div id="auth-rep" hidden><label for="auth-pass2">Parolni takrorlang</label><input id="auth-pass2" type="password" maxlength="64" autocomplete="new-password"></div>
+        <small class="auth-hint">Nom: 3–16 ta lotin harf, raqam yoki _ . Parol: kamida 6 belgi. E-mail kerak emas.</small>
+        <div id="auth-error" role="alert"></div><button id="auth-submit" class="primary full">KIRISH</button></form>
+      <button id="auth-demo" class="text-button">DEMO BILAN O‘YNASH</button>`, !canClose);
+    let mode = 'login';
+    const setMode = m => {
+      mode = m; document.querySelectorAll('[data-am]').forEach(b => b.classList.toggle('on', b.dataset.am === m));
+      $('#auth-rep').hidden = m !== 'register'; $('#auth-pass2').required = m === 'register';
+      $('#auth-pass').autocomplete = m === 'register' ? 'new-password' : 'current-password';
+      $('#auth-submit').textContent = m === 'register' ? 'RO‘YXATDAN O‘TISH' : 'KIRISH'; $('#auth-error').textContent = '';
+    };
+    document.querySelectorAll('[data-am]').forEach(b => b.onclick = () => setMode(b.dataset.am));
+    $('#auth-demo').onclick = () => { this.locked = false; this.modal.close(); onDemo(); };
+    $('#auth-form').onsubmit = async e => {
+      e.preventDefault();
+      const user = $('#auth-user').value.trim(), pass = $('#auth-pass').value;
+      if (mode === 'register' && pass !== $('#auth-pass2').value) { $('#auth-error').textContent = 'Parollar mos emas.'; return; }
+      $('#auth-submit').disabled = true;
+      const err = await onSubmit(mode, user, pass);
+      if (!this.modal.open) return;
+      $('#auth-submit').disabled = false;
+      if (err) $('#auth-error').textContent = err; else { this.locked = false; this.modal.close(); }
+    };
+    $('#auth-user').focus();
   }
   renderNews(items) {
     $('#view-news').innerHTML = `<div class="page"><div class="page-head"><small>YANGILIKLAR</small><h2>Nimalar yangi</h2></div><div class="news">${items.map(n => `<article><small>${esc(n.tag)}</small><h3>${esc(n.title)}</h3><p>${esc(n.text)}</p></article>`).join('')}</div></div>`;

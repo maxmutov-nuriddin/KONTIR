@@ -1,7 +1,11 @@
-// Demo profile: every player gets one automatically on first launch (stored locally). It carries the name, avatar,
-// XP / level, a local rank rating, coins earned by playing, unlocked weapon finishes and the loadout. A real account
-// system can later replace `storage` with a server-side profile without touching the UI.
-const KEY = 'kontir.profile.v1';
+// Player profile. Two kinds:
+//  - account (username + password, see server/Accounts.js): the server owns XP / rating / coins / skins; this module
+//    only mirrors it and remembers the session token.
+//  - demo (guest): generated automatically, lives for this browser session only (sessionStorage) — progress is not
+//    kept and skins cannot be bought, so nothing a guest "earns" survives; only the name and loadout are remembered.
+import { newStats, applyMatch, levelOf } from '../../shared/progress.js';
+export { levelOf };
+const KEY = 'kontir.demo.v2', TOKEN = 'kontir.token';
 const NAMES = ['Lochin', 'Burgut', 'Qoplon', "Bo'ri", 'Shunqor', 'Yulduz', 'Chaqmoq', "To'fon", 'Sherdil', 'Temir', 'Olov', 'Kumush'];
 
 export const RANKS = [
@@ -11,41 +15,33 @@ export const RANKS = [
   'Afsonaviy Burgut', 'Afsonaviy Burgut Usta', 'Oliy Usta', 'Global Elita',
 ];
 export const rankOf = rating => RANKS[Math.max(0, Math.min(RANKS.length - 1, Math.floor((rating - 700) / 75)))];
-export const levelOf = xp => 1 + Math.floor(xp / 1000);
+
+const store = (s, k, v) => { try { if (v === undefined) return s.getItem(k); if (v === null) s.removeItem(k); else s.setItem(k, v); } catch { /* private mode */ } return null; };
+export const getToken = () => store(localStorage, TOKEN);
+export const setToken = token => store(localStorage, TOKEN, token ?? null);
 
 export function defaultProfile() {
   const tag = String(1000 + Math.floor(Math.random() * 9000));
-  return {
-    id: `demo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, demo: true,
-    name: `${NAMES[Math.floor(Math.random() * NAMES.length)]}${tag}`, hue: Math.floor(Math.random() * 360),
-    xp: 0, rating: 1000, coins: 500, matches: 0, wins: 0, kills: 0, deaths: 0, headshots: 0,
-    loadout: { t: 'glock', ct: 'usp', m4: 'm4a4' },
-    finishes: {}, owned: ['standard'],
-  };
+  return { id: `demo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, demo: true, name: `${NAMES[Math.floor(Math.random() * NAMES.length)]}${tag}`, hue: Math.floor(Math.random() * 360), ...newStats() };
 }
-
 export function loadProfile() {
   let p = null;
-  try { p = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { p = null; }
+  try { p = JSON.parse(store(sessionStorage, KEY) || 'null'); } catch { p = null; }
   if (!p || typeof p !== 'object' || !p.id) {
     p = defaultProfile();
-    try { const old = localStorage.getItem('kontir.name'); if (old && old !== 'Operator') p.name = old; } catch { /* private mode */ }
+    const old = store(localStorage, 'kontir.name'); if (old && old !== 'Operator') p.name = old;
+    try { const l = JSON.parse(store(localStorage, 'kontir.loadout') || 'null'); if (l) Object.assign(p.loadout, l); } catch { /* ignore */ }
   }
   const base = defaultProfile();
   for (const k of Object.keys(base)) if (p[k] === undefined) p[k] = base[k];
-  p.loadout = { ...base.loadout, ...(p.loadout || {}) };
+  p.loadout = { ...base.loadout, ...(p.loadout || {}) }; p.demo = true; p.finishes = {}; p.owned = ['standard'];
   return p;
 }
-export function saveProfile(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); localStorage.setItem('kontir.name', p.name); } catch { /* private mode */ } }
-
-/** Applies a finished match to the profile; returns the gains for the result screen. */
-export function recordMatch(p, { won, draw = false, kills = 0, deaths = 0, assists = 0, mvps = 0, rounds = 0 }) {
-  const xp = 100 + kills * 25 + assists * 10 + mvps * 50 + (won ? 300 : draw ? 120 : 0) + rounds * 5;
-  const coins = 40 + kills * 5 + (won ? 60 : 0);
-  const rating = won ? 25 : draw ? 0 : -20;
-  const before = levelOf(p.xp);
-  p.xp += xp; p.coins += coins; p.rating = Math.max(700, p.rating + rating);
-  p.matches++; if (won) p.wins++; p.kills += kills; p.deaths += deaths;
-  saveProfile(p);
-  return { xp, coins, rating, levelUp: levelOf(p.xp) > before };
+/** Replaces the profile object's contents in place (other modules keep their reference). */
+export function adopt(p, next) { for (const k of Object.keys(p)) delete p[k]; Object.assign(p, next); if (!p.id) p.id = `acc-${p.name}`; return p; }
+export function saveProfile(p) {
+  if (!p.demo) return;
+  store(sessionStorage, KEY, JSON.stringify(p)); store(localStorage, 'kontir.name', p.name); store(localStorage, 'kontir.loadout', JSON.stringify(p.loadout));
 }
+/** Demo only: applies a finished match locally (accounts are rewarded by the server). */
+export function recordMatch(p, stats) { const gains = applyMatch(p, stats); saveProfile(p); return gains; }

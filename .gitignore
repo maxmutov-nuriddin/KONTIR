@@ -9,3 +9,5 @@ client/public/maps/*.txt
 client/public/maps/manifest.json
 !client/public/maps/.gitkeep
 client/public/models/models.json
+# accounts store (KONTIR_DATA)
+data/

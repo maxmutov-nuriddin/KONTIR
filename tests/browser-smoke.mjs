@@ -23,6 +23,8 @@ async function open() {
   await page.waitForFunction(() => window.__KONTIR__, null, { timeout: 90000 });
   await page.locator('#loader').waitFor({ state: 'detached', timeout: 120000 });
   console.log(`Menu ready in ${Date.now() - started} ms (software GL)`);
+  // first launch offers sign-in / register / demo (a saved account token skips it)
+  if (await page.locator('#auth-demo').isVisible()) await page.click('#auth-demo');
   return page;
 }
 const me = page => k(page, () => { const s = window.__KONTIR__; return s.state.players.find(p => p.id === s.id); });
@@ -30,6 +32,14 @@ try {
   const page = await open();
   await page.screenshot({ path: 'test-results/menu.png' });
   assert.equal(await page.locator('[data-map]').count() >= 2, true, 'menu lists the manifest maps');
+  // language switch (uz -> en -> uz) and account registration (server-side profile, name fixed to the username)
+  await page.selectOption('#lang', 'en'); assert.equal((await page.locator('#play-nav').textContent()).trim(), 'PLAY'); await page.selectOption('#lang', 'uz');
+  assert.equal((await page.locator('#play-nav').textContent()).trim(), 'O‘YNASH');
+  const user = `smoke${Date.now().toString(36).slice(-8)}`;
+  await page.click('#account-btn'); await page.click('[data-am="register"]');
+  await page.fill('#auth-user', user); await page.fill('#auth-pass', 'secret123'); await page.fill('#auth-pass2', 'secret123'); await page.click('#auth-submit');
+  await page.waitForFunction(u => document.querySelector('#account-btn').textContent === u, user);
+  assert.equal(await page.locator('#lobby-name').isDisabled(), true);
   await page.click('#guide-nav'); assert.ok(await page.locator('.control-grid').isVisible()); await page.click('#close');
 
   await page.click('#settings');

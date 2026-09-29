@@ -11,6 +11,7 @@ import { buildMapData } from '../shared/maps.js';
 import { Navigation } from './Navigation.js';
 import { Room } from './Room.js';
 import { MatchQueue } from './Queue.js';
+import { Accounts } from './Accounts.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.txt': 'text/plain' };
@@ -89,7 +90,8 @@ export class Matchmaker {
 /** KONTIR_TIMING='{"freeze":40,"warmup":5}' shortens/lengthens phases (seconds) for tests and private servers. */
 const envTiming = () => { try { return process.env.KONTIR_TIMING ? JSON.parse(process.env.KONTIR_TIMING) : undefined; } catch { return undefined; } };
 
-export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming(), queue: queueOptions = {} } = {}) {
+export async function createGameServer({ port = Number(process.env.PORT || 3101), host = '0.0.0.0', staticRoot = resolve(here, '../dist'), quiet = false, timing = envTiming(), queue: queueOptions = {}, accountsFile = resolve(process.env.KONTIR_DATA || resolve(here, '../data'), 'accounts.json') } = {}) {
+  const accounts = await new Accounts(accountsFile).load();
   const library = await new MapLibrary(await MapLibrary.locate()).init();
   const matchmaker = new Matchmaker(library);
   const queue = new MatchQueue({ mapIds: library.list().map(m => m.id), ...queueOptions });
@@ -137,6 +139,18 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     player.loadout = { TERRORIST: pick(loadout.t, ['glock', 'p250']), COUNTER_TERRORIST: pick(loadout.ct, ['usp', 'p250']) };
     if (!player.inv.slots[1] && (room.phase === 'warmup' || room.phase === 'buy')) { const money = player.money; room.newLoadout(player); player.money = money; }
   }
+  /** Signed-in players always play under their account name. */
+  const playerName = (socket, requested) => socket.data.account ? accounts.users[socket.data.account].name : String(requested ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
+  /** Match finished: server-side rewards for every signed-in human in the room (once per match). */
+  function awardMatch(room) {
+    const rounds = (room.scores?.TERRORIST || 0) + (room.scores?.COUNTER_TERRORIST || 0), winner = room.result?.winner || null;
+    for (const p of room.humans()) {
+      const s = io.sockets.sockets.get(p.id), key = s?.data.account;
+      if (!key) continue;
+      const r = accounts.award(key, { won: winner === p.team, draw: !winner, kills: p.kills, deaths: p.deaths, assists: p.assists, mvps: p.mvps, rounds });
+      if (r) s.emit('account:match', r);
+    }
+  }
   function leave(socket) {
     const code = socket.data.room, room = rooms.get(code);
     socket.data.joinVersion = (socket.data.joinVersion || 0) + 1;
@@ -152,7 +166,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       if (typeof ack !== 'function') return;
       if (socket.data.room) return ack({ error: 'Avval o‘yindan chiqing.' });
       if (!request || typeof request !== 'object') return ack({ error: 'Noto‘g‘ri so‘rov.' });
-      const name = String(request.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
+      const name = playerName(socket, request.name);
       const maps = Array.isArray(request.maps) ? request.maps.filter(m => typeof m === 'string').slice(0, 16) : null;
       const e = queue.join(socket.id, { name, maps, mode: request.mode === 'casual' ? 'casual' : 'competitive' });
       socket.data.queued = true; socket.data.loadout = request.loadout;
@@ -195,7 +209,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         if (!socket.connected || joinVersion !== (socket.data.joinVersion || 0)) return;
         if (room.practice && !practice) return ack({ error: 'Mashq xonasi shaxsiy.' });
         if (room.isFull()) return ack({ error: 'Xona to‘la (5 T + 5 CT).' });
-        const name = String(request?.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
+        const name = playerName(socket, request?.name);
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
         if (!player) return ack({ error: 'Tanlangan jamoa to‘la.' });
         applyLoadout(room, player, request?.loadout);
@@ -234,6 +248,29 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('chat', msg => { if (msg && typeof msg === 'object') rooms.get(socket.data.room)?.chat(socket.id, msg.text, msg.team === true); });
     socket.on('radio', n => rooms.get(socket.data.room)?.radio(socket.id, n));
     socket.on('ping', pt => { if (pt && typeof pt === 'object') rooms.get(socket.data.room)?.ping(socket.id, +pt.x, +pt.y, +pt.z); });
+    // ---- accounts: username + password (no e-mail); guests play the demo profile
+    const authOk = () => { const t = performance.now(); if (t - (socket.data.authAt ?? -1e9) > 60000) { socket.data.authAt = t; socket.data.authN = 0; } return ++socket.data.authN <= 8; };
+    const signIn = (ack, r) => { socket.data.account = r.profile.name.toLowerCase(); ack({ ok: true, ...r }); };
+    const authError = e => ({ error: ['username', 'password', 'taken', 'credentials'].includes(e.message) ? e.message : 'server' });
+    socket.on('auth:register', async (req, ack) => {
+      if (typeof ack !== 'function') return; if (!authOk()) return ack({ error: 'slow' });
+      try { signIn(ack, await accounts.register(req?.username, req?.password)); } catch (e) { ack(authError(e)); }
+    });
+    socket.on('auth:login', async (req, ack) => {
+      if (typeof ack !== 'function') return; if (!authOk()) return ack({ error: 'slow' });
+      try { signIn(ack, await accounts.login(req?.username, req?.password)); } catch (e) { ack(authError(e)); }
+    });
+    socket.on('auth:resume', (token, ack) => {
+      if (typeof ack !== 'function') return;
+      const r = accounts.resume(token); if (!r) return ack({ error: 'expired' });
+      socket.data.account = r.key; ack({ ok: true, profile: r.profile });
+    });
+    socket.on('auth:logout', token => { accounts.logout(token); socket.data.account = null; });
+    socket.on('account:update', (choices, ack) => { const key = socket.data.account; const p = key && accounts.update(key, choices); if (typeof ack === 'function') ack(p ? { ok: true, profile: p } : { error: 'auth' }); });
+    socket.on('account:buy', (finish, ack) => {
+      if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' });
+      try { ack({ ok: true, profile: accounts.buy(key, String(finish)) }); } catch (e) { ack({ error: e.message }); }
+    });
     socket.on('leave', () => leave(socket));
     socket.on('disconnect', () => { queue.leave(socket.id); leave(socket); });
   });
@@ -255,6 +292,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       while (room.accumulator >= DT && steps++ < 7) {
         const t0 = performance.now();
         room.step(); room.accumulator -= DT;
+        if (room.phase === 'matchEnd') { if (!room.awarded) { room.awarded = true; awardMatch(room); } } else room.awarded = false;
         serverStats.ticks++; serverStats.worstMs = Math.max(serverStats.worstMs * 0.999, performance.now() - t0);
         if (room.tick % RULES.snapshotEvery === 0) for (const p of room.players.values()) if (!p.bot) io.to(p.id).volatile.emit('snapshot', room.snapshot(p.id));
         for (const p of room.humans()) if (room.tick - p.lastCommandTick > 64 * 30 && room.tick - p.joinedTick > 64 * 30) { io.to(p.id).emit('kicked', { reason: 'AFK' }); io.sockets.sockets.get(p.id)?.disconnect(true); }

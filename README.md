@@ -88,9 +88,16 @@ Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 
 
 Har raund oxirida **MVP**, natijalar jadvalida **K/A/D, ADR, HS%, ★ MVP**. O‘q qurolga qarab devor/qutidan **o‘tadi** (penetratsiya chuqurligi va zarar kamayishi `shared/weapons.js` da). Server **anti-wallhack**: dushman ko‘rinmasa uning koordinatalari va quroli snapshot’ga umuman yuborilmaydi (bosh/yon “peek” nurlari va 26 tick kechikish bilan). Jamoa chat/radio/ping faqat o‘z jamoasiga yetadi.
 
-### Demo profil
+### Akkaunt yoki demo
 
-Akkaunt hozircha yo‘q: birinchi ochilishda har kimga avtomatik **demo profil** beriladi (brauzerda saqlanadi) — ism, avatar rangi, XP/daraja, reyting (Kumush I … Global Elita), tangalar, qurol skinlari (finish) va boshlang‘ich pistolet/M4 tanlovi. Lobbi sahifalari: **O‘YNASH · JIHOZLAR · INVENTAR · DO‘KON · YANGILIKLAR**. Keyinchalik haqiqiy akkaunt `client/src/profile.js` dagi saqlashni server bilan almashtirish orqali qo‘shiladi.
+Birinchi ochilishda uchta tanlov: **KIRISH**, **RO‘YXATDAN O‘TISH** yoki **DEMO BILAN O‘YNASH** (yuqoridagi tugma orqali keyin ham).
+
+- **Akkaunt** — faqat foydalanuvchi nomi (3–16 lotin harf/raqam/_, takrorlanmaydi) va parol (6+ belgi), e-mail kerak emas. XP, reyting, tangalar, sotib olingan skinlar va loadout **serverda** saqlanadi (`data/accounts.json`, `KONTIR_DATA` bilan o‘zgartiriladi). Parollar scrypt bilan xeshlanadi, sessiya tokeni 30 kun. Match mukofotini server o‘zi hisoblaydi — mijoz tangani o‘zgartira olmaydi.
+- **Demo** — avtomatik ism; progress faqat shu brauzer sessiyasida, yopilganda yo‘qoladi. Demoda **skin sotib olib bo‘lmaydi**.
+
+Til: yuqori paneldagi **UZ / RU / EN** tanlovi (brauzerda eslab qolinadi).
+
+Keyingi bosqich uchun tavsiyalar ro‘yxati: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### Haqiqiy 3D modellar
 

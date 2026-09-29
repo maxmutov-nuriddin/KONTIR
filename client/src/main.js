@@ -8,7 +8,8 @@ import { WeaponManager } from '../WeaponManager.js';
 import { Network } from './network.js';
 import { Prediction } from './prediction.js';
 import { AudioEngine } from './audio.js';
-import { loadProfile, saveProfile, recordMatch, rankOf, levelOf } from './profile.js';
+import { loadProfile, saveProfile, recordMatch, rankOf, levelOf, adopt, getToken, setToken } from './profile.js';
+import { startI18n, setLang, getLang } from './i18n.js';
 import { FINISHES, applyFinish } from './finishes.js';
 import { weaponIcon } from './icons.js';
 import { weaponMaterials } from './viewmodels.js';
@@ -36,6 +37,39 @@ let maps = [], selectedMap = 'sahara', team = 'TERRORIST', loadedMap = null;
 let playing = false, joining = false, generation = 0;
 let state = null, id = null, prediction = null, acc = 0, sendAcc = 0, lastEvent = 0, lastHud = 0, lastRadar = 0, resultShown = false, fps = 60, wallPush = 0, crossGap = 6, lastBeep = 0;
 const network = new Network(receive, reason => { if (playing) { leave(); ui.toast(reason === 'AFK' ? 'Harakatsizlik uchun chetlatildingiz.' : 'Server bilan aloqa uzildi. Qayta kiring.'); } });
+
+// ---- accounts: the socket re-binds the session on every (re)connect before any join / queue request
+let serverGains = null;
+const AUTH_ERRORS = { username: 'Nom noto‘g‘ri: 3–16 ta lotin harf, raqam yoki _.', password: 'Parol 6–64 belgidan iborat bo‘lsin.', taken: 'Bu nom band. Boshqasini tanlang.', credentials: 'Nom yoki parol noto‘g‘ri.', slow: 'Juda ko‘p urinish. Bir daqiqa kuting.' };
+network.socket.on('connect', () => { const tk = getToken(); if (tk && !profile.demo) network.socket.emit('auth:resume', tk, r => { if (r?.error) signOut(false); }); });
+network.socket.on('account:match', r => { if (profile.demo || !r?.profile) return; serverGains = r.gains; adopt(profile, r.profile); refreshLobby(); });
+async function authSubmit(mode, username, password) {
+  try {
+    await network.connect();
+    const r = await network.request(mode === 'register' ? 'auth:register' : 'auth:login', { username, password });
+    setToken(r.token); adopt(profile, r.profile); applyAccount();
+    ui.toast(mode === 'register' ? 'Akkaunt yaratildi.' : 'Akkauntga kirildi.');
+    return null;
+  } catch (e) { return AUTH_ERRORS[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'; }
+}
+function applyAccount() { for (const w of Object.keys(WEAPONS)) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); }
+function signOut(notify = true) {
+  const tk = getToken(); if (tk && network.socket.connected) network.socket.emit('auth:logout', tk);
+  setToken(null); adopt(profile, loadProfile()); applyAccount(); if (notify) ui.toast('Akkauntdan chiqildi.');
+}
+function openAuth(canClose = true) {
+  if (!profile.demo) {
+    ui.dialog(`<small class="eyebrow">AKKAUNT</small><h2>${profile.name.replace(/[<>&"]/g, '')}</h2><p>AKKAUNT · serverda saqlanadi</p><button id="sign-out" class="primary full">CHIQISH</button>`);
+    document.querySelector('#sign-out').onclick = () => { ui.modal.close(); signOut(); };
+    return;
+  }
+  ui.auth({ canClose, onSubmit: authSubmit, onDemo: () => { try { sessionStorage.setItem('kontir.guest', '1'); } catch { /* ignore */ } } });
+}
+/** Account choices go to the server (it validates ownership); demo choices stay in this session. */
+function saveChoices() {
+  if (profile.demo) return saveProfile(profile);
+  network.request('account:update', { loadout: profile.loadout, finishes: profile.finishes }).then(r => { adopt(profile, r.profile); refreshLobby(); }).catch(() => {});
+}
 
 // ---- hero weapon shown behind the menu
 const hero = buildWeaponRig('ak47'); hero.group.scale.setScalar(1.7); hero.group.traverse(o => { o.frustumCulled = false; });
@@ -75,10 +109,10 @@ function receive(next) {
   if (state.phase === 'matchEnd' && !resultShown) {
     resultShown = true; controller.unlock(); ui.resume(false);
     const me = state.players.find(p => p.id === id), won = !!(me && state.result?.winner === me.team), draw = !state.result?.winner;
-    const gains = me ? recordMatch(profile, { won, draw, kills: me.kills, deaths: me.deaths, assists: me.assists, rounds: (state.scores?.TERRORIST || 0) + (state.scores?.COUNTER_TERRORIST || 0) }) : null;
+    const gains = !profile.demo ? serverGains : me ? recordMatch(profile,{ won, draw, kills: me.kills, deaths: me.deaths, assists: me.assists, rounds: (state.scores?.TERRORIST || 0) + (state.scores?.COUNTER_TERRORIST || 0) }) : null;
     ui.results(state, leave, gains); refreshLobby();
   }
-  if (state.phase !== 'matchEnd') resultShown = false;
+  if (state.phase !== 'matchEnd') { resultShown = false; serverGains = null; }
 }
 
 const V = new THREE.Vector3(), V2 = new THREE.Vector3();
@@ -278,9 +312,15 @@ const NEWS = [
 function refreshLobby() {
   ui.renderProfile(profile, { rankOf, levelOf });
   ui.loadoutM4 = profile.loadout.m4;
-  if (ui.view === 'loadout') ui.renderLoadout(profile, icon, (key, wid) => { profile.loadout[key] = wid; saveProfile(profile); refreshLobby(); updateShowcase(); });
-  if (ui.view === 'inventory') ui.renderInventory(profile, INVENTORY_WEAPONS, FINISHES, icon, (wid, fin) => { if (wid) { if (fin === 'standard') delete profile.finishes[wid]; else profile.finishes[wid] = fin; saveProfile(profile); weapons.refreshFinish?.(wid); updateShowcase(); } refreshLobby(); });
-  if (ui.view === 'store') ui.renderStore(profile, FINISHES, icon, fin => { const f = FINISHES[fin]; if (!f || profile.owned.includes(fin) || profile.coins < f.price) return; profile.coins -= f.price; profile.owned.push(fin); saveProfile(profile); audio.click(); ui.toast(`${f.name} — sotib olindi. INVENTARdan qurolga qo‘ying.`); refreshLobby(); });
+  if (ui.view === 'loadout') ui.renderLoadout(profile, icon, (key, wid) => { profile.loadout[key] = wid; saveChoices(); refreshLobby(); updateShowcase(); });
+  if (ui.view === 'inventory') ui.renderInventory(profile, INVENTORY_WEAPONS, FINISHES, icon, (wid, fin) => { if (wid) { if (fin === 'standard') delete profile.finishes[wid]; else profile.finishes[wid] = fin; saveChoices(); weapons.refreshFinish?.(wid); updateShowcase(); } refreshLobby(); });
+  if (ui.view === 'store') ui.renderStore(profile, FINISHES, icon, async fin => {
+    const f = FINISHES[fin]; if (!f || profile.owned.includes(fin) || profile.coins < f.price) return;
+    if (profile.demo) { ui.toast('Skin olish uchun akkaunt kerak. Demo rejimda skinlar yo‘q.'); return openAuth(); }
+    try { adopt(profile, (await network.request('account:buy', fin)).profile); audio.click(); ui.toast(`${f.name} — sotib olindi. INVENTARdan qurolga qo‘ying.`); }
+    catch { ui.toast('Server xatosi. Qayta urinib ko‘ring.'); }
+    refreshLobby();
+  });
   if (ui.view === 'news') ui.renderNews(NEWS);
 }
 function updateShowcase() {
@@ -290,7 +330,10 @@ function updateShowcase() {
 }
 {
   const nameEl = document.querySelector('#lobby-name');
-  nameEl.oninput = () => { profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
+  ui.onAuth = () => openAuth();
+  document.querySelector('#account-btn').onclick = () => openAuth();
+  const langEl = document.querySelector('#lang'); langEl.value = getLang(); langEl.onchange = () => setLang(langEl.value);
+  nameEl.oninput = () => { if (!profile.demo) return; profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
   ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
   ui.botSettings(botCfg, cfg => store.set('bots', JSON.stringify(cfg)));
   ui.renderFriends(['NOVA', 'GHOST', 'ATLAS', 'VIPER']);
@@ -432,7 +475,14 @@ world.renderer.setAnimationLoop(frame);
     await loadMapById(selectedMap, true);
   } catch (error) { ui.toast(`Xaritalarni yuklab bo‘lmadi: ${error.message}`); }
   ui.ready();
+  // saved session -> restore the account; otherwise offer sign-in / register / demo once per browser session
+  const tk = getToken();
+  if (tk) {
+    try { await network.connect(); adopt(profile, (await network.request('auth:resume', tk)).profile); applyAccount(); }
+    catch (e) { if (e.message === 'expired') setToken(null); ui.toast(e.message === 'expired' ? 'Akkauntdan chiqildi.' : 'Server xatosi. Qayta urinib ko‘ring.'); }
+  } else { let guest = null; try { guest = sessionStorage.getItem('kontir.guest'); } catch { /* ignore */ } if (!guest) openAuth(true); }
 })();
+startI18n();
 
 Object.defineProperty(window, '__KONTIR__', { get: () => ({ playing, state, id, predicted: prediction?.char, pending: prediction?.pending.length, drawCalls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles,
   fpsLimit: pacer.limit, inventory: weapons.inventory.toJSON(), activeWeapon: weapons.activeWeaponMesh?.name, visibleRigs: [...weapons.rigs.values()].filter(r => r.group.visible).map(r => r.id), crouchFactor: controller.crouchFactor, eye: controller.eye.toArray(), world, controller, weapons, audio, TICK_RATE, WEAPONS }) });
