@@ -8,12 +8,17 @@ import { WeaponManager } from '../WeaponManager.js';
 import { Network } from './network.js';
 import { Prediction } from './prediction.js';
 import { AudioEngine } from './audio.js';
+import { loadProfile, saveProfile, recordMatch, rankOf, levelOf } from './profile.js';
+import { FINISHES, applyFinish } from './finishes.js';
+import { weaponIcon } from './icons.js';
+import { weaponMaterials } from './viewmodels.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { DT, TICK_RATE } from '../../shared/constants.js';
 import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
 
 const store = { get: (k, d) => { try { return localStorage.getItem(`kontir.${k}`) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(`kontir.${k}`, v); } catch { /* private mode */ } } };
 const ui = new UI(), audio = new AudioEngine();
+const profile = loadProfile(); saveProfile(profile);
 let fireList = [], scopeK = 0;
 const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
@@ -23,6 +28,7 @@ try { world = new WorldEngine(document.querySelector('#scene'), { quality: store
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
+weapons.finishFor = id => profile.finishes[id];
 controller.setSensitivity(Number(store.get('sens', 0.6))); audio.setVolume(Number(store.get('volume', 0.8)));
 
 let maps = [], selectedMap = 'sahara', team = 'TERRORIST', loadedMap = null;
@@ -46,7 +52,7 @@ async function loadMapNow(mapId, silent = false) {
   if (loadedMap === mapId && world.map) return;
   if (!silent) ui.showBusy('XARITA YUKLANMOQDA…');
   loadedMap = null;
-  try { await world.loadMap(meta, (f, label) => ui.setLoading(f, label)); loadedMap = mapId; }
+  try { await world.loadMap(meta, (f, label) => ui.setLoading(f, label)); loadedMap = mapId; updateShowcase(); }
   catch (error) { world.disposeMap(); throw error; }
   finally { ui.hideBusy(); }
 }
@@ -65,7 +71,12 @@ function receive(next) {
   for (const s of state.smokes) world.effects.smoke(s.id, s.x, s.y, s.z, s.radius, s.age, s.left);
   if (state.phase === 'warmup') { ui.resume(false); ui.lobby(state, id, async () => { try { await network.request('start', {}); } catch (e) { ui.toast(e.message); } }, leave); }
   else if (ui.modal.querySelector('.room-code')) { ui.modal.close(); ui.resume(!controller.locked); }
-  if (state.phase === 'matchEnd' && !resultShown) { resultShown = true; controller.unlock(); ui.resume(false); ui.results(state, leave); }
+  if (state.phase === 'matchEnd' && !resultShown) {
+    resultShown = true; controller.unlock(); ui.resume(false);
+    const me = state.players.find(p => p.id === id), won = !!(me && state.result?.winner === me.team), draw = !state.result?.winner;
+    const gains = me ? recordMatch(profile, { won, draw, kills: me.kills, deaths: me.deaths, assists: me.assists, rounds: (state.scores?.TERRORIST || 0) + (state.scores?.COUNTER_TERRORIST || 0) }) : null;
+    ui.results(state, leave, gains); refreshLobby();
+  }
   if (state.phase !== 'matchEnd') resultShown = false;
 }
 
@@ -144,7 +155,8 @@ async function join(options) {
   joining = true; const my = ++generation;
   ui.showBusy('ULANMOQDA…'); audio.unlock();
   try {
-    const result = await network.join({ name: options.name || 'Operator', code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: selectedMap, team });
+    const result = await network.join({ name: profile.name, code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: selectedMap, team,
+      loadout: { t: profile.loadout.t, ct: profile.loadout.ct }, bots: options.practice ? { t: botCfg.t, ct: botCfg.ct } : undefined, difficulty: botCfg.difficulty });
     if (my !== generation) { network.leave(); return; }
     await enter(result, my);
   } catch (error) {
@@ -161,6 +173,7 @@ async function enter(result, my) {
     ui.showBusy('GRAFIKA TAYYORLANMOQDA…');
     await world.prewarm(weapons).catch(() => {});
     if (my !== generation) { network.leave(); return; }
+    world.setShowcase(null);
     prediction = new Prediction(world.map.collider, weapons);
     state = network.latest || state;
     playing = true; lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
@@ -171,6 +184,7 @@ function leave() {
   generation++; joining = false; playing = false; controller.unlock(); network.leave();
   state = null; id = null; prediction = null; controller.clearInput(); world.clearActors(); world.effects.clear(); world.bombRig.group.visible = false; world.bombLight.intensity = 0;
   weapons.inventory.reset('TERRORIST'); weapons.setActive(null); ui.showMenu(); ui.resume(false);
+  ui.showView('home'); updateShowcase(); refreshLobby();
 }
 
 // ---------------------------------------------------------------------------------------------- buy
@@ -204,11 +218,11 @@ let searchingMM = false, mode = store.get('mode', 'competitive');
 const pool = new Set(JSON.parse(store.get('pool', '[]') || '[]'));
 async function startSearch() {
   if (searchingMM || playing || joining) return;
-  const name = document.querySelector('#lobby-name').value.trim() || 'Operator'; store.set('name', name);
+  const name = profile.name;
   searchingMM = true; audio.unlock();
   ui.searching({ mode, elapsed: 0, inQueue: 1 });
   try {
-    await network.queueJoin({ name, mode, maps: [...ui.pool] }, {
+    await network.queueJoin({ name, mode, maps: [...ui.pool], loadout: { t: profile.loadout.t, ct: profile.loadout.ct } }, {
       status: st => { if (searchingMM) ui.searching(st); },
       found: f => { audio.beep(true); ui.matchFound(f, () => network.queueAccept(f.matchId)); },
       accepted: a => ui.matchAccepted(a.accepted),
@@ -232,11 +246,45 @@ document.querySelector('#go').onclick = () => {
   else document.querySelector('#online').click();
 };
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (searchingMM) stopSearch(true); mode = b.dataset.mode; store.set('mode', mode); ui.setMode(mode); });
+// ---------------------------------------------------------------------------------------------- CS2-style lobby: profile, pages, showcase
+const botCfg = { t: 5, ct: 5, difficulty: 'medium', ...JSON.parse(store.get('bots', '{}') || '{}') };
+const icon = (wid, fin) => weaponIcon(wid, fin || 'standard');
+const INVENTORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'awp', 'deagle', 'usp', 'glock', 'galil', 'famas', 'sg553', 'aug', 'ssg08', 'mp9', 'mac10', 'ump45', 'mp7', 'p90', 'nova', 'xm1014', 'mag7', 'sawedoff', 'negev', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'];
+const NEWS = [
+  { tag: 'YANGILANISH', title: 'CS2 uslubidagi lobbi', text: 'Yangi bosh menyu: operatoringiz xaritada turadi, yuqorida INVENTAR / LOADOUT / O‘YNASH / DO‘KON / YANGILIKLAR. Demo profil avtomatik yaratiladi.' },
+  { tag: 'BOTLAR', title: 'Botlarga qarshi rejim', text: 'Har tomonda 0–5 bot va 4 qiyinlik darajasi. Botlar endi granata otadi va ovozga buriladi.' },
+  { tag: 'MATCHMAKING', title: 'Real o‘yinchilar bilan', text: 'COMPETITIVE va CASUAL navbati: xaritalar puli, “O‘yiningiz tayyor!” va qabul qilish oynasi.' },
+  { tag: 'ARSENAL', title: '35 qurol, realistik reload', text: 'Magazin qo‘l bilan almashtiriladi, zatvor va slayd harakatlari o‘z ovozlari bilan. F — qurolni ko‘rish.' },
+  { tag: 'XARITALAR', title: 'Sarob, Changtepa, Qishloq, Ombor', text: 'Klassik layoutlar: palace, long A, banana, A main va boshqalar.' },
+];
+function refreshLobby() {
+  ui.renderProfile(profile, { rankOf, levelOf });
+  ui.loadoutM4 = profile.loadout.m4;
+  if (ui.view === 'loadout') ui.renderLoadout(profile, icon, (key, wid) => { profile.loadout[key] = wid; saveProfile(profile); refreshLobby(); updateShowcase(); });
+  if (ui.view === 'inventory') ui.renderInventory(profile, INVENTORY_WEAPONS, FINISHES, icon, (wid, fin) => { if (wid) { if (fin === 'standard') delete profile.finishes[wid]; else profile.finishes[wid] = fin; saveProfile(profile); weapons.refreshFinish?.(wid); updateShowcase(); } refreshLobby(); });
+  if (ui.view === 'store') ui.renderStore(profile, FINISHES, icon, fin => { const f = FINISHES[fin]; if (!f || profile.owned.includes(fin) || profile.coins < f.price) return; profile.coins -= f.price; profile.owned.push(fin); saveProfile(profile); audio.click(); ui.toast(`${f.name} — sotib olindi. INVENTARdan qurolga qo‘ying.`); refreshLobby(); });
+  if (ui.view === 'news') ui.renderNews(NEWS);
+}
+function updateShowcase() {
+  if (playing || !world.map) return;
+  const side = team, rifle = side === 'TERRORIST' ? 'ak47' : profile.loadout.m4;
+  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => applyFinish(g, profile.finishes[rifle], weaponMaterials()) });
+}
 {
-  const nameEl = document.querySelector('#lobby-name'), avatar = document.querySelector('#avatar');
-  nameEl.value = store.get('name', 'Operator'); avatar.textContent = (nameEl.value[0] || 'O').toUpperCase();
-  nameEl.oninput = () => { store.set('name', nameEl.value.trim() || 'Operator'); avatar.textContent = (nameEl.value.trim()[0] || 'O').toUpperCase(); };
+  const nameEl = document.querySelector('#lobby-name');
+  nameEl.oninput = () => { profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
   ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
+  ui.botSettings(botCfg, cfg => store.set('bots', JSON.stringify(cfg)));
+  ui.renderFriends(['NOVA', 'GHOST', 'ATLAS', 'VIPER']);
+  document.querySelectorAll('.tb-nav [data-view]').forEach(b => b.onclick = () => { ui.showView(ui.view === b.dataset.view ? 'home' : b.dataset.view); refreshLobby(); });
+  document.querySelector('#nav-home').onclick = () => ui.showView('home');
+  document.querySelector('#fullscreen').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => {}); };
+  // drag on the 3D scene turns the operator (home view)
+  let drag = null;
+  document.querySelector('#scene').addEventListener('pointerdown', e => { if (!playing) drag = e.clientX; });
+  addEventListener('pointermove', e => { if (drag !== null && !playing) { world.showcaseSpin((e.clientX - drag) * 0.01); drag = e.clientX; } });
+  addEventListener('pointerup', () => { drag = null; });
+  ui.showView('home'); refreshLobby();
 }
 
 // ---------------------------------------------------------------------------------------------- UI wiring
@@ -249,8 +297,8 @@ document.querySelector('#online').onclick = () => {
   document.querySelector('#operator-name').value = store.get('name', 'Operator');
   document.querySelector('#join-form').onsubmit = e => { e.preventDefault(); document.querySelector('#join-submit').disabled = true; store.set('name', nameInput()); void join({ name: nameInput(), code: document.querySelector('#room-input').value }); };
 };
-document.querySelector('#guide-nav').onclick = () => ui.controls(); document.querySelector('#play-nav').onclick = () => ui.modal.close();
-document.querySelector('#team').onclick = e => { team = team === 'TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'; e.target.textContent = `${team === 'TERRORIST' ? 'TERRORIST' : 'COUNTER-TERRORIST'} ⇄`; };
+document.querySelector('#guide-nav').onclick = () => ui.controls();
+document.querySelector('#team').onclick = e => { team = team === 'TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'; e.target.textContent = `${team === 'TERRORIST' ? 'TERRORIST' : 'COUNTER-TERRORIST'} ⇄`; updateShowcase(); };
 document.querySelector('#settings').onclick = () => ui.settings({ quality: world.qualityName, sensitivity: controller.controls.pointerSpeed, volume: audio.volume, fpsLimit: pacer.limit, onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
   onQuality: q => { world.setQuality(q); store.set('quality', q); }, onSensitivity: v => { controller.setSensitivity(v); store.set('sens', v); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
@@ -292,7 +340,7 @@ function frame(nowMs) {
   // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
   if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && (world.resScale ?? 1) <= 0.76 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality({ ultra: 'high', high: 'medium', medium: 'low' }[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
-  heroHolder.visible = !playing; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
+  heroHolder.visible = !playing && !world.showcase; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {
     acc += dt; let steps = 0;
     while (acc >= DT && steps++ < 16) {

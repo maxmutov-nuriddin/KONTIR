@@ -130,6 +130,13 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   });
   const io = new Server(http, { maxHttpBufferSize: 32768, cors: process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN.split(',') } : undefined });
 
+  /** Loadout preferences from the (demo) profile: starting pistol per side. Validated, then applied to the current loadout. */
+  function applyLoadout(room, player, loadout) {
+    if (!loadout || typeof loadout !== 'object') return;
+    const pick = (v, ok) => (ok.includes(v) ? v : undefined);
+    player.loadout = { TERRORIST: pick(loadout.t, ['glock', 'p250']), COUNTER_TERRORIST: pick(loadout.ct, ['usp', 'p250']) };
+    if (!player.inv.slots[1] && (room.phase === 'warmup' || room.phase === 'buy')) { const money = player.money; room.newLoadout(player); player.money = money; }
+  }
   function leave(socket) {
     const code = socket.data.room, room = rooms.get(code);
     socket.data.joinVersion = (socket.data.joinVersion || 0) + 1;
@@ -148,7 +155,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const name = String(request.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
       const maps = Array.isArray(request.maps) ? request.maps.filter(m => typeof m === 'string').slice(0, 16) : null;
       const e = queue.join(socket.id, { name, maps, mode: request.mode === 'casual' ? 'casual' : 'competitive' });
-      socket.data.queued = true;
+      socket.data.queued = true; socket.data.loadout = request.loadout;
       ack({ ok: true, ...queue.status(socket.id), maps: [...e.maps] });
     });
     socket.on('queue:leave', () => { queue.leave(socket.id); socket.data.queued = false; });
@@ -191,6 +198,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         const name = String(request?.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
         if (!player) return ack({ error: 'Tanlangan jamoa to‘la.' });
+        applyLoadout(room, player, request?.loadout);
         if (practice) {
           const n = v => (Number.isInteger(v) && v >= 0 && v <= 5 ? v : 5);
           const counts = request?.bots && typeof request.bots === 'object' ? { TERRORIST: n(request.bots.t), COUNTER_TERRORIST: n(request.bots.ct) } : null;
@@ -267,6 +275,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const e = s.data.queueName || 'Operator';
       const player = room.add(s.id, e, i % 2 ? 'COUNTER_TERRORIST' : 'TERRORIST');
       if (!player) return;
+      applyLoadout(room, player, s.data.loadout);
       s.data.room = room.code; s.data.queued = false; s.join(room.code);
     });
     room.fillBots(); room.start();

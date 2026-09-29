@@ -239,7 +239,7 @@ export class WorldEngine {
     disposeTree(root, m => { this.materials.delete(m); this.csm?.shaders.delete(m); });
   }
   disposeMap() {
-    this.clearActors(); this.releaseTree(this.mapGroup); this.mapGroup = null;
+    this.setShowcase(null); this.clearActors(); this.releaseTree(this.mapGroup); this.mapGroup = null;
     this.map?.collider.geometry.dispose(); this.map = null;
     this.effects.clear();
   }
@@ -465,7 +465,49 @@ export class WorldEngine {
     }
     this.camera.updateMatrixWorld(true);
   }
+  /**
+   * Lobby showcase (CS2-style): an operator holding the loadout weapon, standing in an open spot of the loaded map,
+   * framed full-length by a still camera. opts = { team, weapon, finish, applyFinish } or null to remove.
+   */
+  setShowcase(opts) {
+    const prev = this.showcase;
+    if (prev) { prev.actor.removeFromParent(); this.showcase = null; }
+    if (!opts || !this.map) return;
+    const actor = buildOperator(opts.team, 7);
+    holdWeapon(actor, opts.weapon);
+    const rig = actor.userData.rigs.get(opts.weapon);
+    if (rig && opts.applyFinish) opts.applyFinish(rig.group);
+    actor.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; for (const m of [].concat(o.material)) if (!this.materials.has(m)) { this.materials.add(m); this.prepareMaterial(m); } } });
+    // pick the most open direction around the side's spawn so the camera has room in front of the character
+    const spawns = this.map.spawns?.[opts.team] || this.map.spawns?.TERRORIST || [{ x: 0, y: 0, z: 0 }], col = this.map.collider;
+    let best = null;
+    const free = (s, a, far) => { const dx = -Math.sin(a), dz = -Math.cos(a); return Math.min(col.wallDistance(s.x, s.y + 1.4, s.z, dx, 0, dz, far), col.wallDistance(s.x, s.y + 0.4, s.z, dx, 0, dz, far)); };
+    for (const s of spawns.slice(0, 8)) for (let i = 0; i < 24; i++) {
+      // camera side needs ~3.4 m; the background behind the operator should be a long open street
+      const a = i / 24 * Math.PI * 2, d = free(s, a, 8), behind = free(s, a + Math.PI, 60);
+      const score = (d >= 3.4 ? 100 : d * 10) + behind;
+      if (!best || score > best.score) best = { s, a, d, score };
+    }
+    const { s, a } = best, dist = Math.min(3.1, best.d - 0.4);
+    actor.position.set(s.x, s.y, s.z);
+    this.scene.add(actor);
+    this.showcase = { actor, base: new THREE.Vector3(s.x, s.y, s.z), camYaw: a, dist, spin: 0 };
+  }
+  showcaseSpin(delta) { if (this.showcase) this.showcase.spin += delta; }
   setMenuCamera(time) {
+    const sc = this.showcase;
+    if (sc) {
+      const dx = -Math.sin(sc.camYaw), dz = -Math.cos(sc.camYaw), b = sc.base;
+      const sway = Math.sin(time * 0.35) * 0.04;
+      if (this.camera.fov !== 42) { this.camera.fov = 42; this.camera.updateProjectionMatrix(); }
+      this.camera.position.set(b.x + dx * sc.dist + dz * sway, b.y + 1.12 + Math.sin(time * 0.5) * 0.02, b.z + dz * sc.dist - dx * sway);
+      this.camera.lookAt(b.x - dz * 0.12, b.y + 0.98, b.z + dx * 0.12); this.camera.updateMatrixWorld(true);
+      // the operator faces the camera (plus the player's drag), breathing idle
+      animateOperator(sc.actor, { speed: 0, yaw: sc.camYaw + sc.spin + 0.35, pitch: -0.06 + Math.sin(time * 1.3) * 0.015, crouch: 0, alive: true, dt: 1 / 60 });
+      sc.actor.position.set(b.x, b.y, b.z);
+      return;
+    }
+    if (this.camera.fov !== 74) { this.camera.fov = 74; this.camera.updateProjectionMatrix(); }
     const t = time * 0.045, r = 46;
     this.camera.position.set(Math.cos(t) * r, 15 + Math.sin(t * 1.7) * 3, Math.sin(t) * r);
     this.camera.lookAt(0, 2.5, 0); this.camera.updateMatrixWorld(true);

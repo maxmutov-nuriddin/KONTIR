@@ -6,7 +6,8 @@ import { disposeTree } from './src/dispose.js';
 import { Inventory } from '../shared/inventory.js';
 import { GRENADES, SLOT, WEAPONS } from '../shared/weapons.js';
 import { DT } from '../shared/constants.js';
-import { buildArms, buildWeaponRig, poseArms } from './src/viewmodels.js';
+import { buildArms, buildWeaponRig, poseArms, weaponMaterials } from './src/viewmodels.js';
+import { applyFinish } from './src/finishes.js';
 import { aimSleeve } from './src/hands.js';
 import { cuesFor, reloadStyle } from './src/reload.js';
 
@@ -98,9 +99,14 @@ export class WeaponManager {
     let r = this.rigs.get(id);
     if (!r) {
       r = buildWeaponRig(id); r.group.visible = false; r.group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
+      applyFinish(r.group, this.finishFor?.(id), weaponMaterials());
       this.root.add(r.group); this.rigs.set(id, r);
     }
     return r;
+  }
+  /** Re-applies the profile's finish after it changed in the inventory. */
+  refreshFinish(id) {
+    const r = this.rigs.get(id); if (r) applyFinish(r.group, this.finishFor?.(id), weaponMaterials());
   }
   /** Toggle mesh visibility: activeWeaponMesh.visible = true, every other rig hidden. */
   setActive(id, force = false) {

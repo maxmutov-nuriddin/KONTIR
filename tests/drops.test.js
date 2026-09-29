@@ -69,3 +69,10 @@ test('server: C4 can be thrown with G and picked back up by a T', () => {
   assert.equal(room.bomb.state, 'carried', 'a T standing on it picks it back up');
   void t;
 });
+
+test('loadout preference: starting pistol per side survives resets and snapshot loads', () => {
+  const inv = new Inventory('COUNTER_TERRORIST'); inv.preferred = { COUNTER_TERRORIST: 'p250', TERRORIST: 'glock' }; inv.reset('COUNTER_TERRORIST');
+  assert.equal(inv.slots[2], 'p250');
+  inv.load(new Inventory('COUNTER_TERRORIST').toJSON()); inv.reset('COUNTER_TERRORIST'); assert.equal(inv.slots[2], 'p250');
+  inv.preferred = { COUNTER_TERRORIST: 'deagle' }; inv.reset('COUNTER_TERRORIST'); assert.equal(inv.slots[2], 'usp', 'only legal starting pistols');
+});

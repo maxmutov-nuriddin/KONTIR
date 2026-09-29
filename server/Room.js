@@ -132,7 +132,7 @@ export class Room {
     p.brain?.newRound();
     if (this.phase === 'warmup') { p.money = RULES.maxMoney; this.newLoadout(p); }
   }
-  newLoadout(p) { p.inv.reset(p.team); p.armor = 0; p.helmet = false; p.kit = false; }
+  newLoadout(p) { p.inv.preferred = p.loadout || null; p.inv.reset(p.team); p.armor = 0; p.helmet = false; p.kit = false; }
 
   // ---------------------------------------------------------------------------------------- match flow
   start() { if (this.phase === 'warmup') this.beginMatch(); }

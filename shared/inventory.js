@@ -14,7 +14,9 @@ export class Inventory {
   /** New round / new half: standard loadout (pistol + knife). */
   reset(team = this.team) {
     this.team = team;
-    const pistol = team === 'COUNTER_TERRORIST' ? 'usp' : 'glock';
+    // starting pistol: loadout preference (USP-S / P250 for CT, Glock / P250 for T), else the CS default
+    const pref = this.preferred?.[team], allowed = team === 'COUNTER_TERRORIST' ? ['usp', 'p250'] : ['glock', 'p250'];
+    const pistol = allowed.includes(pref) ? pref : allowed[0];
     this.slots = { 1: null, 2: pistol, 3: 'knife', 4: null, 5: null };
     this.ammo = { [pistol]: { mag: WEAPONS[pistol].mag, reserve: WEAPONS[pistol].reserve } };
     this.grenades = Object.fromEntries(GRENADES.map(g => [g, 0])); this.zoom = 0;
@@ -216,7 +218,7 @@ export class Inventory {
       lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom,
     };
   }
-  load(json) { Object.assign(this, JSON.parse(JSON.stringify(json))); return this; }
+  load(json) { const preferred = this.preferred; Object.assign(this, JSON.parse(JSON.stringify(json))); if (preferred) this.preferred = preferred; return this; }
   static from(json) { return new Inventory(json.team).load(json); }
 }
 

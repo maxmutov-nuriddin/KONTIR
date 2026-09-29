@@ -22,16 +22,27 @@ export class UI {
   constructor() {
     $('#app').innerHTML = `
       <div class="shade"></div>
-      <section id="menu" class="menu">
-        <header><a class="brand" href="#"><b>◩</b> KONTIR<span>TACTICAL OPERATIONS</span></a>
-          <nav><button class="active" id="play-nav">O‘YNASH</button><button id="guide-nav">QO‘LLANMA ↗</button></nav>
-          <div class="header-right"><span><i></i> 64 TICK · SERVER AUTHORITATIVE</span><button id="settings" class="square" aria-label="Sozlamalar">⚙</button></div></header>
+      <section id="menu" class="menu cs-lobby">
+        <header class="topbar">
+          <div class="tb-left"><button id="nav-home" class="tb-icon" title="Bosh sahifa" aria-label="Bosh sahifa">⌂</button><button id="settings" class="tb-icon" title="Sozlamalar" aria-label="Sozlamalar">⚙</button><button id="fullscreen" class="tb-icon" title="To‘liq ekran" aria-label="To‘liq ekran">⛶</button></div>
+          <nav class="tb-nav"><button data-view="inventory">INVENTAR</button><button data-view="loadout">LOADOUT</button><button data-view="play" id="play-nav" class="tb-play">O‘YNASH</button><button data-view="store">DO‘KON</button><button data-view="news">YANGILIKLAR</button></nav>
+          <div class="tb-right"><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
+        </header>
+        <aside class="rail">
+          <div class="rail-me"><div class="avatar" id="rail-avatar">O</div><span class="rail-level" id="rail-level">1</span></div>
+          <button id="guide-nav" class="rail-btn" title="Qo‘llanma">?</button>
+          <div class="rail-friends" id="rail-friends"></div>
+          <div class="rail-status" title="Server"><i></i><small>64</small></div>
+        </aside>
+        <div class="player-card" id="player-card"><div class="pc-top"><span class="pc-rank" id="pc-rank"></span><strong id="pc-name">Operator</strong></div><div class="pc-level"><small id="pc-level">DARAJA 1</small><div class="pc-bar"><i id="pc-xp"></i></div></div><small class="pc-demo">DEMO PROFIL · ma’lumotlar shu qurilmada saqlanadi</small></div>
+        <div class="views">
+        <section class="view" id="view-play">
         <div class="lobby">
           <div class="lobby-main">
             <div class="mode-tabs" id="mode-tabs">
               <button data-mode="competitive" class="on"><b>COMPETITIVE</b><small>5v5 · MR12 · real o‘yinchilar</small></button>
               <button data-mode="casual"><b>CASUAL</b><small>tezroq topiladi · bo‘sh joyga bot</small></button>
-              <button data-mode="practice"><b>MASHQ</b><small>5v5 botlar bilan</small></button>
+              <button data-mode="practice"><b>BOTLARGA QARSHI</b><small>son va qiyinlikni tanlang</small></button>
               <button data-mode="private"><b>XUSUSIY XONA</b><small>do‘stlar bilan kod orqali</small></button>
             </div>
             <div class="map-toolbar"><div class="section-label">XARITALAR <span id="map-count"></span></div><span id="pool-hint"></span><button id="map-all" class="text-button">Hammasini tanlash</button></div>
@@ -41,13 +52,22 @@ export class UI {
             <div class="party"><div class="party-head"><small>PARTIYA</small><span id="party-count">1 / 5</span></div>
               <div class="party-me"><div class="avatar" id="avatar">O</div><div><input id="lobby-name" maxlength="18" spellcheck="false" aria-label="Operator nomi"><small id="lobby-rank">KONTIR OPERATOR</small></div></div>
               <div class="party-slots"><i>+</i><i>+</i><i>+</i><i>+</i></div></div>
-            <div class="side-block"><small>TOMON AFZALLIGI (mashq / xona)</small><button id="team">TERRORIST ⇄</button></div>
+            <div class="side-block" id="bot-settings"><small>BOTLAR</small>
+              <div class="bot-row"><span>T</span><div class="seg" id="bots-t">${[0, 1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div></div>
+              <div class="bot-row"><span>CT</span><div class="seg" id="bots-ct">${[0, 1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div></div>
+              <div class="bot-row"><span>QIYINLIK</span><div class="seg" id="bots-diff">${['easy', 'medium', 'hard', 'expert'].map(d => `<button data-d="${d}">${{ easy: 'OSON', medium: 'O‘RTA', hard: 'QIYIN', expert: 'EKSPERT' }[d]}</button>`).join('')}</div></div></div>
+            <div class="side-block"><small>TOMON AFZALLIGI (botlar / xona)</small><button id="team">TERRORIST ⇄</button></div>
             <div class="side-block quick-row"><button id="practice" class="secondary">MASHQ ${arrow}</button><button id="quick" class="secondary">TEZKOR ${arrow}</button><button id="online" class="secondary">KOD ${arrow}</button></div>
             <div id="search-status" class="hidden"><div><small id="search-mode">COMPETITIVE</small><strong id="search-time">0:00</strong><span id="search-info">Qidirilmoqda…</span></div><button id="search-cancel" aria-label="Bekor qilish">×</button></div>
             <button id="go" class="go">IZLASH</button>
           </aside>
         </div>
-        <footer><span>SERVER-AUTHORITATIVE · LAG COMPENSATION 1000 MS</span><span>GLB + BVH · CSM SOYALAR · PBR</span><span>v0.2</span></footer>
+        </section>
+        <section class="view" id="view-loadout"></section>
+        <section class="view" id="view-inventory"></section>
+        <section class="view" id="view-store"></section>
+        <section class="view" id="view-news"></section>
+        </div>
       </section>
       <section id="hud" class="hidden">
         <div class="hud-top">
@@ -72,6 +92,7 @@ export class UI {
       <div id="toast" role="status"></div><div id="loader"><b>◩ KONTIR</b><div><i id="loader-bar"></i></div><span id="loader-text">OPERATSIYA YUKLANMOQDA</span></div>`;
     this.menu = $('#menu'); this.hud = $('#hud'); this.modal = $('#modal'); this.content = $('#modal-content'); this.radar = $('#radar').getContext('2d');
     this.el = Object.fromEntries(['health', 'armor', 'armor-label', 'ammo', 'reserve', 'money', 'phase', 'clock', 'round', 't-score', 'ct-score', 'weapon-name', 'reload-status', 'fps', 'ping', 'objective', 'drawcalls', 'tickinfo', 't-alive', 'ct-alive', 'qswitch', 'slots'].map(id => [id, document.getElementById(id)]));
+    this.weaponsTable = WEAPONS; this.view = 'home';
     this.locked = false; this.lastPhase = ''; this.lastHealth = 100; this.slotKey = ''; this.aliveKey = '';
     $('#close').onclick = () => this.modal.close(); this.modal.addEventListener('click', e => { if (e.target === this.modal && !this.locked) this.modal.close(); });
     $('.brand').onclick = e => e.preventDefault();
@@ -115,6 +136,7 @@ export class UI {
   }
   setMode(mode) {
     this.mode = mode;
+    const bs = document.querySelector('#bot-settings'); if (bs) bs.hidden = mode !== 'practice';
     document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
     $('#go').textContent = { competitive: 'IZLASH', casual: 'IZLASH', practice: 'BOSHLASH', private: 'XONAGA KIRISH' }[mode];
     this.poolHint();
@@ -142,6 +164,66 @@ export class UI {
   }
   matchAccepted(n) { document.querySelectorAll('#match-found .mf-dots i:not(.bot)').forEach((d, i) => d.classList.toggle('on', i < n)); const info = $('#mf-info'); if (info) info.textContent = `${n} ta o‘yinchi qabul qildi`; }
   hideMatchFound() { document.querySelector('#match-found')?.remove(); }
+  // ------------------------------------------------------------------------------------------- CS2-style lobby pages
+  /** Home = only the 3D showcase + player card; other views slide over it. */
+  showView(view) {
+    this.view = view || 'home';
+    document.querySelectorAll('.tb-nav [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === this.view));
+    document.querySelectorAll('.views .view').forEach(v => v.classList.toggle('open', v.id === `view-${this.view}`));
+    this.menu.classList.toggle('home', this.view === 'home');
+    const v = document.querySelector(`#view-${this.view}`);
+    if (v) gsap.fromTo(v, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.22, ease: 'power2.out' });
+  }
+  renderProfile(p, { rankOf, levelOf }) {
+    const lvl = levelOf(p.xp), into = p.xp % 1000;
+    $('#pc-name').textContent = p.name; $('#pc-rank').textContent = rankOf(p.rating); $('#pc-level').textContent = `DARAJA ${lvl} · ${into} / 1000 XP`;
+    $('#pc-xp').style.width = `${into / 10}%`; $('#coins').textContent = p.coins;
+    $('#rail-level').textContent = lvl;
+    for (const el of [$('#rail-avatar'), $('#avatar')]) if (el) { el.textContent = (p.name[0] || 'O').toUpperCase(); el.style.background = `linear-gradient(135deg, hsl(${p.hue} 70% 62%), hsl(${(p.hue + 40) % 360} 60% 38%))`; }
+    const nameEl = $('#lobby-name'); if (nameEl && document.activeElement !== nameEl) nameEl.value = p.name;
+    $('#lobby-rank').textContent = `${rankOf(p.rating)} · DEMO`;
+  }
+  /** Right rail: squad of practice partners shown like a friends list. */
+  renderFriends(names) { $('#rail-friends').innerHTML = names.map((n, i) => `<div class="friend" title="${esc(n)} · bot"><span style="background:hsl(${(i * 67) % 360} 45% 40%)">${esc(n[0])}</span><i></i></div>`).join(''); }
+  renderLoadout(p, icon, onPick) {
+    const opt = (side, key, id, label) => `<button class="lo-opt ${p.loadout[key] === id ? 'on' : ''}" data-key="${key}" data-id="${id}"><img alt="" src="${icon(id, p.finishes[id])}"><b>${esc(label)}</b></button>`;
+    $('#view-loadout').innerHTML = `<div class="page"><div class="page-head"><small>LOADOUT</small><h2>Raund boshidagi qurollaringiz</h2><p>Tanlov har raund boshida (va do‘konda) qo‘llanadi. Skinlar INVENTAR bo‘limida.</p></div>
+      <div class="lo-cols"><div class="lo-side ct"><h3>COUNTER-TERRORIST</h3><small>BOSHLANG‘ICH PISTOLET</small><div class="lo-row">${opt('ct', 'ct', 'usp', 'USP-S')}${opt('ct', 'ct', 'p250', 'P250')}</div>
+        <small>RIFLE (do‘konda ko‘rinadigani)</small><div class="lo-row">${opt('ct', 'm4', 'm4a4', 'M4A4')}${opt('ct', 'm4', 'm4a1s', 'M4A1-S')}</div></div>
+      <div class="lo-side t"><h3>TERRORIST</h3><small>BOSHLANG‘ICH PISTOLET</small><div class="lo-row">${opt('t', 't', 'glock', 'GLOCK-18')}${opt('t', 't', 'p250', 'P250')}</div></div></div></div>`;
+    document.querySelectorAll('.lo-opt').forEach(b => b.onclick = () => onPick(b.dataset.key, b.dataset.id));
+  }
+  renderInventory(p, weapons, finishes, icon, onEquip) {
+    const sel = this.invSelected && weapons.includes(this.invSelected) ? this.invSelected : weapons[0]; this.invSelected = sel;
+    const W = this.weaponsTable;
+    $('#view-inventory').innerHTML = `<div class="page inv"><div class="page-head"><small>INVENTAR</small><h2>Qurollar va skinlar</h2><p>Sotib olingan skinlarni istalgan qurolga qo‘ying. Yangi skinlar DO‘KONda.</p></div>
+      <div class="inv-body"><div class="inv-grid">${weapons.map(id => `<button class="inv-item ${id === sel ? 'on' : ''}" data-w="${id}"><img alt="" src="${icon(id, p.finishes[id])}"><b>${esc(W[id]?.name || id)}</b><small>${esc(finishes[p.finishes[id] || 'standard'].name)}</small></button>`).join('')}</div>
+      <div class="inv-detail"><img alt="" class="inv-hero" src="${icon(sel, p.finishes[sel])}"><h3>${esc(W[sel]?.name || sel)}</h3><small>SKIN TANLASH</small>
+        <div class="inv-fin">${p.owned.map(f => `<button class="fin ${(p.finishes[sel] || 'standard') === f ? 'on' : ''}" data-f="${f}">${esc(finishes[f]?.name || f)}</button>`).join('')}</div></div></div></div>`;
+    document.querySelectorAll('.inv-item').forEach(b => b.onclick = () => { this.invSelected = b.dataset.w; onEquip(null); });
+    document.querySelectorAll('.fin').forEach(b => b.onclick = () => onEquip(sel, b.dataset.f));
+  }
+  renderStore(p, finishes, icon, onBuy) {
+    const demo = { standard: 'ak47', desert: 'ak47', forest: 'm4a4', urban: 'ump45', arctic: 'awp', tiger: 'deagle', crimson: 'm4a1s', cobalt: 'glock', emerald: 'usp', fade: 'p90', carbon: 'aug', gold: 'deagle' };
+    $('#view-store').innerHTML = `<div class="page"><div class="page-head"><small>DO‘KON</small><h2>Skinlar</h2><p>Demo tangalar (◈) har bir match uchun beriladi: qatnashish, o‘ldirish va g‘alaba. Haqiqiy pul yo‘q.</p></div>
+      <div class="store-grid">${Object.entries(finishes).filter(([id]) => id !== 'standard').map(([id, f]) => { const own = p.owned.includes(id); return `<div class="store-item ${own ? 'own' : ''}"><img alt="" src="${icon(demo[id] || 'ak47', id)}"><b>${esc(f.name)}</b><button data-buy-fin="${id}" ${own || p.coins < f.price ? 'disabled' : ''}>${own ? 'SIZDA BOR' : `◈ ${f.price}`}</button></div>`; }).join('')}</div></div>`;
+    document.querySelectorAll('[data-buy-fin]').forEach(b => b.onclick = () => onBuy(b.dataset.buyFin));
+  }
+  renderNews(items) {
+    $('#view-news').innerHTML = `<div class="page"><div class="page-head"><small>YANGILIKLAR</small><h2>Nimalar yangi</h2></div><div class="news">${items.map(n => `<article><small>${esc(n.tag)}</small><h3>${esc(n.title)}</h3><p>${esc(n.text)}</p></article>`).join('')}</div></div>`;
+  }
+  botSettings(cfg, onChange) {
+    const mark = () => {
+      document.querySelectorAll('#bots-t button').forEach(b => b.classList.toggle('on', +b.dataset.n === cfg.t));
+      document.querySelectorAll('#bots-ct button').forEach(b => b.classList.toggle('on', +b.dataset.n === cfg.ct));
+      document.querySelectorAll('#bots-diff button').forEach(b => b.classList.toggle('on', b.dataset.d === cfg.difficulty));
+    };
+    document.querySelectorAll('#bots-t button').forEach(b => b.onclick = () => { cfg.t = +b.dataset.n; mark(); onChange(cfg); });
+    document.querySelectorAll('#bots-ct button').forEach(b => b.onclick = () => { cfg.ct = +b.dataset.n; mark(); onChange(cfg); });
+    document.querySelectorAll('#bots-diff button').forEach(b => b.onclick = () => { cfg.difficulty = b.dataset.d; mark(); onChange(cfg); });
+    mark();
+  }
+
   showMenu() { this.modal.close(); this.menu.classList.remove('hidden'); this.hud.classList.add('hidden'); document.body.classList.remove('playing'); this.lastPhase = ''; $('#killfeed').replaceChildren(); $('#scoreboard').classList.add('hidden'); }
   showGame(name) { this.modal.close(); this.menu.classList.add('hidden'); this.hud.classList.remove('hidden'); document.body.classList.add('playing'); $('#location-label').textContent = name; this.lastPhase = ''; this.lastHealth = 100; gsap.fromTo('.hud-top,.hud-bottom', { opacity: 0 }, { opacity: 1, duration: 0.4 }); }
   resume(show) { $('#resume').classList.toggle('hidden', !show); }
@@ -186,8 +268,9 @@ export class UI {
     const owned = id => me.inv && (Object.values(me.inv.slots).includes(id) || (me.inv.grenades[id] || 0) > 0);
     const columns = [['PISTOLS'], ['SMGS', 'HEAVY'], ['RIFLES'], ['GRENADES'], ['GEAR']];
     const card = ([id, def]) => {
-      // Exclude weapons belonging to the enemy team
+      // Exclude weapons belonging to the enemy team, and the M4 variant not chosen in LOADOUT (CS2 rule)
       if (def.team && def.team !== me.team) return '';
+      if ((id === 'm4a4' || id === 'm4a1s') && this.loadoutM4 && id !== this.loadoutM4) return '';
       const name = WEAPONS[id]?.name || BUY_NAMES[id] || id.toUpperCase();
       const poor = me.money < def.price && state.phase !== 'warmup';
       const own = id === 'kevlar' ? me.armor >= 100 : id === 'helmet' ? me.armor >= 100 && me.helmet : id === 'defuser' ? me.kit : owned(id);
@@ -198,11 +281,12 @@ export class UI {
       <div class="buy-cols">${columns.map(col => `<div>${col.map(g => `<h4>${GROUP_NAMES[g]}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}`).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
     document.querySelectorAll('[data-buy]:not([disabled])').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
   }
-  results(state, onExit) {
+  results(state, onExit, gains = null) {
     const rows = t => state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<div><span>${esc(p.name)}</span><b>${p.kills} / ${p.assists} / ${p.deaths}</b></div>`).join('');
     this.dialog(`<small class="eyebrow">OPERATION COMPLETE</small><h2>${state.result?.winner ? `${TEAM_LABEL[state.result.winner]} — G‘OLIB.` : 'DURANG.'}</h2>
       <div class="final-scores"><span>T <b>${state.scores.TERRORIST}</b></span><span>CT <b>${state.scores.COUNTER_TERRORIST}</b></span></div>
       <div class="teams"><div><h4>T · K / A / D</h4><div class="roster">${rows('TERRORIST')}</div></div><div><h4>CT · K / A / D</h4><div class="roster">${rows('COUNTER_TERRORIST')}</div></div></div>
+      ${gains ? `<div class="gains"><span>+${gains.xp} XP</span><span>◈ +${gains.coins}</span><span>${gains.rating >= 0 ? '+' : ''}${gains.rating} REYTING</span>${gains.levelUp ? '<span class="up">YANGI DARAJA!</span>' : ''}</div>` : ''}
       <button id="results-exit" class="primary full">BOSH MENYU ${arrow}</button>`, true);
     $('#results-exit').onclick = onExit;
   }

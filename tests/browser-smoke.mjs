@@ -44,6 +44,7 @@ try {
     }
   });
   assert.deepEqual(errors, [], 'quality switches compile and render without shader errors');
+  await page.click('#play-nav'); await page.click('[data-mode="practice"]');
   await page.click('#practice');
   await page.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
   assert.equal((await k(page, () => window.__KONTIR__.state.players.length)), 10, 'practice fills 5v5 with bots');
@@ -104,6 +105,7 @@ try {
   await page.click('#leave');
   const other = await open(); const code = `K${Date.now().toString(36).slice(-6)}`.toUpperCase();
   for (const [tab, name] of [[page, 'HOST'], [other, 'GUEST']]) {
+    if (!(await tab.locator('#online').isVisible())) await tab.click('#play-nav');
     await tab.click('#online'); await tab.fill('#operator-name', name); await tab.fill('#room-input', code); await tab.click('#join-submit');
     await tab.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 60000 });
   }
