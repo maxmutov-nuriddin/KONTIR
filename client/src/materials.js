@@ -141,11 +141,22 @@ const RECIPES = {
   gunmetal(u, v) {
     const brushed = fbm(u, v, 2, 128, 3, 141), wear = smooth(0.62, 0.8, fbm(u, v, 9, 9, 4, 142)), speck = smooth(0.8, 0.95, fbm(u, v, 96, 96, 2, 143));
     const c = 0.32 + brushed * 0.1 + wear * 0.28 + speck * 0.12;
-    return { h: 0.5 + brushed * 0.1, c: [c, c * 1.02, c * 1.06], r: 0.36 + wear * 0.3 + brushed * 0.1, m: 0.95 - wear * 0.25 };
+    return { h: 0.5 + brushed * 0.1, c: [c, c * 1.0, c * 1.02], r: 0.36 + wear * 0.3 + brushed * 0.1, m: 0.95 - wear * 0.25 };
   },
   polymer(u, v) {
     const stipple = fbm(u, v, 96, 96, 2, 151), n = fbm(u, v, 4, 4, 3, 152);
     return { h: stipple, c: [0.9 + stipple * 0.12, 0.9 + stipple * 0.12, 0.92 + n * 0.08], r: 0.55 + stipple * 0.25, m: 0.0 };
+  },
+  /** Lacquered walnut for stocks / handguards: long fine grain along the part, darker pores, subtle figure; no planks. */
+  gunwood(u, v) {
+    const figure = fbm(u, v, 2, 6, 3, 171), grain = fbm(u, v + figure * 0.08, 4, 90, 3, 172), pores = smooth(0.72, 0.9, fbm(u, v, 12, 180, 2, 173));
+    const c = 0.62 + grain * 0.32 + figure * 0.12 - pores * 0.22;
+    return { h: grain * 0.3 - pores * 0.4, c: [c * 1.0, c * 0.72, c * 0.46], r: 0.42 + pores * 0.3 + grain * 0.08, m: 0 };
+  },
+  /** Fine-textured matte polymer: very low-amplitude stipple (no aliasing noise), faint moulding variation. */
+  gunpolymer(u, v) {
+    const stipple = fbm(u, v, 32, 32, 2, 181), n = fbm(u, v, 3, 3, 3, 182);
+    return { h: stipple * 0.25, c: [0.92 + n * 0.08, 0.92 + n * 0.08, 0.93 + n * 0.08], r: 0.62 + stipple * 0.12 + n * 0.06, m: 0 };
   },
   default(u, v) { const n = fbm(u, v, 6, 6, 4, 161); return { h: n, c: [0.85 + n * 0.2, 0.85 + n * 0.2, 0.85 + n * 0.2], r: 0.9 }; },
 };

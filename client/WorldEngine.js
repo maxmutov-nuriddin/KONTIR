@@ -29,8 +29,10 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const QUALITY = {
-  ultra: { pixelRatio: 1.5, shadows: true, mapSize: 2048, post: true, msaa: 0, cascades: 3, maxFar: 170 },
-  high: { pixelRatio: 1, shadows: true, mapSize: 1024, post: false, msaa: 0, cascades: 2, maxFar: 150 },
+  ultra: { pixelRatio: 1.5, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170 },
+  high: { pixelRatio: 1.25, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 2, maxFar: 150 },
+  // O'RTA: native-sharp (MSAA, full resolution) but light on the GPU: one 1024 px shadow cascade rendered every other frame
+  medium: { pixelRatio: 1, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 70, shadowEvery: 2 },
   low: { pixelRatio: 0.7, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 3, maxFar: 60 },
 };
 
@@ -65,10 +67,10 @@ const CHUNK = 28;
 const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 export class WorldEngine {
-  constructor(canvas, { quality = 'low' } = {}) {
-    if (!Object.hasOwn(QUALITY, quality)) quality = 'low';
+  constructor(canvas, { quality = 'medium' } = {}) {
+    if (!Object.hasOwn(QUALITY, quality)) quality = 'medium';
     this.canvas = canvas; this.qualityName = quality; this.quality = QUALITY[quality];
-    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality.msaa > 0, powerPreference: 'default', stencil: false });
+    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'default', stencil: false }); // MSAA is fixed at creation
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -85,6 +87,8 @@ export class WorldEngine {
     this.hemi = new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.3); this.scene.add(this.hemi);
     this.viewHemi = new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.3); this.viewScene.add(this.viewHemi);
     this.viewSun = new THREE.DirectionalLight(0xffffff, 3); this.viewSun.position.set(2, 3, 2); this.viewScene.add(this.viewSun, this.viewSun.target);
+    // cool rim light from beyond the weapon: separates metal edges and hands from the background
+    this.viewRim = new THREE.DirectionalLight(0xcfe0ff, 1.4); this.viewRim.position.set(1.2, 1.4, -3); this.viewScene.add(this.viewRim, this.viewRim.target);
     this.effects = new Effects(this.scene, this.camera);
     this.actors = new Map(); this.labels = new Map(); this.materials = new Set();
     this.shake = 0; this.time = 0; this.menuMode = true; this.mapGroup = null; this.map = null; this.sunDir = new THREE.Vector3(-0.45, 0.7, 0.4).normalize();
@@ -115,7 +119,7 @@ export class WorldEngine {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT?.dispose(); this.envRT = pmrem.fromScene(envScene, 0.02); pmrem.dispose(); disposeTree(envScene);
     this.scene.environment = this.envRT.texture; this.scene.environmentIntensity = overcast ? 0.8 : 0.72;
-    this.viewScene.environment = this.envRT.texture; this.viewScene.environmentIntensity = 0.55;
+    this.viewScene.environment = this.envRT.texture; this.viewScene.environmentIntensity = 0.9;
     this.scene.fog = new THREE.FogExp2(new THREE.Color(env.fog), env.fogDensity);
     this.hemi.color.set(env.ambient); this.viewHemi.color.set(env.ambient);
     this.renderer.toneMappingExposure = env.exposure ?? 1.0;
@@ -194,7 +198,7 @@ export class WorldEngine {
   }
   /** Dynamic resolution: 0.6..1 of the tier's pixel ratio, applied only on meaningful changes (a resize reallocates targets). */
   setResolutionScale(k) {
-    k = Math.round(Math.max(0.6, Math.min(1, k)) * 20) / 20;
+    k = Math.round(Math.max(0.75, Math.min(1, k)) * 20) / 20;   // never below 75 %: stays sharp
     if (k === (this.resScale ?? 1)) return false;
     this.resScale = k; this.resize(); return true;
   }
@@ -447,7 +451,11 @@ export class WorldEngine {
       arr.setXYZ(i, x, y, z);
     }
     arr.needsUpdate = true;
-    this.csm?.update();
+    // shadow throttling (O'RTA): re-render the cascade every Nth frame; the light rig only moves on those frames so maps stay consistent
+    const every = this.quality.shadowEvery || 1, r0 = this.renderer;
+    this.frameNo = (this.frameNo || 0) + 1;
+    if (every > 1) { r0.shadowMap.autoUpdate = false; if (this.frameNo % every === 0 || this.frameNo < 3) { this.csm?.update(); r0.shadowMap.needsUpdate = true; } }
+    else { r0.shadowMap.autoUpdate = true; this.csm?.update(); }
     // viewmodel lights follow the camera orientation
     tmpQ.copy(this.camera.quaternion).invert(); tmpV.copy(this.sunDir).applyQuaternion(tmpQ);
     this.viewSun.position.copy(tmpV).multiplyScalar(4); this.viewSun.target.position.set(0, 0, 0);

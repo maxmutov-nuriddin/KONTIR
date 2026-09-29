@@ -102,6 +102,10 @@ Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
 Molotov/Incendiary yerga tegishi bilan 7 s yonadigan zona hosil qiladi (har 0.5 s zarar; ustiga tushgan smoke o‘chiradi). Decoy egasining qurolidan soxta otish ovozlarini chiqaradi. Snayper miltiqlarida scope bo‘lmasa aniqlik juda past, otgandan keyin scope yopiladi; zoom paytida sichqoncha sezgirligi FOV bilan moslashadi.
 
+## Qurol ko‘rigi (F)
+
+**F** — CS uslubidagi inspect: qurol chap yonini, keyin o‘ng yonini ko‘rsatib qaytadi (pichoq aylanadi). Otish, reload, qurol almashtirish ko‘rikni to‘xtatadi. Qurol materiallari: metall — MeshPhysical (yupqa moy qatlami / bluing yaltirog‘i), yog‘och — laklangan yong‘oq tolasi, polimer — mat, mayda donador; viewmodel uchun alohida rim-light.
+
 ## Qurolni tashlash va olish
 
 - **G** — qo‘ldagi qurolni (o‘q-dorisi bilan) yoki C4 ni oldinga uloqtiradi; pichoq va granatalar tashlanmaydi.
@@ -115,11 +119,11 @@ O‘q ovozi endi oscillator “baraban” emas: `client/src/gunsynth.js` har bir
 
 ## Grafika
 
-ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **YUQORI** (2 × 1024 px soya), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
+ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **O‘RTA** (1 × 1024 px soya, har 2-kadrda, MSAA), **YUQORI** (2 × 1024 px soya, 1.25× ruxsat, MSAA), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
 
 Qo‘llar: har bir qurol uchun barmoqlari egilgan qo‘lqopli qo‘l bitta geometriyaga “pishiriladi” (1 draw call), yeng tirsak nuqtasiga yo‘naltiriladi. Uchinchi shaxs operatorlar qurolni xuddi shu qo‘l pozalari bilan ushlaydi: yelka→tirsak→bilak ikki bo‘g‘inli analitik IK bilan har kadr qo‘lga yetkaziladi; qurol modeli material bo‘yicha bitta mesh’ga birlashtirilgan (keshlangan).
 
-Standart rejim: **YUQORI + 60 FPS**, dinamik ruxsat bilan: kadr vaqti maqsaddan 20 % oshsa ruxsat 0.6× gacha pasayadi, keyin qaytadi; shunda ham past bo‘lsa sifat bir pog‘ona tushadi. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
+Standart rejim: **O‘RTA + 60 FPS** — to‘liq ruxsat + MSAA (tiniq), bitta 1024 px soya kaskadi har ikkinchi kadrda yangilanadi (GPU kam yuklanadi, qurilma qizimaydi). Dinamik ruxsat: kadr vaqti maqsaddan 20 % oshsa ruxsat 0.75× gacha pasayadi (xiralashib ketmaydi), keyin qaytadi; shunda ham past bo‘lsa sifat bir pog‘ona tushadi. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
 
 Vite endi tizimning fayl hodisalaridan foydalanadi. Zarur bo‘lgan tarmoq disklari uchun `KONTIR_POLLING=1 npm run dev` bilan polling yoqiladi.
 

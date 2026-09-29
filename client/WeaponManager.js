@@ -73,6 +73,7 @@ export class WeaponManager {
     return events;
   }
   react(e) {
+    if (e.type !== 'pin') this.inspectT = 0;   // any action cancels an inspect
     if (e.type === 'shot') { this.kick = Math.min(1.5, this.kick + 1); this.flashT = 0.055; this.emit('shot', e); }
     else if (e.type === 'melee') { this.melee = 1; this.emit('melee', e); }
     else if (e.type === 'throw') { this.throwT = 1; this.emit('throw', e); }
@@ -100,7 +101,7 @@ export class WeaponManager {
     this.activeWeaponMesh = rig.group; rig.group.visible = true;
     poseArms(this.arms, rig); rig.group.add(this.arms);
     if (rig.muzzle) { this.flash.removeFromParent(); rig.muzzle.add(this.flash); }
-    this.kick = 0; this.melee = 0; this.flashT = 0; this.flash.visible = false;
+    this.kick = 0; this.melee = 0; this.flashT = 0; this.inspectT = 0; this.flash.visible = false;
     const rest = REST[id] || REST.ak47; rig.group.position.set(...rest.p); rig.group.rotation.set(...rest.r); rig.group.scale.setScalar(rest.s || 1);
   }
 
@@ -154,6 +155,25 @@ export class WeaponManager {
       if (this.throwT > 0) { const s = Math.sin((1 - this.throwT) * Math.PI); r.x += -0.9 * s; p.z -= 0.16 * s; p.y += 0.06 * s; }
       if (pulled) { p.y += 0.012; p.x -= 0.006; }
     }
+    // inspect: turn the weapon to show its left side, roll it over to show the right, return (3.4 s; knives spin)
+    if (this.inspectT > 0) {
+      if (inv.drawing || inv.reloading || inv.pin) this.inspectT = 0;
+      else {
+        this.inspectT += dt / 3.4;
+        const t = Math.min(1, this.inspectT), a = ease(seg(t, 0.0, 0.2)) - ease(seg(t, 0.42, 0.58)), b = ease(seg(t, 0.46, 0.64)) - ease(seg(t, 0.84, 1.0));
+        const lift = Math.sin(Math.PI * t);
+        if (w?.kind === 'melee') {
+          const spin = ease(seg(t, 0.25, 0.7)) * Math.PI * 2;
+          r.y += 0.9 * lift; r.z += 0.6 * lift; r.x += 0.3 * lift; p.x -= 0.1 * lift; p.y += 0.05 * lift; p.z += 0.04 * lift;
+          r.z += spin;
+        } else {
+          // side A: rotate so the ejection side faces the camera; side B: roll over to show the other flank
+          r.y += 0.95 * a - 0.55 * b; r.z += 0.55 * a - 0.9 * b; r.x += 0.12 * a + 0.3 * b;
+          p.x -= 0.09 * lift; p.y += 0.035 * lift; p.z += 0.07 * lift;
+        }
+        if (this.inspectT >= 1) this.inspectT = 0;
+      }
+    }
     // pushed back by nearby geometry so the barrel never pokes into walls
     if (wallPush > 0) { p.z += wallPush * 0.16; r.x += wallPush * 0.5; p.y -= wallPush * 0.03; }
     // muzzle flash
@@ -164,6 +184,14 @@ export class WeaponManager {
     // C4 display when planting
     void GRENADES;
     this.lastDt = dt;
+  }
+
+  /** 'F': weapon inspect (CS-style). Ignored while drawing, reloading, firing or holding a pulled grenade. */
+  inspect() {
+    const inv = this.inventory;
+    if (!this.activeRig || inv.drawing || inv.reloading || inv.pin || this.kick > 0.2 || this.melee > 0) return false;
+    this.inspectT = this.inspectT > 0 && this.inspectT < 0.85 ? this.inspectT : 0.0001; // restart only near the end
+    return true;
   }
 
   /** HUD snapshot of the inventory (slots, ammo, state). */

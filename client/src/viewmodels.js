@@ -12,34 +12,36 @@ let shared = null;
 
 export function weaponMaterials() {
   if (shared) return shared;
-  const std = (o, recipe, extra) => { const m = new THREE.MeshStandardMaterial(o); if (recipe) applyPBR(m, recipe, { size: 256, ...extra }); return m; };
+  // Metals use MeshPhysicalMaterial with a thin clear coat (gun oil / bluing sheen); wood is lacquered; polymer is matte.
+  const std = (o, recipe, extra) => { const m = new THREE.MeshStandardMaterial(o); if (recipe) applyPBR(m, recipe, { size: 512, ...extra }); return m; };
+  const phys = (o, recipe, extra) => { const m = new THREE.MeshPhysicalMaterial(o); if (recipe) applyPBR(m, recipe, { size: 512, ...extra }); return m; };
   shared = {
-    metal: std({ color: 0x9aa1a6, metalness: 1, roughness: 1 }, 'gunmetal', { normalScale: 0.5 }),
-    darkMetal: std({ color: 0x565b60, metalness: 1, roughness: 1 }, 'gunmetal', { normalScale: 0.5 }),
-    steel: std({ color: 0xdfe3e6, metalness: 1, roughness: 0.28 }, null),
-    silver: std({ color: 0xc9cdd0, metalness: 1, roughness: 1 }, 'gunmetal', { normalScale: 0.35 }),
-    wood: std({ color: 0xc58a55, roughness: 1, metalness: 0 }, 'wood', { normalScale: 0.6 }),
-    polymer: std({ color: 0x2a2d30, roughness: 1, metalness: 0 }, 'polymer', { normalScale: 0.7 }),
-    rubber: std({ color: 0x151617, roughness: 0.92, metalness: 0 }, null),
-    oliveMetal: std({ color: 0x59613f, metalness: 0.5, roughness: 0.55 }, null),
-    grenadeGreen: std({ color: 0x4a5d3a, metalness: 0.35, roughness: 0.5 }, null),
-    grenadeGrey: std({ color: 0x8c9296, metalness: 0.7, roughness: 0.4 }, null),
-    smokeBody: std({ color: 0x69756d, metalness: 0.5, roughness: 0.48 }, null),
-    accent: std({ color: 0xd6b45a, metalness: 0.8, roughness: 0.35 }, null),
+    metal: phys({ color: 0x8e9398, metalness: 1, roughness: 0.9, clearcoat: 0.25, clearcoatRoughness: 0.4, envMapIntensity: 1.2 }, 'gunmetal', { normalScale: 0.35 }),
+    darkMetal: phys({ color: 0x4b4f53, metalness: 1, roughness: 1, clearcoat: 0.35, clearcoatRoughness: 0.35, envMapIntensity: 1.15 }, 'gunmetal', { normalScale: 0.3 }),
+    steel: phys({ color: 0xd9dde0, metalness: 1, roughness: 0.22, clearcoat: 0.2, clearcoatRoughness: 0.2, envMapIntensity: 1.3 }, null),
+    silver: phys({ color: 0xbfc3c6, metalness: 1, roughness: 0.8, clearcoat: 0.3, clearcoatRoughness: 0.25, envMapIntensity: 1.25 }, 'gunmetal', { normalScale: 0.25 }),
+    wood: phys({ color: 0x6a4026, roughness: 1, metalness: 0, clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 0.6 }, 'gunwood', { normalScale: 0.35 }),
+    polymer: std({ color: 0x232426, roughness: 1, metalness: 0, envMapIntensity: 0.7 }, 'gunpolymer', { normalScale: 0.18 }),
+    rubber: std({ color: 0x141516, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 }, null),
+    oliveMetal: phys({ color: 0x59613f, metalness: 0.5, roughness: 0.55, clearcoat: 0.2 }, null),
+    grenadeGreen: phys({ color: 0x4a5a38, metalness: 0.3, roughness: 0.55, clearcoat: 0.4, clearcoatRoughness: 0.5 }, null),
+    grenadeGrey: phys({ color: 0x8c9296, metalness: 0.75, roughness: 0.4, clearcoat: 0.3 }, null),
+    smokeBody: phys({ color: 0x66726a, metalness: 0.5, roughness: 0.48, clearcoat: 0.3 }, null),
+    accent: std({ color: 0xc9a24e, metalness: 0.85, roughness: 0.35 }, null),
     red: std({ color: 0xa02a22, metalness: 0.3, roughness: 0.5 }, null),
     c4: std({ color: 0x5a5f43, roughness: 0.75, metalness: 0.1 }, null),
     tape: std({ color: 0xc9c2a6, roughness: 0.9, metalness: 0 }, null),
     wire: std({ color: 0x9d2b25, roughness: 0.6, metalness: 0 }, null),
-    olivePoly: std({ color: 0x4a5540, roughness: 1, metalness: 0 }, 'polymer', { normalScale: 0.6 }),
-    tanPoly: std({ color: 0x8a7a58, roughness: 1, metalness: 0 }, 'polymer', { normalScale: 0.6 }),
-    blackSteel: std({ color: 0x24272a, metalness: 0.9, roughness: 0.42 }, null),
-    lens: new THREE.MeshStandardMaterial({ color: 0x223a5a, metalness: 0.2, roughness: 0.05, emissive: 0x0a1a30, emissiveIntensity: 0.6 }),
+    olivePoly: std({ color: 0x3f4836, roughness: 1, metalness: 0, envMapIntensity: 0.7 }, 'gunpolymer', { normalScale: 0.18 }),
+    tanPoly: std({ color: 0x7f7054, roughness: 1, metalness: 0, envMapIntensity: 0.7 }, 'gunpolymer', { normalScale: 0.18 }),
+    blackSteel: phys({ color: 0x2c2f33, metalness: 1, roughness: 0.75, clearcoat: 0.4, clearcoatRoughness: 0.3, envMapIntensity: 1.2 }, 'gunmetal', { normalScale: 0.25 }),
+    lens: new THREE.MeshPhysicalMaterial({ color: 0x1d3552, metalness: 0.1, roughness: 0.04, clearcoat: 1, emissive: 0x0a1a30, emissiveIntensity: 0.5 }),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x9fd2c0, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.42, clearcoat: 1 }),
     fuel: new THREE.MeshStandardMaterial({ color: 0xd8902a, roughness: 0.3, transparent: true, opacity: 0.85, emissive: 0x6a3a08, emissiveIntensity: 0.35 }),
     rag: std({ color: 0xb8ad90, roughness: 1, metalness: 0 }, null),
     flame: new THREE.MeshBasicMaterial({ color: 0xc8501a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }),
     decoyYellow: std({ color: 0xc8a52a, metalness: 0.4, roughness: 0.5 }, null),
-    incRed: std({ color: 0xa8321e, metalness: 0.45, roughness: 0.45 }, null),
+    incRed: phys({ color: 0xa8321e, metalness: 0.45, roughness: 0.45, clearcoat: 0.4 }, null),
     wireBlue: std({ color: 0x24457a, roughness: 0.6, metalness: 0 }, null),
   };
   for (const m of Object.values(shared)) m.userData.shared = true;

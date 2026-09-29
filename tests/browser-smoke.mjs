@@ -37,7 +37,7 @@ try {
   await page.click('[data-fps="60"]'); await page.click('#close');
   await page.evaluate(async () => {
     const world = window.__KONTIR__.world;
-    for (const quality of ['high', 'ultra', 'low', 'high', 'low']) {
+    for (const quality of ['high', 'ultra', 'medium', 'low', 'high', 'medium', 'low']) {
       world.setQuality(quality);
       await world.renderer.compileAsync(world.scene, world.camera);
       world.render(1 / 60, false);

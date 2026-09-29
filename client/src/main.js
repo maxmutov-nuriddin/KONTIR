@@ -19,7 +19,7 @@ const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; docu
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
 const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for battery/heat
 let world;
-try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'high') }); }
+try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') }); }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
@@ -135,7 +135,7 @@ weapons.on('shot', e => {
   if (rig?.eject && prediction) world.effects.casing(from, right.clone().multiplyScalar(1.2).add(new THREE.Vector3(0, 0.6, 0)), prediction.char.y);
 });
 weapons.on('reload', () => audio.reload(null, true)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
-controller.on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
+controller.on('inspect', () => { if (weapons.inspect()) audio.draw(null, true); }).on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
 controller.on('lock', () => { audio.unlock(); audio.warmShots(['ak47', 'm4a4', 'glock', 'usp', 'deagle', 'awp']); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
 
 // ---------------------------------------------------------------------------------------------- join / leave
@@ -239,11 +239,11 @@ function frame(nowMs) {
   frameMs += (raw * 1000 - frameMs) * 0.05;
   if (playing && controller.locked && nowMs - lastRes > 1500 && store.get('adaptive', '1') !== '0') {
     const target = 1000 / Math.min(60, pacer.limit || 60), k = world.resScale ?? 1;
-    if (frameMs > target * 1.2 && k > 0.6) { world.setResolutionScale(k - 0.1); lastRes = nowMs; }
+    if (frameMs > target * 1.2 && k > 0.75) { world.setResolutionScale(k - 0.05); lastRes = nowMs; }
     else if (frameMs < target * 0.8 && k < 1) { world.setResolutionScale(k + 0.05); lastRes = nowMs; }
   }
   // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
-  if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && (world.resScale ?? 1) <= 0.61 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(world.qualityName === 'ultra' ? 'high' : 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
+  if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && (world.resScale ?? 1) <= 0.76 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality({ ultra: 'high', high: 'medium', medium: 'low' }[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
   heroHolder.visible = !playing; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {

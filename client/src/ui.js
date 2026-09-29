@@ -48,7 +48,7 @@ export class UI {
         <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
         <div class="hud-bottom">
           <div class="vitals"><div class="stat hp"><small>HP</small><strong id="health">100</strong></div><div class="stat ar"><small id="armor-label">ARMOR</small><strong id="armor">0</strong></div><div class="money" id="money">$800</div></div>
-          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
+          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>F</kbd> KO‘RIK</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
           <div class="weapons"><div id="slots"></div><div id="qswitch"><kbd>Q</kbd><span></span></div>
             <div class="ammo"><small id="weapon-name"></small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status"></small></div></div></div>
         <div class="telemetry"><span id="fps">60 FPS</span><span id="drawcalls">0 DC</span><span id="tickinfo">64 TICK</span></div>
@@ -85,15 +85,15 @@ export class UI {
       <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
       <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
-      <kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
+      <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
   settings({ quality, sensitivity, volume, fpsLimit, onFpsLimit, onQuality, onSensitivity, onVolume }) {
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
-      <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === quality ? 'on' : ''}">${{ low: 'TEZKOR', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
+      <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
       <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[30, 60, 90, 120].map(v => `<button data-fps="${v}" class="${v === fpsLimit ? 'on' : ''}">${v}</button>`).join('')}</div></div>
       <label for="sensitivity">SICHQONCHA SEZGIRLIGI</label><input id="sensitivity" type="range" min="0.15" max="2" step="0.05" value="${sensitivity}">
       <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${volume}">
-      <p class="note">TEZKOR: soyasiz, kamroq yuklama. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p>`);
+      <p class="note">TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p>`);
     document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); onQuality(b.dataset.q); });
     document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); onFpsLimit(Number(b.dataset.fps)); });
     $('#sensitivity').oninput = e => onSensitivity(Number(e.target.value)); $('#volume').oninput = e => onVolume(Number(e.target.value));

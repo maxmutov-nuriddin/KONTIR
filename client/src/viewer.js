@@ -35,7 +35,7 @@ let camera, tick;
 if (mode === 'rig') {
   // rig inspection: the first-person rig (weapon + sleeves + hands) seen from outside
   const vs = new THREE.Scene(); vs.background = new THREE.Color(0x8c9aa1); environment(vs, sunDir); vs.environmentIntensity = 0.7;
-  vs.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.4)); const l = new THREE.DirectionalLight(0xffe1b0, 3.5); l.position.set(-1.5, 3, 2); vs.add(l);
+  vs.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.4)); vs.environmentIntensity = 0.9; { const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); vs.add(rim); } const l = new THREE.DirectionalLight(0xffe1b0, 3.5); l.position.set(-1.5, 3, 2); vs.add(l);
   const wm = new WeaponManager(vs, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
   const dyn = new ViewmodelDynamics(); camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 20);
   const cam = new THREE.Vector3(...(q.get('cam') || '0.9,0.35,0.5').split(',').map(Number)), at = new THREE.Vector3(...(q.get('at') || '0.1,-0.15,-0.4').split(',').map(Number));
@@ -46,6 +46,7 @@ if (mode === 'rig') {
   environment(viewScene, sunDir); viewScene.environmentIntensity = 0.55;
   viewScene.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.3));
   const light = new THREE.DirectionalLight(0xffe1b0, 3.5); light.position.set(-1.5, 3, 2); viewScene.add(light);
+  const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); viewScene.add(rim); viewScene.environmentIntensity = 0.9;
   camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.01, 8);
   const wm = new WeaponManager(viewScene, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
   const dyn = new ViewmodelDynamics(); const grid = new THREE.GridHelper(4, 16, 0x556, 0x445); grid.position.set(0, -0.6, -1); if (q.get('grid')) viewScene.add(grid);

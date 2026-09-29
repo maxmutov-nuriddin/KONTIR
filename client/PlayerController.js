@@ -5,7 +5,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { MOVEMENT as M, clamp, lerp, smoothstep, neutralInput } from '../shared/constants.js';
 
 const KEY_SLOTS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'Tab', ...Object.keys(KEY_SLOTS)]);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyR', 'KeyE', 'KeyQ', 'KeyG', 'KeyF', 'Tab', ...Object.keys(KEY_SLOTS)]);
 
 /**
  * Procedural weapon motion.
@@ -86,6 +86,7 @@ export class PlayerController {
         if (e.code === 'Space') this.edges.jump = true;
         if (e.code === 'KeyQ') this.edges.quick = true;
         if (e.code === 'KeyG') this.edges.drop = true;
+        if (e.code === 'KeyF') this.callbacks.inspect?.();
         if (e.code === 'KeyR') this.edges.reload = true;
         if (KEY_SLOTS[e.code]) this.edges.slot = KEY_SLOTS[e.code];
         if (e.code === 'KeyB') this.callbacks.buy?.();
