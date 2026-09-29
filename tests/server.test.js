@@ -4,7 +4,7 @@ import { MapLibrary } from '../server/server.js';
 import { Room } from '../server/Room.js';
 import { LagCompensator } from '../server/LagCompensator.js';
 import { neutralInput, RULES, TICK_RATE } from '../shared/constants.js';
-import { SLOT } from '../shared/weapons.js';
+import { SLOT, makeRandom } from '../shared/weapons.js';
 
 const library = await new MapLibrary(await MapLibrary.locate()).init();
 const map = await library.get('sahara');
@@ -172,6 +172,7 @@ test('grenades: HE damages through LOS, smoke registers, flash blinds', () => {
   assert.ok(room.grenades.length >= 1 || room.events.length > before);
 });
 test('full bot match runs stably (5v5, all bots) and produces kills', () => {
+  const realRandom = Math.random; Math.random = makeRandom(1234); // bots roll skill / aim with Math.random: make the match reproducible
   const room = mkRoom({ warmup: 0.05, freeze: 0.3, round: 40, post: 0.5 }, { practice: true });
   room.add('h', 'Human', 'TERRORIST'); room.fillBots(); room.start();
   const t0 = performance.now(); run(room, TICK_RATE * 120);
@@ -179,5 +180,6 @@ test('full bot match runs stably (5v5, all bots) and produces kills', () => {
   const kills = [...room.players.values()].reduce((n, p) => n + p.kills, 0);
   assert.ok(room.round >= 1 && kills >= 1, `rounds=${room.round} kills=${kills}`);
   assert.ok(ms / (TICK_RATE * 120) < 4);
+  Math.random = realRandom;
   for (const p of room.players.values()) assert.ok(Number.isFinite(p.char.x) && Math.abs(p.char.x) < 200);
 });
