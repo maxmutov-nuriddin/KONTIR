@@ -125,10 +125,11 @@ export class AudioEngine {
   footstep(pos, own = false, scale = 1) {
     if (!this.ctx) return;
     const d = this.out(own ? null : pos, { reverb: 0.05 }), f = 0.85 + Math.random() * 0.3;
-    // boot on grit: short heel click + gravel scuff, no tonal "thump" (the old sine made it sound like a drum)
-    this.noise(d, { dur: 0.035, type: 'bandpass', freq: 1300 * f, q: 0.9, gain: 0.42 * scale, decay: 0.03 });
-    this.noise(d, { dur: 0.07, type: 'highpass', freq: 3200 * f, gain: 0.14 * scale, decay: 0.06, start: 0.018 });
-    this.noise(d, { dur: 0.05, type: 'lowpass', freq: 420 * f, gain: 0.22 * scale, decay: 0.045 });
+    // clean boot step: a soft heel contact (mid band, very short) over a dull sole body; no hiss (highpass) and no tonal
+    // drum sweep. A slight random tilt keeps consecutive steps from sounding identical.
+    const g = scale * (0.9 + Math.random() * 0.2);
+    this.noise(d, { dur: 0.06, type: 'lowpass', freq: 520 * f, gain: 0.55 * g, decay: 0.05 });
+    this.noise(d, { dur: 0.025, type: 'bandpass', freq: 950 * f, q: 1.4, gain: 0.3 * g, decay: 0.02, start: 0.004 });
   }
   land(pos, own = false, speed = 4) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.1 }); this.noise(d, { dur: 0.16, type: 'lowpass', freq: 700, gain: Math.min(1, 0.3 + speed * 0.04), decay: 0.15 }); this.tone(d, { dur: 0.14, from: 90, to: 45, gain: 0.5 }); }
   jump(pos, own = false) { if (!this.ctx) return; const d = this.out(own ? null : pos, { reverb: 0.05 }); this.noise(d, { dur: 0.1, type: 'bandpass', freq: 500, q: 0.6, gain: 0.25, decay: 0.09 }); }
