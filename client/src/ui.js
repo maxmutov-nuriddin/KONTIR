@@ -1,99 +1,235 @@
 import { gsap } from 'gsap';
-import { WEAPONS } from '../../shared/weapons.js';
-import { MAPS } from '../../shared/maps.js';
+import { WEAPONS, BUY_ITEMS } from '../../shared/weapons.js';
+import { RULES } from '../../shared/constants.js';
 
-const arrow='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
-const circuit='<svg viewBox="0 0 160 100"><path d="M12 78V22h33V10h66v16h35v51h-35v13H44V78Z"/><path d="M45 25v48m32-48v48m34-42v42M17 49h126"/><circle cx="29" cy="32" r="8"/><circle cx="128" cy="67" r="8"/></svg>';
-export const clock=seconds=>`${Math.floor(Math.max(0,seconds)/60)}:${String(Math.floor(Math.max(0,seconds)%60)).padStart(2,'0')}`;
+const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
+export const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const TEAM_LABEL = { TERRORIST: 'TERRORIST', COUNTER_TERRORIST: 'COUNTER-TERRORIST' };
+const TEAM_SHORT = { TERRORIST: 'T', COUNTER_TERRORIST: 'CT' };
+const REASONS = { elimination: 'Jamoa yo‘q qilindi', exploded: 'Bomba portladi', defused: 'Bomba zararsizlantirildi', time: 'Vaqt tugadi', draw: 'Durang', match: 'Match yakuni' };
+const BUY_NAMES = { kevlar: 'KEVLAR', helmet: 'KEVLAR + DUBULG‘A', defuser: 'DEFUSE KIT' };
+const STATS = { ak47: '36 DMG · 600 RPM', m4a4: '33 DMG · 666 RPM', deagle: '63 DMG · 267 RPM', glock: '30 DMG · 400 RPM', he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA', kevlar: '100 ARMOR', helmet: '100 ARMOR + HEAD', defuser: '5 s DEFUSE' };
 
 export class UI {
-  constructor(){
-    document.querySelector('#app').innerHTML=`
+  constructor() {
+    $('#app').innerHTML = `
       <div class="shade"></div>
       <section id="menu" class="menu">
-        <header><a class="brand" href="#"><b>◩</b> KONTIR<span>TACTICAL OPERATIONS</span></a><nav><button class="active" id="play-nav">O‘YNASH</button><button id="guide-nav">QO‘LLANMA ↗</button></nav><div class="header-right"><span><i></i> WEBGL / ONLINE FPS</span><button id="settings" class="square" aria-label="Sozlamalar">⚙</button></div></header>
-        <div class="side-label">01 — DEPLOYMENT</div>
-        <div class="hero"><div class="eyebrow"><i></i> TAYYORGARLIK TUGADI.</div><h1>HAR BIR<br>SONIYA<br><em>HAL QILADI.</em></h1><p>Bitta jamoa. Bitta maqsad.<br>Rejangni tuz va operatsiyani boshla.</p><div class="hero-meta"><span>5 <b>VS</b> 5</span><span>ROUND BASED</span><span>64 TICK</span></div></div>
-        <div class="weapon-label"><div class="small-cross">+</div><span>STANDARD ISSUE<strong>KR–47 <small>ASSAULT RIFLE</small></strong></span><b>7.62</b></div>
-        <div class="op-tag"><i></i> OPERATION: FIRST LIGHT <span>EST. 2026</span></div>
-        <div class="menu-bottom"><div class="maps"><div class="section-label">01 / OPERATSIYA HUDUDI <span>2 XARITA</span></div><div class="map-options"><button data-map="sahara" class="map-card selected"><div class="map-preview desert">${circuit}<span>A</span></div><div><strong>SAHARA OUTPOST</strong><small>CHO‘L / 160 × 160 M</small></div><b>↗</b></button><button data-map="harbor" class="map-card"><div class="map-preview harbor">${circuit}<span>B</span></div><div><strong>IRON HARBOR</strong><small>PORT / 160 × 160 M</small></div><b>↗</b></button></div></div><div class="deploy"><div class="section-label">02 / JANG REJIMI<div class="mode-select"><button data-mode="competitive" class="selected">COMPETITIVE</button><button data-mode="deathmatch">DEATHMATCH</button></div></div><div class="deploy-actions"><button id="practice" class="primary">MASHQNI BOSHLASH ${arrow}</button><button id="online" class="secondary" title="Do‘stlar bilan multiplayer">ONLAYN ${arrow}</button></div><div class="deploy-foot"><span><i></i> 3 BOT BILAN · TEZKOR START</span><button id="team">T JAMOASI ⇄</button></div></div></div>
-        <footer><span>ORIGINAL MAPS. SHARED OBJECTIVE.</span><span>SERVER AUTHORITATIVE <b>·</b> BUILT FOR THE BROWSER</span><span>PROTOTYPE / v0.1</span></footer>
+        <header><a class="brand" href="#"><b>◩</b> KONTIR<span>TACTICAL OPERATIONS</span></a>
+          <nav><button class="active" id="play-nav">O‘YNASH</button><button id="guide-nav">QO‘LLANMA ↗</button></nav>
+          <div class="header-right"><span><i></i> 64 TICK · SERVER AUTHORITATIVE</span><button id="settings" class="square" aria-label="Sozlamalar">⚙</button></div></header>
+        <div class="hero"><div class="eyebrow"><i></i> 5 vs 5 · MR12 · BOMBA OBYEKTI</div><h1>HAR BIR<br>SONIYA<br><em>HAL QILADI.</em></h1>
+          <p>Bitta jamoa. Bitta maqsad.<br>Rejangni tuz va operatsiyani boshla.</p>
+          <div class="hero-meta"><span>5 <b>VS</b> 5</span><span>15 s BUY</span><span>1:55 RAUND</span><span>40 s BOMBA</span></div></div>
+        <div class="menu-bottom">
+          <div class="maps"><div class="section-label">01 / OPERATSIYA HUDUDI <span id="map-count"></span></div><div class="map-options" id="map-options"></div></div>
+          <div class="deploy"><div class="section-label">02 / KIRISH USULI</div>
+            <div class="deploy-actions"><button id="practice" class="primary">MASHQ · 5v5 BOTLAR ${arrow}</button><button id="quick" class="secondary">TEZKOR O‘YIN ${arrow}</button><button id="online" class="secondary">XONA KODI ${arrow}</button></div>
+            <div class="deploy-foot"><span><i></i> STRICT 5 T + 5 CT</span><button id="team">TERRORIST ⇄</button></div></div></div>
+        <footer><span>SERVER-AUTHORITATIVE · LAG COMPENSATION 1000 MS</span><span>GLB + BVH · CSM SOYALAR · PBR</span><span>v0.2</span></footer>
       </section>
       <section id="hud" class="hidden">
-        <div class="hud-top"><div class="radar-wrap"><div class="radar-label"><span id="location-label">SAHARA</span><small id="ping">0 MS</small></div><canvas id="radar" width="180" height="180"></canvas></div><div class="match-bar"><div class="team-score t"><small>T</small><b id="t-score">0</b></div><div class="match-clock"><small id="phase">BUY TIME</small><strong id="clock">0:12</strong><span id="round">RAUND 01 / MR6</span></div><div class="team-score ct"><b id="ct-score">0</b><small>CT</small></div></div><div class="top-right"><button id="pause-button">ESC <span>MENYU</span></button><div id="killfeed"></div></div></div>
-        <div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker">×</div><div id="damage-flash"></div>
-        <div id="objective"></div><div id="interaction"><span></span><div><i></i></div></div>
-        <div id="round-banner"></div><div id="death-notice" class="hidden"><strong>OPERATSIYA DAVOM ETADI</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
-        <div class="hud-bottom"><div class="vitals"><span class="health-icon">+</span><strong id="health">100</strong><span class="armor-icon">◇</span><b id="armor">0</b><div class="money" id="money">$3200</div></div><div class="key-hints"><span><kbd>B</kbd> XARID</span><span><kbd>E</kbd> PLANT / DEFUSE</span><span><kbd>TAB</kbd> NATIJALAR</span></div><div class="ammo"><small id="weapon-name">KR-47 RIFLE</small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status">R — QAYTA O‘QLASH</small></div></div>
-        <div class="telemetry"><span id="fps">60 FPS</span><span id="chunks">0 CHUNKS</span><span>64 TICK</span></div>
-        <div id="scoreboard" class="hidden"><div><small>LIVE SCOREBOARD</small><h2>JAMOA NATIJALARI</h2><table><thead><tr><th>OPERATOR</th><th>JAMOA</th><th>K</th><th>D</th></tr></thead><tbody></tbody></table></div></div>
-        <div id="resume" class="hidden"><div><span>READY TO DEPLOY</span><h2>Operatsiyaga tayyormisiz?</h2><p>WASD — harakat · Sichqoncha — nishon<br>Chap tugma — otish · Shift — yurish · Space — sakrash</p><button id="lock" class="primary">JANGGA KIRISH ${arrow}</button><button id="leave" class="text-button">Bosh menyuga qaytish</button></div></div>
+        <div class="hud-top">
+          <div class="radar-wrap"><canvas id="radar" width="220" height="220"></canvas><div class="radar-label"><span id="location-label"></span><small id="ping">0 MS</small></div></div>
+          <div class="match-bar"><div class="team-score t"><small>T</small><b id="t-score">0</b><div class="alive" id="t-alive"></div></div>
+            <div class="match-clock"><small id="phase">BUY</small><strong id="clock">0:15</strong><span id="round">RAUND 1 · 1-YARIM</span></div>
+            <div class="team-score ct"><div class="alive" id="ct-alive"></div><b id="ct-score">0</b><small>CT</small></div></div>
+          <div class="top-right"><button id="pause-button">ESC <span>MENYU</span></button><div id="killfeed"></div></div></div>
+        <div id="crosshair" style="--gap:6px"><i></i><i></i><i></i><i></i></div><div id="hitmarker"><i></i><i></i><i></i><i></i></div><div id="damage-flash"></div><div id="dmg-dirs"></div><div id="flashbang"></div>
+        <div id="objective"></div><div id="interaction"><span></span><div><i></i></div></div><div id="round-banner"></div>
+        <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
+        <div class="hud-bottom">
+          <div class="vitals"><div class="stat hp"><small>HP</small><strong id="health">100</strong></div><div class="stat ar"><small id="armor-label">ARMOR</small><strong id="armor">0</strong></div><div class="money" id="money">$800</div></div>
+          <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>E</kbd> DEFUSE</span></div>
+          <div class="weapons"><div id="slots"></div><div id="qswitch"><kbd>Q</kbd><span></span></div>
+            <div class="ammo"><small id="weapon-name"></small><div><strong id="ammo">30</strong><span>/ <b id="reserve">90</b></span></div><small id="reload-status"></small></div></div></div>
+        <div class="telemetry"><span id="fps">60 FPS</span><span id="drawcalls">0 DC</span><span id="tickinfo">64 TICK</span></div>
+        <div id="scoreboard" class="hidden"><div class="sb-wrap"><div class="sb-head"><small>LIVE SCOREBOARD</small><h2 id="sb-title"></h2></div><div class="sb-teams"></div></div></div>
+        <div id="resume" class="hidden"><div><span>READY TO DEPLOY</span><h2>Operatsiyaga tayyormisiz?</h2><p>WASD — harakat · SICHQONCHA — nishon · CHAP TUGMA — otish<br>SHIFT — jimgina yurish · CTRL — cho‘kish · Q — oxirgi qurol · 1–5 — slot</p><button id="lock" class="primary">JANGGA KIRISH ${arrow}</button><button id="leave" class="text-button">Bosh menyuga qaytish</button></div></div>
       </section>
       <dialog id="modal"><button id="close" aria-label="Yopish">×</button><div id="modal-content"></div></dialog>
-      <div id="toast" role="status"></div><div id="loader"><b>◩ KONTIR</b><div><i></i></div><span>OPERATSIYA YUKLANMOQDA</span></div>
-    `;
-    this.menu=document.querySelector('#menu');this.hud=document.querySelector('#hud');this.modal=document.querySelector('#modal');this.content=document.querySelector('#modal-content');this.ctx=document.querySelector('#radar').getContext('2d');
-    this.elements=Object.fromEntries(['health','armor','ammo','reserve','money','phase','clock','round','t-score','ct-score','weapon-name','reload-status','fps','chunks','ping','objective'].map(id=>[id,document.getElementById(id)]));
-    this.locked=false;this.rosterKey='';this.lastPhase='';this.lastHealth=100;
-    document.querySelector('#close').onclick=()=>this.modal.close();this.modal.addEventListener('click',e=>{if(e.target===this.modal&&!this.locked)this.modal.close();});
-    document.querySelector('.brand').onclick=e=>e.preventDefault();
+      <div id="toast" role="status"></div><div id="loader"><b>◩ KONTIR</b><div><i id="loader-bar"></i></div><span id="loader-text">OPERATSIYA YUKLANMOQDA</span></div>`;
+    this.menu = $('#menu'); this.hud = $('#hud'); this.modal = $('#modal'); this.content = $('#modal-content'); this.radar = $('#radar').getContext('2d');
+    this.el = Object.fromEntries(['health', 'armor', 'armor-label', 'ammo', 'reserve', 'money', 'phase', 'clock', 'round', 't-score', 'ct-score', 'weapon-name', 'reload-status', 'fps', 'ping', 'objective', 'drawcalls', 'tickinfo', 't-alive', 'ct-alive', 'qswitch', 'slots'].map(id => [id, document.getElementById(id)]));
+    this.locked = false; this.lastPhase = ''; this.lastHealth = 100; this.slotKey = ''; this.aliveKey = '';
+    $('#close').onclick = () => this.modal.close(); this.modal.addEventListener('click', e => { if (e.target === this.modal && !this.locked) this.modal.close(); });
+    $('.brand').onclick = e => e.preventDefault();
   }
-  ready(){gsap.to('#loader',{autoAlpha:0,duration:.4,onComplete:()=>document.querySelector('#loader').remove()});gsap.from('.hero > *',{opacity:0,y:20,stagger:.09,duration:.7,ease:'power3.out'});gsap.from('.menu-bottom',{opacity:0,y:20,duration:.7,delay:.2});}
-  dialog(html,locked=false){this.content.innerHTML=html;this.locked=locked;document.querySelector('#close').hidden=locked;if(!this.modal.open)this.modal.showModal();gsap.fromTo(this.modal,{opacity:0,y:15},{opacity:1,y:0,duration:.2});}
-  toast(text){const el=document.querySelector('#toast');el.textContent=text;gsap.killTweensOf(el);gsap.set(el,{autoAlpha:1});gsap.to(el,{autoAlpha:0,delay:3.5,duration:.3});}
-  showMenu(){this.modal.close();this.menu.classList.remove('hidden');this.hud.classList.add('hidden');document.body.classList.remove('playing');this.rosterKey='';this.lastPhase='';document.querySelector('#killfeed').replaceChildren();document.querySelector('#scoreboard').classList.add('hidden');}
-  showGame(mapId){this.modal.close();this.menu.classList.add('hidden');this.hud.classList.remove('hidden');document.body.classList.add('playing');document.querySelector('#location-label').textContent=MAPS[mapId].name;this.lastPhase='';this.lastHealth=100;gsap.fromTo('.hud-top,.hud-bottom',{opacity:0},{opacity:1,duration:.4});}
-  resume(show){document.querySelector('#resume').classList.toggle('hidden',!show);}
-  controls(){this.dialog(`<small class="eyebrow">FIELD MANUAL</small><h2>Avval reja. Keyin harakat.</h2><p>Competitive: 7 raund yutgan jamoa g‘olib. T jamoasi A/B hududida qurilmani o‘rnatadi. CT himoya qiladi yoki uni zararsizlantiradi.</p><div class="control-grid"><kbd>W A S D</kbd><span>Inersiyali harakat</span><kbd>MOUSE</kbd><span>Nishon olish</span><kbd>LMB</kbd><span>O‘q uzish</span><kbd>SPACE</kbd><span>Sakrash</span><kbd>CTRL</kbd><span>Cho‘kish</span><kbd>SHIFT</kbd><span>Sekin yurish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span><kbd>E (ushlang)</kbd><span>Plant / defuse</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div><p class="note">Plant: 3.2 s · Defuse: 5 s · Qurilma taymeri: 35 s. Harakat qilsangiz jarayon to‘xtaydi. Bu original FPS prototipi; Counter-Strike’ning aynan nusxasi emas.</p>`);}
-  lobby(state,id,start,leave){
-    const key=JSON.stringify([state.host,state.players.map(p=>[p.id,p.name,p.team])]);if(this.rosterKey===key&&this.modal.open)return;this.rosterKey=key;
-    this.dialog(`<small class="eyebrow">TEAM ASSEMBLY</small><h2>Jamoani yig‘ing.</h2><p>Do‘stingiz shu serverga kirib, quyidagi xona kodini yozsin.</p><div class="room-code"></div><div class="roster"></div><button id="start-match" class="primary full">${state.host===id?'OPERATSIYANI BOSHLASH':'XONA EGASI KUTILMOQDA'} ${arrow}</button><button id="leave-lobby" class="text-button">Xonadan chiqish</button>`,true);
-    this.content.querySelector('.room-code').textContent=state.code;
-    for(const p of state.players){const row=document.createElement('div'),name=document.createElement('span'),badge=document.createElement('b');name.textContent=p.name+(p.id===id?' (siz)':'');badge.textContent=p.team+(p.id===state.host?' / HOST':'');row.append(name,badge);this.content.querySelector('.roster').append(row);}
-    document.querySelector('#start-match').disabled=state.host!==id;document.querySelector('#start-match').onclick=start;document.querySelector('#leave-lobby').onclick=leave;
+  ready() { gsap.to('#loader', { autoAlpha: 0, duration: 0.5, onComplete: () => $('#loader')?.remove() }); gsap.from('.hero > *', { opacity: 0, y: 20, stagger: 0.09, duration: 0.7, ease: 'power3.out' }); gsap.from('.menu-bottom', { opacity: 0, y: 20, duration: 0.7, delay: 0.2 }); }
+  setLoading(fraction, label) { const bar = $('#loader-bar'); if (bar) bar.style.width = `${Math.round(fraction * 100)}%`; const t = $('#loader-text'); if (t && label) t.textContent = label.toUpperCase(); }
+  showBusy(text) { this.busy ||= document.createElement('div'); this.busy.id = 'busy'; this.busy.textContent = text; if (!this.busy.isConnected) document.body.append(this.busy); }
+  hideBusy() { this.busy?.remove(); }
+  dialog(html, locked = false) { this.content.innerHTML = html; this.locked = locked; $('#close').hidden = locked; if (!this.modal.open) this.modal.showModal(); gsap.fromTo(this.modal, { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.2 }); }
+  toast(text) { const el = $('#toast'); el.textContent = text; gsap.killTweensOf(el); gsap.set(el, { autoAlpha: 1 }); gsap.to(el, { autoAlpha: 0, delay: 3.5, duration: 0.3 }); }
+
+  setMaps(maps, selected, onSelect) {
+    $('#map-count').textContent = `${maps.length} XARITA`;
+    $('#map-options').innerHTML = maps.map((m, i) => `<button data-map="${esc(m.id)}" class="map-card ${m.id === selected ? 'selected' : ''}"><div class="map-preview m${i % 4}"><span>${esc(m.id.slice(0, 1).toUpperCase())}</span></div><div><strong>${esc(m.name)}</strong><small>${esc(m.subtitle || '')}</small></div><b>↗</b></button>`).join('');
+    document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-map]').forEach(x => x.classList.toggle('selected', x === b)); onSelect(b.dataset.map); });
   }
-  buy(player,onBuy){
-    this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${player.money}</strong></div><div class="buy-list">${Object.values(WEAPONS).map(w=>`<button data-buy="${w.id}"><span><b>${w.name}</b><small>${w.magazine} O‘Q · ${Math.round(60/w.interval)} RPM</small></span><strong>$${w.price}</strong></button>`).join('')}<button data-buy="armor"><span><b>KEVLAR ZIRH</b><small>100 ARMOR</small></span><strong>$650</strong></button></div><p class="note">Xaridni server tasdiqlaydi. Raund boshidagi 12 soniya ichida tanlang.</p>`);
-    document.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>onBuy(b.dataset.buy));
-    gsap.from('.buy-list button',{x:-12,opacity:0,stagger:.06,duration:.25});
+  showMenu() { this.modal.close(); this.menu.classList.remove('hidden'); this.hud.classList.add('hidden'); document.body.classList.remove('playing'); this.lastPhase = ''; $('#killfeed').replaceChildren(); $('#scoreboard').classList.add('hidden'); }
+  showGame(name) { this.modal.close(); this.menu.classList.add('hidden'); this.hud.classList.remove('hidden'); document.body.classList.add('playing'); $('#location-label').textContent = name; this.lastPhase = ''; this.lastHealth = 100; gsap.fromTo('.hud-top,.hud-bottom', { opacity: 0 }, { opacity: 1, duration: 0.4 }); }
+  resume(show) { $('#resume').classList.toggle('hidden', !show); }
+
+  controls() {
+    this.dialog(`<small class="eyebrow">FIELD MANUAL</small><h2>Avval reja. Keyin harakat.</h2>
+      <p>MR12: 12 raund yarim, 13 raund yutgan jamoa g‘olib. Buy 15 s, raund 1:55, bomba 40 s. Defuse: 10 s, kit bilan 5 s.</p>
+      <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
+      <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
+      <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
+      <kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
-  event(e,id){
-    if(e.type==='kill'){const row=document.createElement('div');row.textContent=`${e.killer}  ${e.head?'⌖':'→'}  ${e.victim}`;document.querySelector('#killfeed').prepend(row);gsap.from(row,{opacity:0,x:15,duration:.2});setTimeout(()=>row.remove(),6000);}
-    if(e.type==='shot'&&e.shooter===id&&e.hit){gsap.killTweensOf('#hitmarker');gsap.fromTo('#hitmarker',{opacity:1},{opacity:0,duration:.3});}
-    if(e.type==='planted')this.toast(`Qurilma ${e.site} hududida o‘rnatildi. 35 soniya!`);
+  settings({ quality, sensitivity, volume, onQuality, onSensitivity, onVolume }) {
+    this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
+      <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === quality ? 'on' : ''}">${{ low: 'TEZKOR', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
+      <label for="sensitivity">SICHQONCHA SEZGIRLIGI</label><input id="sensitivity" type="range" min="0.15" max="2" step="0.05" value="${sensitivity}">
+      <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${volume}">
+      <p class="note">ULTRA: GTAO ambient occlusion + bloom, 4096 px kaskadli soyalar. YUQORI: 3 kaskadli CSM, PCF soft. TEZKOR: soyasiz.</p>`);
+    document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); onQuality(b.dataset.q); });
+    $('#sensitivity').oninput = e => onSensitivity(Number(e.target.value)); $('#volume').oninput = e => onVolume(Number(e.target.value));
   }
-  update(state,id,{fps,chunks}){
-    const p=state.players.find(p=>p.id===id);if(!p)return;const el=this.elements;
-    el.health.textContent=p.health;el.armor.textContent=p.armor;el.ammo.textContent=p.ammo;el.reserve.textContent=p.reserve;el.money.textContent=`$${p.money}`;
-    el['t-score'].textContent=state.scores.T;el['ct-score'].textContent=state.scores.CT;el['weapon-name'].textContent=WEAPONS[p.weapon].name;
-    el['reload-status'].textContent=p.reload>0?`QAYTA O‘QLASH ${p.reload.toFixed(1)}s`:'R — QAYTA O‘QLASH';
-    el.phase.textContent={lobby:'LOBBY',buy:'BUY TIME',live:state.mode==='deathmatch'?'DEATHMATCH':'LIVE ROUND',roundEnd:'ROUND OVER',matchEnd:'MATCH OVER'}[state.phase];
-    el.clock.textContent=clock(state.bomb.state==='planted'?state.bomb.remaining:state.remaining);el.clock.classList.toggle('danger',state.bomb.state==='planted');
-    el.round.textContent=state.mode==='deathmatch'?'3 DAQIQALIK JANG':`RAUND ${String(state.round).padStart(2,'0')} / FIRST TO 7`;
-    el.fps.textContent=`${Math.round(fps)} FPS`;el.chunks.textContent=`${chunks} CHUNKS`;el.ping.textContent=`${Math.round(p.rtt||0)} MS`;
-    el.objective.textContent=state.mode==='deathmatch'?'':state.bomb.state==='planted'?`⚠ QURILMA ${state.bomb.site} HUDUDIDA`:state.bomb.carrier===id?'◆ QURILMA SIZDA · A YOKI B HUDUDIGA BORING':p.team==='T'?'A / B HUDUDINI EGALLANG':'A / B HUDUDINI HIMOYA QILING';
-    const progress=document.querySelector('#interaction');progress.style.display=p.interactProgress>0?'block':'none';progress.querySelector('span').textContent=p.team==='T'?'O‘RNATILMOQDA…':'ZARARSIZLANTIRILMOQDA…';progress.querySelector('i').style.width=`${Math.min(100,p.interactProgress/(p.team==='T'?3.2:5)*100)}%`;
-    document.querySelector('#death-notice').classList.toggle('hidden',p.alive);
-    document.querySelector('#death-notice span').textContent=state.mode==='deathmatch'?'3 soniyada qaytasiz · TAB — natijalar':'Keyingi raundni kuting · TAB — natijalar';
-    if(p.health<this.lastHealth){gsap.killTweensOf('#damage-flash');gsap.fromTo('#damage-flash',{opacity:.5},{opacity:0,duration:.5});}this.lastHealth=p.health;
-    if(this.lastPhase!==state.phase){
-      this.lastPhase=state.phase;const banner=document.querySelector('#round-banner');
-      banner.textContent=state.phase==='roundEnd'?`${state.result.winner} G‘ALABA QOZONDI`:state.phase==='live'?'OPERATSIYA BOSHLANDI':state.phase==='buy'?`RAUND ${state.round} · JIHOZLANING`:'';
-      gsap.killTweensOf(banner);gsap.set(banner,{opacity:banner.textContent?1:0});if(banner.textContent)gsap.to(banner,{opacity:0,duration:.5,delay:2.5});
+  lobby(state, id, start, leave) {
+    const list = t => state.players.filter(p => p.team === t).map(p => `<div><span>${esc(p.name)}${p.id === id ? ' (siz)' : ''}${p.bot ? ' · BOT' : ''}</span><b>${p.id === state.host ? 'HOST' : ''}</b></div>`).join('') || '<div><span>—</span></div>';
+    const count = t => state.players.filter(p => p.team === t).length;
+    const fill = () => {
+      $('#lobby-eyebrow').textContent = `WARMUP · ${clock(state.remaining)}`;
+      $('#lobby-t').innerHTML = `<h4>TERRORIST · ${count('TERRORIST')}/5</h4><div class="roster">${list('TERRORIST')}</div>`;
+      $('#lobby-ct').innerHTML = `<h4>COUNTER-TERRORIST · ${count('COUNTER_TERRORIST')}/5</h4><div class="roster">${list('COUNTER_TERRORIST')}</div>`;
+      const b = $('#start-match'); b.disabled = state.host !== id; b.firstChild.textContent = state.host === id ? 'MATCHNI BOSHLASH ' : 'XONA EGASI KUTILMOQDA ';
+    };
+    const key = JSON.stringify([state.host, state.remaining | 0, state.players.map(p => [p.id, p.name, p.team])]);
+    if (this.modal.open && $('#lobby-eyebrow')) { if (key !== this.lobbyKey) { this.lobbyKey = key; fill(); } return; }
+    this.lobbyKey = key;
+    this.dialog(`<small class="eyebrow" id="lobby-eyebrow"></small><h2>Jamoani yig‘ing.</h2><p>Do‘stlar quyidagi xona kodini kiritishi mumkin. Har jamoada 5 o‘rin.</p><div class="room-code">${esc(state.code)}</div>
+      <div class="teams"><div id="lobby-t"></div><div id="lobby-ct"></div></div>
+      <button id="start-match" class="primary full"><span>MATCHNI BOSHLASH </span>${arrow}</button><button id="leave-lobby" class="text-button">Xonadan chiqish</button>`, true);
+    fill(); $('#start-match').onclick = start; $('#leave-lobby').onclick = leave;
+  }
+  buy(state, me, onBuy) {
+    const owned = id => me.inv && (Object.values(me.inv.slots).includes(id) || (me.inv.grenades[id] || 0) > 0);
+    const groups = ['RIFLES', 'PISTOLS', 'GRENADES', 'GEAR'];
+    const card = ([id, def]) => {
+      const name = WEAPONS[id]?.name || BUY_NAMES[id] || id.toUpperCase();
+      const blocked = def.team && def.team !== me.team, poor = me.money < def.price && state.phase !== 'warmup';
+      const own = id === 'kevlar' ? me.armor >= 100 : id === 'helmet' ? me.armor >= 100 && me.helmet : id === 'defuser' ? me.kit : owned(id);
+      return `<button data-buy="${id}" ${blocked ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${STATS[id] || ''}</small></span><strong>${state.phase === 'warmup' ? 'FREE' : `$${def.price}`}</strong></button>`;
+    };
+    this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION · ${clock(state.remaining)}</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${me.money}</strong></div>
+      <div class="buy-cols">${groups.map(g => `<div><h4>${g}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Yangi qurol avtomatik tanlanadi.</p>`);
+    document.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
+    gsap.from('.buy-cols button', { y: 8, opacity: 0, stagger: 0.02, duration: 0.2 });
+  }
+  results(state, onExit) {
+    const rows = t => state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<div><span>${esc(p.name)}</span><b>${p.kills} / ${p.assists} / ${p.deaths}</b></div>`).join('');
+    this.dialog(`<small class="eyebrow">OPERATION COMPLETE</small><h2>${state.result?.winner ? `${TEAM_LABEL[state.result.winner]} — G‘OLIB.` : 'DURANG.'}</h2>
+      <div class="final-scores"><span>T <b>${state.scores.TERRORIST}</b></span><span>CT <b>${state.scores.COUNTER_TERRORIST}</b></span></div>
+      <div class="teams"><div><h4>T · K / A / D</h4><div class="roster">${rows('TERRORIST')}</div></div><div><h4>CT · K / A / D</h4><div class="roster">${rows('COUNTER_TERRORIST')}</div></div></div>
+      <button id="results-exit" class="primary full">BOSH MENYU ${arrow}</button>`, true);
+    $('#results-exit').onclick = onExit;
+  }
+
+  // ------------------------------------------------------------------------------------------- in-game
+  event(e, id, players) {
+    const name = pid => players.find(p => p.id === pid)?.name || '?';
+    if (e.type === 'kill') {
+      const row = document.createElement('div'); row.className = `kf ${e.killer === id || e.victim === id ? 'me' : ''}`;
+      const w = WEAPONS[e.weapon]?.name || (e.weapon === 'world' ? 'DUNYO' : e.weapon === 'c4' ? 'C4' : e.weapon.toUpperCase());
+      row.innerHTML = `<b class="${e.killerTeam === 'TERRORIST' ? 't' : 'ct'}">${esc(e.killerName || 'DUNYO')}</b><i>${w}${e.head ? ' ⌖' : ''}</i><b class="${e.victimTeam === 'TERRORIST' ? 't' : 'ct'}">${esc(e.victimName)}</b>`;
+      $('#killfeed').prepend(row); gsap.from(row, { opacity: 0, x: 18, duration: 0.2 }); setTimeout(() => row.remove(), 7000);
+    } else if (e.type === 'planted') this.toast(`Bomba ${e.site} hududiga o‘rnatildi. ${RULES.bombSeconds} soniya!`);
+    else if (e.type === 'defuseStart' && e.who !== id) this.toast(`${name(e.who)} bombani zararsizlantirmoqda…`);
+    else if (e.type === 'defused') this.toast('Bomba zararsizlantirildi.');
+    else if (e.type === 'bombPickup') this.toast(`${name(e.who)} bombani oldi.`);
+    else if (e.type === 'halftime') this.toast('Yarim vaqt: tomonlar almashdi. Pul 800$ ga qaytdi.');
+  }
+  hitmarker(head, kill) {
+    const el = $('#hitmarker'); el.classList.toggle('head', !!head); el.classList.toggle('kill', !!kill);
+    gsap.killTweensOf(el); gsap.fromTo(el, { opacity: 1, scale: 1.2 }, { opacity: 0, scale: 1, duration: kill ? 0.5 : 0.3 });
+  }
+  damageIndicator(angle) {
+    const d = document.createElement('div'); d.className = 'dmg'; d.style.transform = `rotate(${angle}rad)`; $('#dmg-dirs').append(d);
+    gsap.fromTo(d, { opacity: 0.95 }, { opacity: 0, duration: 1.4, onComplete: () => d.remove() });
+    gsap.killTweensOf('#damage-flash'); gsap.fromTo('#damage-flash', { opacity: 0.45 }, { opacity: 0, duration: 0.5 });
+  }
+  flash(seconds, full) {
+    const el = $('#flashbang'); gsap.killTweensOf(el);
+    gsap.timeline().set(el, { opacity: full ? 1 : 0.65 }).to(el, { opacity: full ? 1 : 0.65, duration: Math.min(1.2, seconds * 0.35) }).to(el, { opacity: 0, duration: Math.max(0.3, seconds * 0.65), ease: 'power2.in' });
+  }
+  spectate(name) { const el = $('#death-notice span'); const text = `${name} KUZATILMOQDA · TAB — natijalar`; if (el.textContent !== text) el.textContent = text; }
+  crosshair(gap) { $('#crosshair').style.setProperty('--gap', `${gap.toFixed(1)}px`); }
+  setCrosshairVisible(v) { $('#crosshair').style.display = v ? '' : 'none'; }
+
+  update(state, id, hud, extra) {
+    const p = state.players.find(q => q.id === id); if (!p) return;
+    const el = this.el, t = state.scores.TERRORIST, ct = state.scores.COUNTER_TERRORIST;
+    el.health.textContent = p.alive ? p.health : 0; el.health.classList.toggle('low', p.health <= 30);
+    el.armor.textContent = p.armor ?? 0; el['armor-label'].textContent = p.helmet ? 'ARMOR+H' : 'ARMOR';
+    el.money.textContent = `$${p.money ?? 0}`;
+    el['t-score'].textContent = t; el['ct-score'].textContent = ct;
+    el.phase.textContent = { warmup: 'WARMUP', buy: 'BUY TIME', live: 'LIVE', post: 'ROUND OVER', matchEnd: 'MATCH OVER' }[state.phase] || state.phase.toUpperCase();
+    const planted = state.bomb.state === 'planted';
+    el.clock.textContent = clock(planted ? state.bomb.remaining : state.remaining); el.clock.classList.toggle('danger', planted);
+    el.round.textContent = state.phase === 'warmup' ? 'O‘YIN BOSHLANISHI KUTILMOQDA' : `RAUND ${state.round} · ${state.half}-YARIM · 13 GA`;
+    // weapon panel
+    el['weapon-name'].textContent = hud.weapon;
+    el.ammo.textContent = hud.mag ?? '—'; el.reserve.textContent = hud.reserve ?? '—'; el.ammo.parentElement.style.visibility = hud.mag === null ? 'hidden' : 'visible';
+    el['reload-status'].textContent = hud.reloading ? `QAYTA O‘QLASH ${Math.round(hud.reload * 100)}%` : hud.pin ? 'GRANATA TAYYOR — CHAP TUGMANI QO‘YING' : hud.mag === 0 ? 'R — QAYTA O‘QLASH' : '';
+    const slotKey = JSON.stringify([hud.slots.map(s => [s.id, s.active, s.count]), hud.previous, hud.mag, hud.reserve]);
+    if (slotKey !== this.slotKey) {
+      this.slotKey = slotKey;
+      el.slots.innerHTML = hud.slots.map(s => {
+        const count = s.slot === 4 && s.count ? `<em>${['he', 'flash', 'smoke'].map(g => `<u class="${s.id === g ? 'on' : ''}" title="${g}">${s.count[g] ? { he: 'HE', flash: 'FB', smoke: 'SM' }[g] + (s.count[g] > 1 ? '×' + s.count[g] : '') : ''}</u>`).join('')}</em>` : '';
+        return `<div class="slot ${s.active ? 'active' : ''} ${s.id ? '' : 'empty'}"><kbd>${s.slot}</kbd><span>${s.id ? esc(s.name) : '—'}</span>${count}</div>`;
+      }).join('');
+      const prev = hud.slots.find(s => s.slot === hud.previous);
+      el.qswitch.querySelector('span').textContent = prev?.id ? `⇄ ${prev.slot} · ${prev.name}` : '';
+      el.qswitch.style.visibility = prev?.id ? 'visible' : 'hidden';
     }
-    this.drawRadar(state,p);this.scoreboard(state);
+    const alive = t => state.players.filter(q => q.team === t);
+    const ak = alive('TERRORIST').map(q => +q.alive).join('') + '|' + alive('COUNTER_TERRORIST').map(q => +q.alive).join('');
+    if (ak !== this.aliveKey) { this.aliveKey = ak; const pips = t => alive(t).map(q => `<i class="${q.alive ? 'on' : ''}"></i>`).join(''); el['t-alive'].innerHTML = pips('TERRORIST'); el['ct-alive'].innerHTML = pips('COUNTER_TERRORIST'); }
+    el.fps.textContent = `${Math.round(extra.fps)} FPS`; el.ping.textContent = `${Math.round(p.rtt || 0)} MS`; el.drawcalls.textContent = `${extra.drawCalls} DC`; el.tickinfo.textContent = `TICK ${state.tick}`;
+    el.objective.textContent = state.bomb.state === 'planted' ? `⚠ BOMBA ${state.bomb.site} HUDUDIDA · ${p.team === 'COUNTER_TERRORIST' ? 'DEFUSE QILING' : 'HIMOYA QILING'}`
+      : state.bomb.carrier === id ? '◆ BOMBA SIZDA · 5 — C4, A/B HUDUDIDA CHAP TUGMANI USHLANG' : state.bomb.state === 'dropped' && p.team === 'TERRORIST' ? '◆ BOMBA TUSHIB QOLDI' : '';
+    const prog = $('#interaction'), a = p.action;
+    prog.style.display = a && a.progress > 0 ? 'block' : 'none';
+    if (a) { prog.querySelector('span').textContent = a.kind === 'plant' ? 'O‘RNATILMOQDA…' : 'ZARARSIZLANTIRILMOQDA…'; prog.querySelector('i').style.width = `${Math.min(100, a.progress / (a.kind === 'plant' ? RULES.plantSeconds : a.need) * 100)}%`; }
+    $('#death-notice').classList.toggle('hidden', p.alive || state.phase === 'matchEnd');
+    if (p.health < this.lastHealth) { gsap.killTweensOf('#damage-flash'); gsap.fromTo('#damage-flash', { opacity: 0.35 }, { opacity: 0, duration: 0.5 }); } this.lastHealth = p.health;
+    if (this.lastPhase !== state.phase) {
+      this.lastPhase = state.phase; const banner = $('#round-banner');
+      const winner = state.result?.winner;
+      banner.innerHTML = state.phase === 'post' || state.phase === 'matchEnd' ? `<strong class="${winner === 'TERRORIST' ? 't' : 'ct'}">${winner ? TEAM_LABEL[winner] + ' — RAUND SIZNIKI' : 'DURANG'}</strong><small>${REASONS[state.result?.reason] || ''}</small>`
+        : state.phase === 'live' ? '<strong>RAUND BOSHLANDI</strong>' : state.phase === 'buy' ? `<strong>RAUND ${state.round}</strong><small>JIHOZLANING · B</small>` : '';
+      gsap.killTweensOf(banner); gsap.set(banner, { opacity: banner.textContent ? 1 : 0 }); if (banner.textContent) gsap.to(banner, { opacity: 0, duration: 0.6, delay: 2.6 });
+    }
+    this.scoreboard(state, id);
   }
-  drawRadar(state,me){
-    const c=this.ctx;c.clearRect(0,0,180,180);c.fillStyle='#151f20';c.fillRect(0,0,180,180);
-    c.fillStyle='#65706a';for(const b of MAPS[state.mapId].colliders)c.fillRect(90+b.x-b.sx/2,90+b.z-b.sz/2,b.sx,b.sz);
-    for(const s of MAPS[state.mapId].sites){c.fillStyle='#e7b65d';c.font='bold 10px Arial';c.fillText(s.id,87+s.x,94+s.z);}
-    for(const p of state.players){if(!p.alive||p.team!==me.team)continue;c.fillStyle=p.id===me.id?'#ffdc81':'#92bbc6';c.beginPath();c.arc(90+p.char.x,90+p.char.z,3,0,Math.PI*2);c.fill();}
-    c.strokeStyle='#ffe7aa';c.beginPath();c.moveTo(90+me.char.x,90+me.char.z);c.lineTo(90+me.char.x-Math.sin(me.char.yaw)*10,90+me.char.z-Math.cos(me.char.yaw)*10);c.stroke();
+  drawRadar(state, me, radarMap, yaw, sites = []) {
+    const c = this.radar, W = 220, R = 46, scale = W / 2 / R;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W, W); c.fillStyle = '#0d1516e6'; c.fillRect(0, 0, W, W);
+    c.save(); c.translate(W / 2, W / 2); c.rotate(yaw); // player forward (-z) points up
+    const w2c = (x, z) => [(x - me.char.x) * scale, (z - me.char.z) * scale];
+    if (radarMap) { const s = (radarMap.half * 2) * scale / radarMap.canvas.width, [ox, oz] = w2c(radarMap.cx - radarMap.half, radarMap.cz - radarMap.half); c.save(); c.translate(ox, oz); c.scale(s, s); c.imageSmoothingEnabled = true; c.drawImage(radarMap.canvas, 0, 0); c.restore(); }
+    c.font = '700 12px Barlow Condensed, Arial'; c.textAlign = 'center';
+    for (const s of sites) { const [x, z] = w2c(s.x, s.z); c.fillStyle = '#e9b64f'; c.save(); c.translate(x, z); c.rotate(-yaw); c.fillText(s.id, 0, 4); c.restore(); }
+    const b = state.bomb; if (b.state === 'planted' || b.state === 'dropped') { const [x, z] = w2c(b.x, b.z); c.fillStyle = b.state === 'planted' ? '#ff3b2a' : '#e9b64f'; c.fillRect(x - 3, z - 3, 6, 6); }
+    for (const p of state.players) {
+      if (!p.alive || p.id === me.id) continue; if (p.team !== me.team && !extraSeen.has(p.id)) continue;
+      const [x, z] = w2c(p.char.x, p.char.z); c.fillStyle = p.team === 'TERRORIST' ? '#e0b45a' : '#6fb2e8'; c.beginPath(); c.arc(x, z, 3.4, 0, 7); c.fill();
+      c.strokeStyle = c.fillStyle; c.beginPath(); c.moveTo(x, z); c.lineTo(x - Math.sin(p.char.yaw) * 8, z - Math.cos(p.char.yaw) * 8); c.stroke();
+    }
+    c.restore(); c.fillStyle = '#fff3c4'; c.beginPath(); c.moveTo(W / 2, W / 2 - 7); c.lineTo(W / 2 + 5, W / 2 + 5); c.lineTo(W / 2 - 5, W / 2 + 5); c.closePath(); c.fill();
+    c.strokeStyle = '#ffffff22'; c.strokeRect(0.5, 0.5, W - 1, W - 1);
   }
-  scoreboard(state){
-    if(document.querySelector('#scoreboard').classList.contains('hidden'))return;
-    const body=document.querySelector('#scoreboard tbody');body.replaceChildren();
-    for(const p of [...state.players].sort((a,b)=>b.kills-a.kills)){const row=document.createElement('tr');for(const value of [p.name+(p.alive?'':' †'),p.team,p.kills,p.deaths]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
+  scoreboard(state, id) {
+    if ($('#scoreboard').classList.contains('hidden')) return;
+    $('#sb-title').textContent = `${state.scores.TERRORIST} : ${state.scores.COUNTER_TERRORIST} — RAUND ${state.round}`;
+    const me = state.players.find(p => p.id === id);
+    const team = t => `<table class="${t === 'TERRORIST' ? 't' : 'ct'}"><thead><tr><th>${TEAM_LABEL[t]}</th><th>$</th><th>K</th><th>A</th><th>D</th><th>PING</th></tr></thead><tbody>${state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<tr class="${p.id === id ? 'me' : ''} ${p.alive ? '' : 'dead'}"><td>${esc(p.name)}${p.bot ? ' · BOT' : ''}</td><td>${p.team === me?.team ? '$' + (p.money ?? 0) : '—'}</td><td>${p.kills}</td><td>${p.assists}</td><td>${p.deaths}</td><td>${p.bot ? '—' : p.rtt}</td></tr>`).join('')}</tbody></table>`;
+    $('.sb-teams').innerHTML = team('TERRORIST') + team('COUNTER_TERRORIST');
   }
-  results(state,onExit){this.dialog(`<small class="eyebrow">OPERATION COMPLETE</small><h2>${state.result?.winner?`${state.result.winner} — G‘OLIB.`:'JANG YAKUNLANDI.'}</h2><div class="final-scores"><span>T <b>${state.scores.T}</b></span><span>CT <b>${state.scores.CT}</b></span></div><div class="roster"></div><button id="results-exit" class="primary full">BOSH MENYU ${arrow}</button>`,true);for(const p of [...state.players].sort((a,b)=>b.kills-a.kills)){const row=document.createElement('div');row.textContent=`${p.name} · ${p.kills} K / ${p.deaths} D`;this.content.querySelector('.roster').append(row);}document.querySelector('#results-exit').onclick=onExit;}
 }
+export const extraSeen = new Set();

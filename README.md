@@ -1,104 +1,102 @@
 # KONTIR — Tactical Operations
 
-Brauzerdagi original jamoaviy FPS prototipi va uni katta loyihaga aylantirish uchun texnik topshiriq. **POYGA**dan mustaqil loyiha.
+Brauzerdagi **5 vs 5 server-authoritative taktik FPS** (Three.js + Node.js + Socket.IO). Counter-Strike uslubidagi harakat, qurol inventari, MR12 raundlari, bomba obyekti, lag compensation va PBR grafika. Original loyiha; Valve xaritalari/modellari kiritilmagan.
 
 ## Ishga tushirish
 
-Node.js 22.12+ yoki Node.js 24:
+Node.js 22.12+:
 
 ```sh
-cd KONTIR
 npm install
-npm run dev
+npm run dev          # server :3101 + klient http://localhost:5190
 ```
 
-**http://localhost:5190** — klient. **3101** — Node.js o‘yin serveri. Vite Socket.IO’ni bir origin orqali proksi qiladi. Serverdagi fayllarni o‘zgartirsangiz, `npm run dev`ni qayta ishga tushiring. Klient hot reload orqali yangilanadi.
+Production: `npm run build && npm start` — `http://localhost:3101` (`PORT` bilan o‘zgartiriladi, `/health` server holati).
 
-### Tezkor boshlash
+### Rejimlar
 
-1. Sahara Outpost yoki Iron Harbor xaritasini tanlang.
-2. Competitive yoki Deathmatch rejimini tanlang.
-3. **MASHQNI BOSHLASH**: serverdagi uch bot bilan o‘yin.
-4. **JANGGA KIRISH** tugmasi sichqonchani Pointer Lock orqali ushlaydi.
-5. Buy vaqtida **B** orqali jihoz tanlang. Oyna yopilgach **JANGGA KIRISH**ni yana bosing.
+| Tugma | Nima qiladi |
+|---|---|
+| **MASHQ · 5v5 BOTLAR** | Bir o‘yinchi + server botlari (10 kishi), darhol buy fazasi |
+| **TEZKOR O‘YIN** | Ochiq (public) xonaga joylashtiradi yoki yangisini yaratadi |
+| **XONA KODI** | Do‘st bilan bir xil kod; T/CT avtomatik tenglashadi; 5+5 qat’iy limit |
 
-Mashq rejimi ham authoritative Node serveridan foydalanadi. O‘yin klaviatura va sichqoncha uchun mo‘ljallangan; mobil layout mavjud, mobil sensorli FPS boshqaruvi hali yo‘q.
+## Fayllar (asosiy 4 modul)
 
-### Do‘st bilan onlayn
+| Fayl | Vazifasi |
+|---|---|
+| [`server/server.js`](server/server.js) | HTTP + Socket.IO, matchmaker (xona/tezkor o‘yin), **64 Hz** fixed-step tick loop, RTT o‘lchash, AFK, snapshot (32 Hz) |
+| [`client/PlayerController.js`](client/PlayerController.js) | Kiritish → command stream, PointerLock, kamera (crouch `crouchFactor` lerp 1.65 → 1.05 m), viewmodel **sway/bob** |
+| [`client/WeaponManager.js`](client/WeaponManager.js) | 5 slotli inventar, **Q quick-switch** tarixi, draw/reload/otish animatsiyasi, recoil view-punch, 3D qurol rig’lari |
+| [`client/WorldEngine.js`](client/WorldEngine.js) | GLB yuklash + **three-mesh-bvh** to‘qnashuv, ACES, CSM soyalar, sky/IBL, GTAO+bloom (ULTRA), aktyorlar, effektlar |
 
-**ONLAYN**ni bosing, ism va bir xil xona kodini kiriting. Birinchi o‘yinchi host bo‘ladi. Ikkinchi o‘yinchi kirgach host boshlaydi. 10 o‘yinchigacha; T/CT avtomatik tenglashtiriladi. Yangi xonaning xarita/rejimini birinchi o‘yinchi tanlaydi. Raund boshlangan xonaga yangi o‘yinchi qabul qilinmaydi.
+Ularni quvvatlovchi qatlamlar:
 
-Bir LAN/Wi-Fi ichida Vite ko‘rsatgan `http://192.168.x.x:5190` manzilidan foydalaning. Internet orqali o‘yin uchun Node serverini HTTPS/WebSocket reverse proxy ortida joylashtirish kerak. Lokal server boshqa serverga avtomatik ulanmaydi.
+```
+shared/        server va klient bir xil ishlatadigan deterministik kod
+  movement.js    Source/GoldSrc harakati (friction, accelerate, airAccelerate, crouch, jump, step-up) — BVH kapsula
+  collision.js   MeshCollider: BVH raycast, kapsula push-out, floorHeight, capsuleBlocked
+  inventory.js   Slotlar, Q buffer, draw/reload/fire holat mashinasi, recoil pattern
+  weapons.js     AK-47, M4A4, Desert Eagle, Glock-18, Knife, HE/Flash/Smoke, C4; hitbox, zarar modeli
+  glb.js         Bog‘liqliksiz GLB o‘quvchi/yozuvchi (server ham xarita o‘qiy oladi)
+server/
+  Room.js        5v5 xona, MR12 raund mashinasi, iqtisod, jang, granata, bomba
+  LagCompensator.js  1000 ms ring buffer + interpolyatsiya (hitbox rewind)
+  Bots.js, Navigation.js   Botlar (BVH’dan olingan navigatsiya grid)
+client/src/      prediction, network, ui, audio (protsedur), materials (PBR), viewmodels, characters, effects
+tools/           build-maps.mjs va grid asosidagi xarita generatori
+```
 
-### Boshqaruv
+## Boshqaruv
 
 | Tugma | Amal |
 |---|---|
-| WASD / strelkalar | Harakat |
-| Sichqoncha | Kamera va nishon |
-| Chap tugma | O‘q uzish |
-| Space | Sakrash; qayta sakrash uchun yangi bosish kerak |
-| Shift | Sekin yurish |
-| Ctrl | Cho‘kish |
-| R | Qayta o‘qlash |
-| B | Buy menyusi |
-| E, ushlab turing | A/B ichida plant yoki qurilma yonida defuse |
-| Tab | Natijalar jadvali |
-| Esc | Pointer Lock’dan chiqish; serverdagi o‘yin davom etadi |
+| WASD | Harakat — **250 u/s** |
+| **Shift** | Jimgina yurish — **130 u/s**, qadam ovozi hodisasi umuman yo‘q |
+| **Ctrl** / C | Cho‘kish — **100 u/s**, kamera **1.65 → 1.05 m** silliq |
+| Space | Sakrash (yangi bosish; havoda `airAccelerate = 12`, `maxAirSpeed = 30`) |
+| **1–5** | Asosiy / Pistolet / Pichoq / Granata (qayta bosilsa HE→Flash→Smoke) / C4 |
+| **Q** | Oxirgi qurolga qaytish (`currentSlot` ⇄ `previousSlot`) |
+| Sichqoncha g‘ildiragi | Keyingi/oldingi slot |
+| LMB / RMB | Otish · pichoq sanchish / kuchsiz granata |
+| R · B · E · Tab | Reload · Xarid · Defuse (ushlab) · Natijalar |
 
-## Hozir ishlaydigan qismlar
+## Qoidalar (competitive MR12)
 
-- Three.js WebGL2 sahna, procedural qurol va operator modellari, real-time soya.
-- 160 × 160 metrli 2 original xarita; zinapoya bilan chiqiladigan platformalar.
-- 32 m vizual chunklar, kerakli chunklarni yaratish/bo‘shatish, frustum culling va instancing.
-- Bir xil shared harakat kodi: inersiya, friction, ground/air acceleration, strafe, jump, crouch, static collision.
-- 64 Hz server, taxminan 21 Hz snapshot, client prediction va ack bo‘yicha reconciliation.
-- Remote interpolation, 50 ms bilan cheklangan extrapolation.
-- Server RTT o‘lchoviga asoslangan 200 ms gacha hitbox rewind.
-- 3 qurol, tarqalish/recoil, ammo, fire-rate, reload, head/chest/legs zarari va zirh.
-- T/CT, raundlar, buy, server taymerli plant/defuse, jamoa ballari.
-- Competitive: 7 g‘alabagacha; Deathmatch: 3 daqiqa, 3 soniyali respawn.
-- Botlar uchun serverdagi grid navigation, ko‘rinish chizig‘i va oddiy jang logikasi.
-- GSAP menyu, buy animatsiyasi, killfeed, radar va scoreboard.
+Warmup → **Buy 15 s (freeze)** → **Live 1:55** → Post-round (7 s) → … 12 raunddan keyin tomonlar almashadi, pul 800 $ ga qaytadi, **13 raund** yutgan g‘olib (12–12 durang). G‘alaba: jamoani yo‘q qilish, **C4 portlashi (40 s)**, **defuse (10 s / kit 5 s)**, vaqt (CT). Plant: C4 (5-slot) bilan A/B hududida LMB’ni 3.2 s ushlab turing. Iqtisod: g‘alaba 3250 $, mag‘lubiyat 1400 → 3400 $ (ketma-ket), qurol bo‘yicha kill mukofoti.
 
-## Muhim chegaralar
+## Xaritalar va GLB pipeline
 
-Bu **CS2/CS:GO’ning 100% nusxasi yoki tayyor masshtabli esports platformasi emas**. Harakat qiymatlari original, hitboxlar AABB, character collider soddalashtirilgan. Player-player collision, qurol almashtirish/inventar, granatalar, penetratsiya, haqiqiy audio aktivlar, CS2 sub-tick va professional anti-cheat hali yo‘q.
+`client/public/maps/*.glb` — server ham, klient ham **bir xil baytlardan** to‘qnashuv BVH quradi (predikta ↔ server farq qilmaydi). Repo ikkita original xaritani olib keladi (`sahara`, `harbor`; `npm run maps` ularni `tools/maps/*.mjs` dan qayta generatsiya qiladi).
 
-Asosiy qurollar **hitscan**: zarar server tickida hisoblanadi, tracer esa vizual effekt. Ballistik parvoz vaqti bu prototipda yo‘q. Motion blur va bloom raqobatbardosh o‘yinda aniqlik/FPS uchun default o‘chiq; post-processing yo‘li texnik qo‘llanmada berilgan.
+**De_Dust2 / De_Mirage** kabi haqiqiy `.glb` layoutlarini ulash:
 
-Klient barcha statik collider metadata’larini oladi, faqat vizual chunklar dinamik boshqariladi. Hozirgi xaritalar diskdan GLB stream qilinmaydi: ular metadata’dan yaratiladi. `client/src/world/glb-streamer.js` GLB aktivlari uchun ulashga tayyor adapter, ammo demo yo‘lida ishlatilmaydi. Portal/PVS occlusion culling hali yo‘q; frustum culling uni almashtirmaydi.
+1. Faylni `client/public/maps/de_dust2.glb` deb qo‘ying (Valve aktivlari repoga qo‘shilmagan — litsenziya sizda bo‘lishi kerak).
+2. GLB ichida bo‘sh (empty) node’lar: `spawn_T_1..5`, `spawn_CT_1..5`, `site_A`, `site_B` (scale.x = plant radiusi).
+3. Mesh nomi `decor_*`/`nocollide_*` — to‘qnashuvsiz; `clip_*` — faqat to‘qnashuv (ko‘rinmas).
+4. Siqilgan (Draco/meshopt) vizual GLB bo‘lsa, siqilmagan `de_dust2.collision.glb` qo‘shing.
+5. `npm run maps` — `manifest.json` yangilanadi, xarita menyuda paydo bo‘ladi.
 
-Hozir server xona ichidagi barcha o‘yinchilar holatini yuboradi. Bu visibility filtering/anti-wallhack emas. Login, saqlangan reyting, qayta ulanishda sessiyani tiklash, hududlararo matchmaker va process sharding production bosqichiga qoldirilgan.
+Batafsil: [docs/MAP_PIPELINE.md](docs/MAP_PIPELINE.md).
 
-**60+ FPS kafolat emas.** Qurilma, resolution va sahnaga bog‘liq; past sifat rejimi, draw-call/FPS diagnostikasi mavjud. Nom va xarita aktivlari original; Valve’ning xaritalari/modellari qo‘shilmagan.
+## Grafika
 
-## Hujjatlar
-
-- **[TECHNICAL_SPEC.md](docs/TECHNICAL_SPEC.md)** — bajariladigan texnik topshiriq, arxitektura, mezonlar va bosqichlar.
-- **[NETWORKING.md](docs/NETWORKING.md)** — protokol, prediction, lag compensation, transport va xavfsizlik chegaralari.
-- **[MAP_PIPELINE.md](docs/MAP_PIPELINE.md)** — Blender → GLB, chunk streaming, occlusion va xotira budjeti.
+ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **YUQORI**, **ULTRA** (GTAO + bloom, 4096 soya).
 
 ## Tekshiruv
 
 ```sh
-npm test
+npm test               # movement, inventory, server qoidalari, lag comp, Socket.IO integratsiya
 npm run build
+# haqiqiy brauzerda (dasturiy GL sekin, shuning uchun buy fazasini cho‘zamiz):
+KONTIR_TIMING='{"freeze":45,"warmup":3}' npm start &
+CHROME_PATH=/path/to/chrome npm run test:browser
 ```
 
-Dev server ishlab turganda, o‘rnatilgan Google Chrome bilan:
+## Hozirgi cheklovlar (halol ro‘yxat)
 
-```sh
-npm run test:browser
-```
-
-Brauzer tekshiruvi skrinshotlarni `test-results/`ga yozadi. Chromium uchun `npx playwright install chromium`, keyin `BROWSER_CHANNEL=chromium npm run test:browser` ishlatish mumkin.
-
-## Production
-
-```sh
-npm run build
-npm start
-```
-
-Node `dist/`ni va Socket.IO’ni **http://localhost:3101** orqali beradi. `PORT` bilan portni o‘zgartirish mumkin. `/health` server holati uchun. Xonalar RAM’da saqlanadi; server to‘xtasa holat yo‘qoladi. Production’da TLS, cheklangan originlar, autentifikatsiya, resurs kvotalari va monitoringni texnik topshiriq bo‘yicha qo‘shing.
+- Valve xaritalari/modellari/ovozlari **yo‘q**: xarita GLB’ni siz beryapsiz; ovozlar protsedur (WebAudio), qurol/operator modellari primitivlardan yasalgan.
+- Zarba **hitscan**, devor penetratsiyasi yo‘q; hitbox’lar yaw bo‘yicha aylantirilgan quti (animatsiya bilan bog‘liq emas).
+- Snapshot barcha o‘yinchilar holatini yuboradi (anti-wallhack/visibility filtering yo‘q), login/rating/qayta ulanish sessiyasi, region matchmaker, sharding va anti-cheat production bosqichida.
+- Overtime (12–12) yo‘q — durang. Tashlab yuborilgan qurollarni olish (G) yo‘q; faqat C4 tushadi va olinadi.
+- Ovoz va soyalar sifati qurilmaga bog‘liq; **60+ FPS kafolat emas** (past sifat rejimi bor).

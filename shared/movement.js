@@ -1,59 +1,207 @@
-import { MOVEMENT as M, clamp } from './constants.js';
+// Source / GoldSrc-derived player movement on an arbitrary triangle world (MeshCollider).
+// Deterministic and allocation-light so the client can re-simulate pending commands on every snapshot.
+import { MOVEMENT as M, DT, clamp, lerp, smoothstep } from './constants.js';
 
-export function character(spawn){return {x:spawn.x,y:spawn.y,z:spawn.z,vx:0,vy:0,vz:0,yaw:spawn.yaw,pitch:0,grounded:true,crouched:false,lastJump:false};}
-const overlaps=(p,b,height)=>p.x+M.radius>b.min.x&&p.x-M.radius<b.max.x&&p.z+M.radius>b.min.z&&p.z-M.radius<b.max.z&&p.y+height>b.min.y+0.0001&&p.y<b.max.y-0.0001;
+export function createPlayer(spawn) {
+  return {
+    x: spawn.x, y: spawn.y, z: spawn.z, vx: 0, vy: 0, vz: 0,
+    yaw: spawn.yaw || 0, pitch: 0, grounded: true, crouch: 0, prevJump: false,
+    gnx: 0, gny: 1, gnz: 0, stride: 0,
+  };
+}
+export const playerHeight = p => lerp(M.standHeight, M.crouchHeight, p.crouch);
+/** Camera height above the feet. `crouch` (0..1) is eased so the eye glides between 1.65 m and 1.05 m. */
+export const eyeHeight = p => lerp(M.eyeStand, M.eyeCrouch, smoothstep(clamp(p.crouch, 0, 1)));
+export const horizontalSpeed = p => Math.hypot(p.vx, p.vz);
 
-export function moveCharacter(p,input,index,dt){
-  p.yaw=input.yaw;p.pitch=clamp(input.pitch,-1.54,1.54);
-  const nearby=index.query(p.x,p.z,2);
-  if(input.crouch)p.crouched=true;
-  else if(!nearby.some(b=>overlaps(p,b,M.height)))p.crouched=false;
-  const height=p.crouched?M.crouchHeight:M.height;
-  const wasGrounded=p.grounded;
-  const jump=input.jump&&!p.lastJump&&p.grounded&&!p.crouched;
-  p.lastJump=input.jump;
-  // Jump precedes friction: a correctly timed fresh press retains momentum.
-  if(jump){p.vy=M.jump;p.grounded=false;}
-  if(p.grounded){
-    const speed=Math.hypot(p.vx,p.vz);
-    const drop=Math.max(M.stopSpeed,speed)*M.friction*dt;
-    const ratio=speed?Math.max(0,speed-drop)/speed:0;p.vx*=ratio;p.vz*=ratio;
+export function targetSpeed(cmd, crouch) {
+  const base = cmd.walk ? M.walkSpeed : M.runSpeed;
+  return lerp(base, Math.min(base, M.crouchSpeed), crouch);
+}
+
+/** Source `PM_Friction`: speed-proportional drag with a stop-speed floor. */
+export function applyFriction(p, dt) {
+  const speed = Math.hypot(p.vx, p.vz);
+  if (speed < 1e-4) { p.vx = 0; p.vz = 0; return; }
+  const drop = Math.max(speed, M.stopSpeed) * M.friction * dt;
+  const scale = Math.max(0, speed - drop) / speed;
+  p.vx *= scale; p.vz *= scale;
+}
+/** Source `PM_Accelerate` (ground). */
+export function accelerate(p, dx, dz, wishSpeed, accel, dt) {
+  const add = wishSpeed - (p.vx * dx + p.vz * dz);
+  if (add <= 0) return;
+  const gain = Math.min(add, accel * wishSpeed * dt);
+  p.vx += dx * gain; p.vz += dz * gain;
+}
+/** Source `PM_AirAccelerate`: projection is measured against a 30 u/s cap, gain uses the full wish speed. */
+export function airAccelerate(p, dx, dz, wishSpeed, accel, dt) {
+  const capped = Math.min(wishSpeed, M.maxAirSpeed);
+  const add = capped - (p.vx * dx + p.vz * dz);
+  if (add <= 0) return;
+  const gain = Math.min(add, accel * wishSpeed * dt);
+  p.vx += dx * gain; p.vz += dz * gain;
+}
+
+function contactPush(p, collider, dx, dy, dz, radius, height, contacts) {
+  p.x += dx; p.y += dy; p.z += dz;
+  return collider.resolveCapsule(p, radius, height, contacts, dx, dy, dz);
+}
+function clipVelocity(p, n) {
+  const into = p.vx * n.x + p.vy * n.y + p.vz * n.z;
+  if (into < 0) { p.vx -= n.x * into; p.vy -= n.y * into; p.vz -= n.z * into; }
+}
+function bestGround(contacts) {
+  let best = null;
+  for (const c of contacts) if (c.y >= M.walkableNormalY && (!best || c.y > best.y)) best = c;
+  return best;
+}
+function setGround(p, n) { p.gnx = n.x; p.gny = n.y; p.gnz = n.z; }
+
+/** Lowers the capsule in small increments until it rests on walkable ground (stairs / ramps / curbs). */
+function snapDown(p, collider, radius, height, maxDrop) {
+  const startY = p.y, contacts = [];
+  for (let dropped = 0; dropped < maxDrop;) {
+    const d = Math.min(0.08, maxDrop - dropped);
+    p.y -= d; dropped += d; contacts.length = 0;
+    if (collider.resolveCapsule(p, radius, height, contacts, 0, -1, 0)) {
+      const ground = bestGround(contacts);
+      if (ground) { setGround(p, ground); return true; }
+    }
   }
-  const length=Math.hypot(input.forward,input.right);
-  if(length>0){
-    const f=input.forward/Math.max(1,length),r=input.right/Math.max(1,length);
-    const wx=-Math.sin(input.yaw)*f+Math.cos(input.yaw)*r;
-    const wz=-Math.cos(input.yaw)*f-Math.sin(input.yaw)*r;
-    const wishSpeed=p.crouched?M.crouchSpeed:input.walk?M.walkSpeed:M.speed;
-    const add=(p.grounded?wishSpeed:M.airWishCap)-(p.vx*wx+p.vz*wz);
-    if(add>0){const acceleration=Math.min(add,(p.grounded?M.acceleration:M.airAcceleration)*wishSpeed*dt);p.vx+=wx*acceleration;p.vz+=wz*acceleration;}
+  p.y = startY;
+  return false;
+}
+
+/**
+ * Curb / stair climbing. A capsule's round base cannot roll over a riser edge, so (like Source's hull step
+ * logic) we find the tread height ahead with BVH rays, lift the capsule onto it and advance until its
+ * centre is over the tread. The positional pop is reported in `events.step` so the camera can smooth it.
+ */
+function tryStepUp(p, collider, radius, height, from, dx, dz) {
+  const intended = Math.hypot(dx, dz);
+  if (intended < 1e-6) return null;
+  const blocked = { x: p.x, y: p.y, z: p.z };
+  const dirX = dx / intended, dirZ = dz / intended;
+  let top = -Infinity;
+  for (const lateral of [0, 0.2, -0.2]) {
+    const ox = from.x + dirX * (radius + 0.04) - dirZ * lateral, oz = from.z + dirZ * (radius + 0.04) + dirX * lateral;
+    const hit = collider.raycast(ox, from.y + M.stepHeight + 0.02, oz, 0, -1, 0, M.stepHeight + 0.02);
+    if (hit && hit.ny >= M.walkableNormalY) top = Math.max(top, hit.y);
   }
-  // A safety cap bounds extreme accumulated air-strafe speed in this prototype.
-  const horizontal=Math.hypot(p.vx,p.vz);if(horizontal>9){p.vx*=9/horizontal;p.vz*=9/horizontal;}
-  p.vy-=M.gravity*dt;
-  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(p.vx),Math.abs(p.vy),Math.abs(p.vz))*dt/0.15));
-  p.grounded=false;
-  for(let n=0;n<steps;n++){
-    const sub=dt/steps;
-    for(const axis of ['x','z']){
-      const velocity=axis==='x'?'vx':'vz',old=p[axis];p[axis]+=p[velocity]*sub;
-      for(const b of index.query(p.x,p.z,1)){
-        if(!overlaps(p,b,height))continue;
-        const rise=b.max.y-p.y;
-        const raised={...p,y:b.max.y+0.001};
-        if(wasGrounded&&!jump&&rise>0&&rise<=M.step&&!index.query(p.x,p.z,1).some(other=>other.id!==b.id&&overlaps(raised,other,height))){p.y=raised.y;continue;}
-        p[axis]=old;p[velocity]=0;break;
+  const rise = top - from.y;
+  if (!(rise > 0.02 && rise <= M.stepHeight + 0.005)) return null;
+  const face = collider.raycast(from.x, from.y + rise * 0.5, from.z, dirX, 0, dirZ, radius + 0.15);
+  const advance = Math.max(intended, (face ? face.distance : radius + 0.04) + 0.03);
+  p.x = from.x + dirX * advance; p.y = top + 0.002; p.z = from.z + dirZ * advance;
+  const contacts = [];
+  collider.resolveCapsule(p, radius, height, contacts, 0, 1, 0);
+  if (contacts.some(c => c.depth > 0.05 || c.y < -0.3) || !snapDown(p, collider, radius, height, 0.06)) {
+    p.x = blocked.x; p.y = blocked.y; p.z = blocked.z;
+    return null;
+  }
+  return { x: p.x - blocked.x, y: p.y - blocked.y, z: p.z - blocked.z };
+}
+
+/**
+ * Advances one command. Returns { footstep, landed, jumped } where `landed` is the downward impact speed (m/s).
+ * @param {object} p player state from createPlayer
+ * @param {object} cmd input command (forward,right,jump,crouch,walk,yaw,pitch)
+ * @param {import('./collision.js').MeshCollider} collider
+ */
+export function stepPlayer(p, cmd, collider, dt = DT) {
+  const events = { footstep: false, landed: 0, jumped: false, step: null };
+  p.yaw = cmd.yaw; p.pitch = clamp(cmd.pitch, -1.55, 1.55);
+
+  // --- crouch factor: linear ramp, standing up requires head clearance ---
+  const rate = dt / M.crouchSeconds;
+  let crouch = p.crouch + clamp((cmd.crouch ? 1 : 0) - p.crouch, -rate, rate);
+  if (crouch < p.crouch && collider.capsuleBlocked(p.x, p.y, p.z, M.radius, lerp(M.standHeight, M.crouchHeight, crouch))) crouch = p.crouch;
+  p.crouch = crouch;
+  const radius = M.radius, height = playerHeight(p);
+
+  // --- jump (fresh press only, no auto-bhop) ---
+  const startGrounded = p.grounded;
+  let jumped = false;
+  if (cmd.jump && !p.prevJump && startGrounded) {
+    p.vy = M.jumpSpeed; jumped = true; events.jumped = true;
+    const cap = M.runSpeed * M.bunnyCap, hs = Math.hypot(p.vx, p.vz);
+    if (hs > cap) { p.vx *= cap / hs; p.vz *= cap / hs; }
+  }
+  p.prevJump = cmd.jump;
+  const onGround = startGrounded && !jumped;
+
+  // --- wish velocity ---
+  const len = Math.hypot(cmd.forward, cmd.right), norm = Math.max(1, len);
+  const f = cmd.forward / norm, r = cmd.right / norm;
+  const wx = -Math.sin(cmd.yaw) * f + Math.cos(cmd.yaw) * r, wz = -Math.cos(cmd.yaw) * f - Math.sin(cmd.yaw) * r;
+  const wishLen = Math.hypot(wx, wz);
+  const wishSpeed = wishLen * targetSpeed(cmd, p.crouch);
+
+  if (onGround) {
+    applyFriction(p, dt);
+    if (wishLen > 1e-4) accelerate(p, wx / wishLen, wz / wishLen, wishSpeed, M.accelerate, dt);
+  } else if (wishLen > 1e-4) airAccelerate(p, wx / wishLen, wz / wishLen, wishSpeed, M.airAccelerate, dt);
+
+  if (!onGround) p.vy -= M.gravity * 0.5 * dt;
+  else p.vy = 0;
+  const total = Math.hypot(p.vx, p.vy, p.vz);
+  if (total > M.maxVelocity) { const k = M.maxVelocity / total; p.vx *= k; p.vy *= k; p.vz *= k; }
+
+  // --- integrate with sub-steps so nothing tunnels ---
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(p.vx), Math.abs(p.vy), Math.abs(p.vz)) * dt / 0.1));
+  const sub = dt / steps, contacts = [];
+  let groundHit = null, fall = 0;
+  for (let s = 0; s < steps; s++) {
+    let dx = p.vx * sub, dz = p.vz * sub;
+    const from = { x: p.x, y: p.y, z: p.z };
+    let dy = 0;
+    if (onGround) dy = -(p.gnx * dx + p.gnz * dz) / Math.max(0.2, p.gny);
+    if (dx !== 0 || dz !== 0 || dy !== 0) {
+      contacts.length = 0;
+      contactPush(p, collider, dx, dy, dz, radius, height, contacts);
+      const intended = Math.hypot(dx, dz), moved = Math.hypot(p.x - from.x, p.z - from.z);
+      let stepped = null;
+      if (onGround && intended > 1e-5 && moved < intended * 0.85) stepped = tryStepUp(p, collider, radius, height, from, dx, dz);
+      if (stepped) {
+        events.step = events.step ? { x: events.step.x + stepped.x, y: events.step.y + stepped.y, z: events.step.z + stepped.z } : stepped;
+        groundHit = { x: p.gnx, y: p.gny, z: p.gnz };
+      } else {
+        for (const c of contacts) {
+          clipVelocity(p, c);
+          if (c.y >= M.walkableNormalY && !onGround) groundHit = c;
+        }
+        if (onGround) { const g = bestGround(contacts); if (g) groundHit = g; }
       }
     }
-    const oldY=p.y;p.y+=p.vy*sub;
-    for(const b of index.query(p.x,p.z,1)){
-      if(!overlaps(p,b,height))continue;
-      if(p.vy<=0&&oldY>=b.max.y-0.04){p.y=b.max.y;p.grounded=true;}
-      else if(p.vy>0){p.y=b.min.y-height;}
-      else p.y=oldY;
-      p.vy=0;
+    if (!onGround) {
+      fall = Math.min(fall, p.vy);
+      contacts.length = 0;
+      contactPush(p, collider, 0, p.vy * sub, 0, radius, height, contacts);
+      for (const c of contacts) {
+        if (c.y >= M.walkableNormalY && p.vy <= 0) groundHit = c;
+        clipVelocity(p, c);
+      }
     }
-    if(p.y<=0){p.y=0;p.vy=0;p.grounded=true;}
   }
-  return p;
+
+  let grounded = !!groundHit;
+  if (grounded) setGround(p, groundHit);
+  else if (onGround && snapDown(p, collider, radius, height, M.stepHeight)) grounded = true;
+  if (grounded) {
+    if (!startGrounded || jumped) events.landed = Math.max(0, -fall);
+    p.vy = 0;
+  } else {
+    if (!onGround) p.vy -= M.gravity * 0.5 * dt;
+    p.gnx = 0; p.gny = 1; p.gnz = 0;
+  }
+  p.grounded = grounded;
+
+  // --- acoustic footsteps: walking (Shift) and crouching are silent by definition ---
+  const hs = Math.hypot(p.vx, p.vz);
+  if (grounded && !cmd.walk && p.crouch < 0.4 && hs >= M.footstepSpeed) {
+    p.stride += hs * dt;
+    if (p.stride >= M.footstepStride) { p.stride -= M.footstepStride; events.footstep = true; }
+  } else p.stride = grounded ? Math.min(p.stride, M.footstepStride * 0.5) : 0;
+  return events;
 }

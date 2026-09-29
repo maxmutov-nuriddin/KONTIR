@@ -1,25 +1,60 @@
+// Client-side prediction + server reconciliation for movement AND the weapon state machine.
+// Every command is simulated locally at once; on each snapshot the authoritative state is restored at the
+// acknowledged command and the still-unacknowledged commands are replayed on top (silently).
 import { DT, neutralInput } from '../../shared/constants.js';
-import { moveCharacter } from '../../shared/movement.js';
+import { stepPlayer } from '../../shared/movement.js';
 
 export class Prediction {
-  constructor(index){this.index=index;this.pending=[];this.seq=0;this.epoch=-1;this.character=null;this.offset={x:0,y:0,z:0};}
-  simulate(character,command,state,alive){
-    const input=state.phase==='live'&&alive?command:{...neutralInput(),yaw:command.yaw,pitch:command.pitch};
-    moveCharacter(character,input,this.index,DT);
+  /** @param {import('../../shared/collision.js').MeshCollider} collider @param {import('../WeaponManager.js').WeaponManager} weapons */
+  constructor(collider, weapons) {
+    this.collider = collider; this.weapons = weapons;
+    this.pending = []; this.seq = 0; this.epoch = -1; this.life = -1;
+    this.char = null; this.prev = null; this.offset = { x: 0, y: 0, z: 0 };
+    this.phase = 'warmup'; this.alive = false;
   }
-  command(input,state,alive){
-    // Stop generating time when unacknowledged history fills up. Server remains authoritative.
-    if(!this.character||this.pending.length>=128)return null;
-    const command={...input,seq:this.seq++};this.pending.push(command);this.simulate(this.character,command,state,alive);return command;
+  gate(phase, alive) {
+    return { canMove: alive && phase !== 'buy' && phase !== 'matchEnd', canFire: alive && (phase === 'live' || phase === 'warmup') };
   }
-  reconcile(state,id){
-    const p=state.players.find(p=>p.id===id);if(!p)return;
-    if(this.epoch!==state.epoch||this.life!==p.life||!this.character){this.epoch=state.epoch;this.life=p.life;this.pending=[];this.character={...p.char};this.offset={x:0,y:0,z:0};this.seq=Math.max(this.seq,p.ack+1);return true;}
-    const previous={...this.character};this.pending=this.pending.filter(c=>c.seq>p.ack);this.character={...p.char};
-    for(const command of this.pending)this.simulate(this.character,command,state,p.alive);
-    const error=Math.hypot(previous.x-this.character.x,previous.y-this.character.y,previous.z-this.character.z);
-    if(error>2||!p.alive)this.offset={x:0,y:0,z:0};else for(const axis of ['x','y','z'])this.offset[axis]+=previous[axis]-this.character[axis];
+  simulate(char, cmd, phase, alive, silent) {
+    const { canMove, canFire } = this.gate(phase, alive);
+    if (!alive) { char.yaw = cmd.yaw; char.pitch = Math.max(-1.55, Math.min(1.55, cmd.pitch)); return null; }
+    const input = canMove ? cmd : { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch };
+    const events = stepPlayer(char, input, this.collider, DT);
+    this.weapons.predict(cmd, { canFire }, silent);
+    return events;
+  }
+  /** Builds, records and simulates the next command. Returns { cmd, events }. */
+  command(input, viewTick) {
+    if (!this.char || this.pending.length >= 128) return null;
+    const cmd = { ...input, seq: this.seq++, viewTick };
+    this.pending.push(cmd);
+    this.prev = { ...this.char };
+    const events = this.simulate(this.char, cmd, this.phase, this.alive, false);
+    // a stair pop is not interpolated: the camera rig absorbs it with a decaying offset instead
+    if (events?.step) { this.prev.x += events.step.x; this.prev.y += events.step.y; this.prev.z += events.step.z; }
+    return { cmd, events };
+  }
+  reconcile(state, id) {
+    const me = state.players.find(p => p.id === id);
+    if (!me) return false;
+    this.phase = state.phase; this.alive = me.alive;
+    if (me.inv && this.weapons.team !== me.team) this.weapons.setTeam(me.team);
+    if (this.epoch !== state.epoch || this.life !== me.life || !this.char) {
+      this.epoch = state.epoch; this.life = me.life; this.pending = []; this.char = { ...me.char }; this.prev = { ...me.char };
+      this.offset = { x: 0, y: 0, z: 0 }; this.seq = Math.max(this.seq, me.ack + 1);
+      if (me.inv) this.weapons.load(me.inv);
+      return true;
+    }
+    const before = { ...this.char };
+    this.pending = this.pending.filter(c => c.seq > me.ack);
+    this.char = { ...me.char };
+    if (me.inv) this.weapons.load(me.inv);
+    for (const cmd of this.pending) this.simulate(this.char, cmd, state.phase, me.alive, true);
+    const error = Math.hypot(before.x - this.char.x, before.y - this.char.y, before.z - this.char.z);
+    if (error > 2.5 || !me.alive) this.offset = { x: 0, y: 0, z: 0 };
+    else { this.offset.x += before.x - this.char.x; this.offset.y += before.y - this.char.y; this.offset.z += before.z - this.char.z; }
+    this.prev = { ...this.char, x: this.char.x, y: this.char.y, z: this.char.z };
     return false;
   }
-  smooth(dt){for(const axis of ['x','y','z'])this.offset[axis]*=Math.exp(-18*dt);}
+  smooth(dt) { const k = Math.exp(-14 * dt); this.offset.x *= k; this.offset.y *= k; this.offset.z *= k; }
 }

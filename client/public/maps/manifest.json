@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "maps": [
+    {
+      "id": "sahara",
+      "name": "SAHARA OUTPOST",
+      "subtitle": "Cho‘l shahri. Uch yo‘lak, ko‘tarilgan A hududi.",
+      "file": "sahara.glb",
+      "env": {
+        "sky": "day",
+        "sun": [
+          -0.45,
+          0.72,
+          0.38
+        ],
+        "sunColor": "#ffe1b0",
+        "sunIntensity": 3.4,
+        "exposure": 1,
+        "fog": "#d9c9a6",
+        "fogDensity": 0.006,
+        "ambient": "#b7c8d6"
+      },
+      "bounds": {
+        "x": 90,
+        "z": 114
+      },
+      "builtIn": true
+    },
+    {
+      "id": "harbor",
+      "name": "IRON HARBOR",
+      "subtitle": "Konteyner terminali. Omborxona va kran maydoni.",
+      "file": "harbor.glb",
+      "env": {
+        "sky": "overcast",
+        "sun": [
+          0.4,
+          0.58,
+          -0.35
+        ],
+        "sunColor": "#e8efff",
+        "sunIntensity": 2.6,
+        "exposure": 1,
+        "fog": "#a8b6bc",
+        "fogDensity": 0.009,
+        "ambient": "#a6b6c4"
+      },
+      "bounds": {
+        "x": 90,
+        "z": 114
+      },
+      "builtIn": true
+    }
+  ]
+}
