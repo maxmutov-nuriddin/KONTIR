@@ -216,14 +216,15 @@ export class UI {
   }
   /** Sign in / register / demo. onSubmit(mode, username, password) resolves to an error message or null. */
   auth({ canClose, onSubmit, onDemo }) {
-    this.dialog(`<small class="eyebrow">KONTIR</small><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
+    this.dialog(`<div class="auth-brand"><b>◩</b> KONTIR</div><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
       <div class="auth-tabs"><button data-am="login" class="on">KIRISH</button><button data-am="register">RO‘YXATDAN O‘TISH</button></div>
       <form id="auth-form"><label for="auth-user">Foydalanuvchi nomi</label><input id="auth-user" maxlength="16" autocomplete="username" spellcheck="false" required>
         <label for="auth-pass">Parol</label><input id="auth-pass" type="password" maxlength="64" autocomplete="current-password" required>
         <div id="auth-rep" hidden><label for="auth-pass2">Parolni takrorlang</label><input id="auth-pass2" type="password" maxlength="64" autocomplete="new-password"></div>
         <small class="auth-hint">Nom: 3–16 ta lotin harf, raqam yoki _ . Parol: kamida 6 belgi. E-mail kerak emas.</small>
         <div id="auth-error" role="alert"></div><button id="auth-submit" class="primary full">KIRISH</button></form>
-      <button id="auth-demo" class="text-button">DEMO BILAN O‘YNASH</button>`, !canClose);
+      <div class="auth-or"><span>yoki</span></div><button id="auth-demo" class="secondary full">DEMO BILAN O‘YNASH</button>`, !canClose);
+    this.modal.classList.add('auth-modal'); this.modal.addEventListener('close', () => this.modal.classList.remove('auth-modal'), { once: true });
     let mode = 'login';
     const setMode = m => {
       mode = m; document.querySelectorAll('[data-am]').forEach(b => b.classList.toggle('on', b.dataset.am === m));

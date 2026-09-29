@@ -170,11 +170,31 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   }
   function bindAccount(socket, key) {
     const prev = socket.data.account;
-    if (prev) { const set = online.get(prev); set?.delete(socket); if (set && !set.size) online.delete(prev); }
+    if (prev) { const set = online.get(prev); set?.delete(socket); if (set && !set.size) { online.delete(prev); partyLeave(prev); } }
     socket.data.account = key;
     if (key) { if (!online.has(key)) online.set(key, new Set()); online.get(key).add(socket); }
     if (prev && prev !== key) notifyFriends(prev);
     if (key) notifyFriends(key);
+  }
+  // ---- party: leader + up to 4 friends; when the leader enters a room the members follow onto the same team
+  const partyOf = new Map(), parties = new Map(); // member key -> leader key; leader key -> Set(member keys incl. leader)
+  const nameOf = k => accounts.users[k]?.name || k;
+  function partyUpdate(leader) {
+    const set = parties.get(leader), payload = set ? { leader: nameOf(leader), members: [...set].map(nameOf) } : null;
+    for (const k of set || []) for (const s of online.get(k) || []) s.emit('party:update', payload);
+  }
+  function partyLeave(key) {
+    const leader = partyOf.get(key); if (!leader) return;
+    const set = parties.get(leader);
+    if (leader === key) { parties.delete(leader); for (const k of set || []) { partyOf.delete(k); for (const s of online.get(k) || []) s.emit('party:update', null); } return; }
+    set?.delete(key); partyOf.delete(key); for (const s of online.get(key) || []) s.emit('party:update', null);
+    if (set && set.size < 2) partyLeave(leader); else partyUpdate(leader);
+  }
+  /** Leader got a room: members who are free join the same room and team. */
+  function partyFollow(socket, room, team) {
+    const key = socket.data.account; if (!key || partyOf.get(key) !== key) return;
+    room.partyLeader = key;
+    for (const k of parties.get(key) || []) if (k !== key) for (const s of online.get(k) || []) if (!s.data.room) s.emit('party:follow', { code: room.code, team });
   }
   const presence = socket => { if (socket.data.account) notifyFriends(socket.data.account); };
   function leave(socket) {
@@ -233,7 +253,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         }
         while (quick && room.isFull() && socket.connected) room = await matchmaker.quick(mapId, { timing });
         if (!socket.connected || joinVersion !== (socket.data.joinVersion || 0)) return;
-        if (room.practice && !practice) return ack({ error: 'Mashq xonasi shaxsiy.' });
+        if (room.practice && !practice && !(room.partyLeader && partyOf.get(socket.data.account) === room.partyLeader)) return ack({ error: 'Mashq xonasi shaxsiy.' });
         if (room.isFull()) return ack({ error: 'Xona to‘la (5 T + 5 CT).' });
         const name = playerName(socket, request?.name);
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
@@ -245,7 +265,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
           if (counts) counts[player.team] = Math.max(1, counts[player.team]);   // the human counts toward their side
           room.fillBots(counts); room.start();
         }
-        socket.data.room = room.code; socket.join(room.code); presence(socket);
+        socket.data.room = room.code; socket.join(room.code); presence(socket); partyFollow(socket, room, player.team);
         ack({ ok: true, id: socket.id, code: room.code, team: player.team, snapshot: room.snapshot(socket.id) });
       } catch (error) { if (!quiet) console.error('Join failed:', error); ack({ error: 'Xonaga ulanib bo‘lmadi.' }); }
       finally { if (ownsJoin) socket.data.joining = false; }
@@ -306,6 +326,24 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('friends:respond', (req, ack) => acct(ack, key => { const tk = accounts.respond(key, req?.name, req?.accept === true); notifyFriends(tk); notifyFriends(key); return {}; }));
     socket.on('friends:remove', (name, ack) => acct(ack, key => { const tk = accounts.unfriend(key, name); notifyFriends(tk); notifyFriends(key); return {}; }));
     socket.on('dm:send', (req, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const { to, msg } = accounts.message(key, req?.to, req?.text); for (const k of [to, key]) for (const s of online.get(k) || []) s.emit('dm', { with: k === to ? msg.from : accounts.users[to].name, msg }); return {}; }));
+    socket.on('party:invite', (name, ack) => acct(ack, key => {
+      const tk = String(name ?? '').toLowerCase();
+      if (!accounts.areFriends(key, tk) || !online.has(tk)) throw new Error('offline');
+      if (partyOf.has(tk)) throw new Error('inparty');
+      const leader = partyOf.get(key) || key; if ((parties.get(leader)?.size || 1) >= 5) throw new Error('full');
+      for (const s of online.get(tk)) s.emit('party:invite', { from: nameOf(key), leader: nameOf(leader) });
+      return {};
+    }));
+    socket.on('party:accept', (name, ack) => acct(ack, key => {
+      const lk = String(name ?? '').toLowerCase(), leader = partyOf.get(lk) || lk;
+      if (!accounts.areFriends(key, lk) || !online.has(leader)) throw new Error('offline');
+      partyLeave(key);
+      if (!parties.has(leader)) { parties.set(leader, new Set([leader])); partyOf.set(leader, leader); }
+      const set = parties.get(leader); if (set.size >= 5) throw new Error('full');
+      set.add(key); partyOf.set(key, leader); partyUpdate(leader);
+      return {};
+    }));
+    socket.on('party:leave', () => { if (socket.data.account) partyLeave(socket.data.account); });
     socket.on('dm:history', (name, ack) => acct(ack, key => ({ messages: accounts.history(key, name) })));
     socket.on('rtc:signal', req => {
       const key = socket.data.account, tk = String(req?.to ?? '').toLowerCase();
@@ -358,7 +396,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const player = room.add(s.id, e, i % 2 ? 'COUNTER_TERRORIST' : 'TERRORIST');
       if (!player) return;
       applyLoadout(room, player, s.data.loadout);
-      s.data.room = room.code; s.data.queued = false; s.join(room.code); presence(s);
+      s.data.room = room.code; s.data.queued = false; s.join(room.code); presence(s); partyFollow(s, room, player.team);
     });
     room.fillBots(); room.start();
     for (const s of order) {

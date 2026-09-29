@@ -681,7 +681,7 @@ export class Room {
     const canMove = p.alive && this.phase !== 'buy' && this.phase !== 'matchEnd';
     p.lastLook.yaw = cmd.yaw; p.lastLook.pitch = cmd.pitch;
     const movement = !canMove ? { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch } : cmd;
-    if (!p.alive) { p.char.yaw = cmd.yaw; p.char.pitch = clamp(cmd.pitch, -1.55, 1.55); return; }
+    if (!p.alive) { p.char.vx = p.char.vz = 0; return; } // the body stays put: no turning / leg motion from a dead player's input
     const ev = stepPlayer(p.char, movement, this.collider);
     if (ev.footstep) { this.emit('footstep', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z }); this.noise(p, 16); }
     if (ev.jumped) this.emit('jump', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z });

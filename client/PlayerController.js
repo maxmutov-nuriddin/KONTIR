@@ -145,8 +145,8 @@ export class PlayerController {
     if (acts.includes('chat') || acts.includes('teamchat')) { e?.preventDefault?.(); this.clearInput(); this.callbacks.chat?.(acts.includes('teamchat') && !acts.includes('chat')); return; }
     this.keys.add(code);
     for (const a of acts) {
-      if (a === 'attack') { this.fire = true; this.firePressed = true; }
-      else if (a === 'attack2') this.fire2 = true;
+      if (a === 'attack') { this.fire = true; this.firePressed = true; this.callbacks.cycle?.(1); }
+      else if (a === 'attack2') { this.fire2 = true; this.callbacks.cycle?.(-1); }
       else if (a === 'jump') this.edges.jump = true;
       else if (a === 'quick') this.edges.quick = true;
       else if (a === 'drop') this.edges.drop = true;

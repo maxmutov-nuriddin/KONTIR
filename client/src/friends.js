@@ -3,6 +3,7 @@
 // Without a TURN server some strict NATs cannot connect — the call then ends with a notice.
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STATUS = { lobby: 'LOBBIDA', search: 'O‘YIN QIDIRMOQDA', game: 'O‘YINDA', offline: 'OFLAYN' };
+const PARTY_ERR = { offline: 'Do‘st onlayn emas.', inparty: 'U allaqachon partiyada.', full: 'Partiya to‘la (5).' };
 const ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 
 export class Friends {
@@ -19,6 +20,11 @@ export class Friends {
       else if (msg.from.toLowerCase() !== this.profile.name.toLowerCase()) { this.unread.set(other, (this.unread.get(other) || 0) + 1); this.toast(`✉ ${msg.from}: ${msg.text.slice(0, 60)}`); this.renderRail(); if (this.open) this.render(); }
     });
     s.on('rtc:signal', m => this.signal(m));
+    // party: invites, roster (lobby party slots) and following the leader into rooms
+    this.party = null;
+    s.on('party:update', p => { this.party = p; this.renderParty(); if (this.open && !this.chatWith) this.render(); });
+    s.on('party:invite', ({ from, leader }) => this.invitePrompt(from, leader));
+    s.on('party:follow', f => this.onFollow?.(f));
   }
   // ------------------------------------------------------------------------------------------------ data
   async refresh() {
@@ -28,7 +34,7 @@ export class Friends {
   }
   async act(event, payload, ok) {
     try { await this.network.request(event, payload); if (ok) this.toast(ok); await this.refresh(); }
-    catch (e) { this.toast({ nouser: 'Bunday o‘yinchi topilmadi.', already: 'Allaqachon do‘stingiz.', self: 'O‘zingizni qo‘sha olmaysiz.', slow: 'Juda ko‘p urinish. Bir daqiqa kuting.', notfriend: 'Faqat do‘stlarga yozish mumkin.' }[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'); }
+    catch (e) { this.toast({ nouser: 'Bunday o‘yinchi topilmadi.', already: 'Allaqachon do‘stingiz.', self: 'O‘zingizni qo‘sha olmaysiz.', slow: 'Juda ko‘p urinish. Bir daqiqa kuting.', notfriend: 'Faqat do‘stlarga yozish mumkin.', ...PARTY_ERR }[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'); }
   }
   // ------------------------------------------------------------------------------------------------ view
   toggle(force) { this.open = force ?? !this.open; this.el.hidden = !this.open; if (this.open) { this.render(); this.refresh(); } }
@@ -53,7 +59,7 @@ export class Friends {
       <form class="fr-search"><input id="fr-q" maxlength="16" placeholder="Foydalanuvchi nomini qidiring" spellcheck="false" autocomplete="off" value="${esc(this.query || '')}"><button class="primary">IZLASH</button></form><div id="fr-results">${this.resultsHTML()}</div>
       ${incoming.length ? `<small class="fr-h">SO‘ROVLAR</small>${incoming.map(n => `<div class="fr-row"><span class="av">${esc(n[0].toUpperCase())}</span><b>${esc(n)}</b><button data-accept="${esc(n)}" class="ok">QABUL</button><button data-decline="${esc(n)}">RAD</button></div>`).join('')}` : ''}
       <small class="fr-h">DO‘STLAR</small>${friends.length ? [...friends].sort((a, b) => order[a.status] - order[b.status]).map(f => `<div class="fr-row ${f.status}"><span class="av">${esc(f.name[0].toUpperCase())}<i></i></span><div><b>${esc(f.name)}</b><small>${STATUS[f.status]}</small></div>
-        <button data-chat="${esc(f.name)}" title="Xabar">✉${this.unread.get(f.name) ? `<i class="badge">${this.unread.get(f.name)}</i>` : ''}</button><button data-call="${esc(f.name)}" title="Ovozli qo‘ng‘iroq" ${f.status === 'offline' || this.call ? 'disabled' : ''}>🎙</button><button data-remove="${esc(f.name)}" title="O‘chirish">×</button></div>`).join('') : '<p class="fr-note">Hali do‘stlar yo‘q. Yuqorida nom bo‘yicha qidiring.</p>'}`;
+        <button data-chat="${esc(f.name)}" title="Xabar">✉${this.unread.get(f.name) ? `<i class="badge">${this.unread.get(f.name)}</i>` : ''}</button><button data-invite="${esc(f.name)}" title="Partiyaga taklif" ${f.status === 'offline' || this.party?.members.includes(f.name) ? 'disabled' : ''}>＋</button><button data-call="${esc(f.name)}" title="Ovozli qo‘ng‘iroq" ${f.status === 'offline' || this.call ? 'disabled' : ''}>🎙</button><button data-remove="${esc(f.name)}" title="O‘chirish">×</button></div>`).join('') : '<p class="fr-note">Hali do‘stlar yo‘q. Yuqorida nom bo‘yicha qidiring.</p>'}`;
     const $ = q => this.el.querySelector(q);
     $('[data-close]').onclick = () => this.toggle(false);
     // typed text and focus survive re-renders (presence updates arrive at any moment)
@@ -67,6 +73,26 @@ export class Friends {
     this.el.querySelectorAll('[data-remove]').forEach(b => b.onclick = () => { if (confirm(`${b.dataset.remove} — do‘stlardan o‘chirilsinmi?`)) this.act('friends:remove', b.dataset.remove); });
     this.el.querySelectorAll('[data-chat]').forEach(b => b.onclick = () => this.openChat(b.dataset.chat));
     this.el.querySelectorAll('[data-call]').forEach(b => b.onclick = () => this.startCall(b.dataset.call));
+    this.el.querySelectorAll('[data-invite]').forEach(b => b.onclick = () => this.act('party:invite', b.dataset.invite, 'Taklif yuborildi.'));
+  }
+  invitePrompt(from, leader) {
+    const el = document.createElement('div'); el.className = 'party-invite';
+    el.innerHTML = `<span>👥 <b>${esc(from)}</b> sizni partiyaga taklif qildi</span><button class="ok" data-y>QO‘SHILISH</button><button data-n>RAD</button>`;
+    document.body.append(el); this.sound?.();
+    const close = () => el.remove(); const t = setTimeout(close, 30000);
+    el.querySelector('[data-n]').onclick = () => { clearTimeout(t); close(); };
+    el.querySelector('[data-y]').onclick = async () => { clearTimeout(t); close(); await this.act('party:accept', leader); };
+  }
+  /** Lobby party box: leader first, then members; a leave button when in a party. */
+  renderParty() {
+    const slots = document.querySelector('.party-slots'), count = document.querySelector('#party-count'); if (!slots) return;
+    const others = (this.party?.members || []).filter(n => n.toLowerCase() !== this.profile.name.toLowerCase());
+    count.textContent = `${1 + others.length} / 5`;
+    slots.innerHTML = others.map(n => `<i class="member" title="${esc(n)}${this.party.leader === n ? ' · lider' : ''}">${esc(n[0].toUpperCase())}${this.party.leader === n ? '<em>★</em>' : ''}</i>`).join('')
+      + Array.from({ length: 4 - others.length }, () => '<i class="add" title="Do‘st taklif qilish">+</i>').join('')
+      + (this.party ? '<button class="party-leave" title="Partiyadan chiqish">×</button>' : '');
+    slots.querySelectorAll('.add').forEach(b => b.onclick = () => this.toggle(true));
+    slots.querySelector('.party-leave')?.addEventListener('click', () => { this.network.socket.emit('party:leave'); this.party = null; this.renderParty(); });
   }
   resultsHTML() {
     const users = this.results; if (!users) return '';

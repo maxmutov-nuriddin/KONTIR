@@ -45,6 +45,16 @@ try {
   for (const p of [a, b]) await p.waitForFunction(() => document.querySelector('#call-bar')?.textContent.startsWith('🎙') && !document.querySelector('#call-bar').textContent.includes('…'), null, { timeout: 20000 });
   await a.click('#call-bar [data-end]');
   await b.waitForFunction(() => document.querySelector('#call-bar').hidden, null, { timeout: 10000 });
+  // party: A invites B, B accepts; A starts a bot match and B follows onto A's team
+  await b.click('#friends [data-back]');
+  await a.click('#friends [data-back]'); await a.click('[data-invite="Burgut"]');
+  await b.locator('.party-invite [data-y]').waitFor({ timeout: 10000 }); await b.click('.party-invite [data-y]');
+  await a.waitForFunction(() => document.querySelector('#party-count').textContent.startsWith('2'), null, { timeout: 10000 });
+  for (const p of [a, b]) await p.click('#friends [data-close]');
+  await a.click('#play-nav'); await a.click('[data-mode="practice"]'); await a.click('#practice');
+  for (const p of [a, b]) await p.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
+  const teamOf = p => p.evaluate(() => { const s = window.__KONTIR__; return s.state.players.find(x => x.id === s.id).team; });
+  assert.equal(await teamOf(a), await teamOf(b), 'party members play on the same team');
   assert.deepEqual(errors, []);
-  console.log('PASS: friends search/request/accept, presence, direct messages, WebRTC voice call');
+  console.log('PASS: friends search/request/accept, presence, direct messages, WebRTC voice call, party invite + follow');
 } finally { await browser.close(); await server.close(); }

@@ -374,3 +374,20 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 #call-bar[hidden] { display: none; } #call-bar.talking { border-color: #8ee07a; box-shadow: 0 0 0 3px #5dcf6b55; }
 #call-bar button { height: 30px; padding: 0 12px; border: 1px solid #ffffff2a; border-radius: 15px; color: #fff; font: 800 11px 'DM Sans', sans-serif; letter-spacing: 1px; }
 #call-bar button.ok { border-color: #5dcf6b; background: #5dcf6b33; } #call-bar [data-end] { border-color: #e04a3a; background: #e04a3a33; }
+/* sign-in / register card */
+input[type=password] { width: 100%; height: 42px; background: #ffffff10; border: 1px solid #ffffff2a; color: inherit; padding: 0 12px; border-radius: 3px; font: 14px 'DM Sans', sans-serif; }
+dialog.auth-modal { width: min(440px, 94vw); padding: 28px 30px 24px; }
+.auth-modal h2 { font-size: 34px; } .auth-modal p { font-size: 13px; line-height: 1.5; }
+.auth-brand { font: 800 13px 'DM Sans', sans-serif; letter-spacing: 3px; color: var(--gold); } .auth-brand b { font-size: 16px; }
+.auth-modal input:focus { outline: none; border-color: var(--gold); background: #ffffff16; }
+.auth-modal #auth-form label { margin: 12px 0 6px; }
+.auth-modal .auth-tabs { margin: 16px 0 6px; } .auth-modal .auth-tabs button { padding: 10px; }
+.auth-modal .primary.full { margin-top: 10px; height: 44px; }
+.auth-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: #6f7d77; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: #ffffff1a; }
+#auth-demo.full { width: 100%; height: 40px; margin: 0; }
+.party-invite { position: fixed; top: 70px; left: 50%; z-index: 45; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border: 1px solid var(--gold); border-radius: 6px; background: #0b1112f2; color: #e6ece9; font: 600 13px 'DM Sans', sans-serif; box-shadow: 0 12px 40px #000a; }
+.party-invite button { height: 30px; padding: 0 12px; border: 1px solid #ffffff2a; border-radius: 3px; color: #fff; font: 800 11px 'DM Sans', sans-serif; letter-spacing: 1px; } .party-invite .ok { border-color: #5dcf6b; background: #5dcf6b33; }
+.party-slots { position: relative; } .party-slots i.member { position: relative; background: #2d4a3f; color: #fff; font-style: normal; font-weight: 800; } .party-slots i.member em { position: absolute; top: -6px; right: -4px; color: var(--gold); font-size: 10px; font-style: normal; }
+.party-slots i.add { cursor: pointer; } .party-slots i.add:hover { border-color: var(--gold); color: var(--gold); }
+.party-leave { margin-left: 6px; width: 26px; height: 26px; border: 1px solid #e04a3a88; border-radius: 50%; color: #ff8a7a; }

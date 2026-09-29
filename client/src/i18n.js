@@ -82,6 +82,10 @@ const D = {
   'O‘zingizni qo‘sha olmaysiz.': ['Нельзя добавить себя.', 'You cannot add yourself.'], 'Faqat do‘stlarga yozish mumkin.': ['Писать можно только друзьям.', 'You can only message friends.'],
   'Mikrofonga ruxsat berilmadi.': ['Нет доступа к микрофону.', 'Microphone access denied.'], 'Qo‘ng‘iroq tugadi.': ['Звонок завершён.', 'Call ended.'], 'Ovozli ulanish o‘rnatilmadi (tarmoq/NAT).': ['Не удалось установить голосовую связь (сеть/NAT).', 'Voice connection failed (network/NAT).'],
   'MIC': ['МИК', 'MIC'], 'MIC O‘CHIQ': ['МИК ВЫКЛ', 'MIC OFF'], 'TUGATISH': ['ЗАВЕРШИТЬ', 'HANG UP'],
+  'yoki': ['или', 'or'],
+  'Partiyaga taklif': ['Пригласить в пати', 'Invite to party'], 'Taklif yuborildi.': ['Приглашение отправлено.', 'Invite sent.'], 'QO‘SHILISH': ['ПРИСОЕДИНИТЬСЯ', 'JOIN'],
+  'Do‘st onlayn emas.': ['Друг не в сети.', 'Friend is offline.'], 'U allaqachon partiyada.': ['Уже в пати.', 'Already in a party.'], 'Partiya to‘la (5).': ['Пати заполнено (5).', 'Party is full (5).'],
+  'Partiya lideriga qo‘shilmoqda…': ['Присоединение к лидеру пати…', 'Joining your party leader…'], 'Partiyadan chiqish': ['Покинуть пати', 'Leave party'], 'Do‘st taklif qilish': ['Пригласить друга', 'Invite a friend'],
   // accounts
   'KIRISH': ['ВХОД', 'SIGN IN'], 'RO‘YXATDAN O‘TISH': ['РЕГИСТРАЦИЯ', 'REGISTER'], 'DEMO BILAN O‘YNASH': ['ИГРАТЬ В ДЕМО', 'PLAY AS DEMO'], 'CHIQISH': ['ВЫЙТИ', 'SIGN OUT'],
   'Foydalanuvchi nomi': ['Имя пользователя', 'Username'], 'Parol': ['Пароль', 'Password'], 'Parolni takrorlang': ['Повторите пароль', 'Repeat password'],

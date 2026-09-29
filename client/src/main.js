@@ -50,6 +50,8 @@ let serverGains = null;
 const AUTH_ERRORS = { username: 'Nom noto‘g‘ri: 3–16 ta lotin harf, raqam yoki _.', password: 'Parol 6–64 belgidan iborat bo‘lsin.', taken: 'Bu nom band. Boshqasini tanlang.', credentials: 'Nom yoki parol noto‘g‘ri.', slow: 'Juda ko‘p urinish. Bir daqiqa kuting.' };
 network.socket.on('connect', () => { const tk = getToken(); if (tk && !profile.demo) network.socket.emit('auth:resume', tk, r => { if (r?.error) signOut(false); else friends.refresh(); }); });
 const friends = new Friends({ network, profile, toast: t => ui.toast(t), openAuth: () => openAuth(), sound: () => audio.click?.(), inGame: () => playing });
+// party member: the leader entered a room -> join the same room on the leader's team
+friends.onFollow = f => { if (playing || joining || !f?.code) return; if (searchingMM) stopSearch(true); team = f.team === 'COUNTER_TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'; ui.toast('Partiya lideriga qo‘shilmoqda…'); join({ code: f.code, name: profile.name }); };
 // keep the account online for friends: reconnect after an unexpected drop (the server re-binds on auth:resume)
 network.socket.on('disconnect', reason => { if (reason !== 'io client disconnect' && !profile.demo) setTimeout(() => { if (!network.socket.connected) network.connect().catch(() => {}); }, 3000); });
 network.socket.on('account:match', r => { if (profile.demo || !r?.profile) return; serverGains = r.gains; adopt(profile, r.profile); refreshLobby(); });
@@ -265,6 +267,8 @@ function openBuy() {
 
 // ---------------------------------------------------------------------------------------------- comms: chat (Y / U), radio (Z), ping (X / middle mouse)
 const RADIO = ['Hujumga!', 'Orqaga chekinamiz', 'Meni yopib turing', 'Dushman ko‘rindi!', 'Hudud toza', 'Yordam kerak!', 'Tushunarli', 'Yo‘q', 'Bombani A ga olib boramiz', 'Bombani B ga olib boramiz'].slice(0, 9);
+let specPick = 0, deadView = false;
+controller.on('cycle', d => { if (deadView) specPick += d; });
 controller.on('voice', down => friends.setPTT(down));
 controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, text => network.socket.emit('chat', { text, team: teamOnly }), () => {}); })
   .on('radio', () => { if (!playing) return; controller.radioOpen = !controller.radioOpen; ui.radioMenu(controller.radioOpen ? RADIO : null); })
@@ -313,13 +317,15 @@ document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (se
 const botCfg = { t: 5, ct: 5, difficulty: 'medium', ...JSON.parse(store.get('bots', '{}') || '{}') };
 const icon = (wid, fin) => weaponIcon(wid, fin || 'standard');
 const INVENTORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'awp', 'deagle', 'usp', 'glock', 'galil', 'famas', 'sg553', 'aug', 'ssg08', 'mp9', 'mac10', 'ump45', 'mp7', 'p90', 'nova', 'xm1014', 'mag7', 'sawedoff', 'negev', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'];
+// news in all three languages (the i18n observer only knows fixed UI phrases)
 const NEWS = [
-  { tag: 'YANGILANISH', title: 'CS2 uslubidagi lobbi', text: 'Yangi bosh menyu: operatoringiz xaritada turadi, yuqorida INVENTAR / LOADOUT / O‘YNASH / DO‘KON / YANGILIKLAR. Demo profil avtomatik yaratiladi.' },
-  { tag: 'BOTLAR', title: 'Botlarga qarshi rejim', text: 'Har tomonda 0–5 bot va 4 qiyinlik darajasi. Botlar endi granata otadi va ovozga buriladi.' },
-  { tag: 'MATCHMAKING', title: 'Real o‘yinchilar bilan', text: 'COMPETITIVE va CASUAL navbati: xaritalar puli, “O‘yiningiz tayyor!” va qabul qilish oynasi.' },
-  { tag: 'ARSENAL', title: '35 qurol, realistik reload', text: 'Magazin qo‘l bilan almashtiriladi, zatvor va slayd harakatlari o‘z ovozlari bilan. F — qurolni ko‘rish.' },
-  { tag: 'XARITALAR', title: 'Sarob, Changtepa, Qishloq, Ombor', text: 'Klassik layoutlar: palace, long A, banana, A main va boshqalar.' },
+  { tag: ['YANGILANISH', 'ОБНОВЛЕНИЕ', 'UPDATE'], title: ['Do‘stlar, partiya va ovozli chat', 'Друзья, пати и голосовой чат', 'Friends, party and voice chat'], text: ['Do‘stlarni qidiring, partiyaga taklif qiling va bitta jamoada o‘ynang. Shaxsiy xabarlar va ovozli qo‘ng‘iroq (o‘yinda V — gapirish).', 'Ищите друзей, приглашайте в пати и играйте в одной команде. Личные сообщения и голосовые звонки (в игре V — говорить).', 'Find friends, invite them to your party and play on one team. Direct messages and voice calls (V to talk in a match).'] },
+  { tag: ['AKKAUNT', 'АККАУНТ', 'ACCOUNT'], title: ['Login va parol', 'Логин и пароль', 'Username and password'], text: ['XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi.', 'XP, рейтинг, монеты и скины хранятся на сервере. В демо прогресс не сохраняется.', 'XP, rating, coins and skins are stored on the server. Demo progress is not saved.'] },
+  { tag: ['SOZLAMALAR', 'НАСТРОЙКИ', 'SETTINGS'], title: ['Tugmalar va sichqoncha', 'Клавиши и мышь', 'Keys and mouse'], text: ['Har bir amal uchun tugmani o‘zingiz tanlang; sezgirlik, scope sezgirligi, Y teskari, raw input.', 'Назначайте клавиши на любое действие; чувствительность, прицел, инверсия Y, raw input.', 'Rebind every action; sensitivity, scoped sensitivity, invert Y, raw input.'] },
+  { tag: ['BOTLAR', 'БОТЫ', 'BOTS'], title: ['Botlarga qarshi rejim', 'Режим против ботов', 'Versus bots'], text: ['Har tomonda 0–5 bot va 4 qiyinlik darajasi. Botlar granata otadi va ovozga buriladi.', 'До 5 ботов с каждой стороны и 4 уровня сложности. Боты бросают гранаты и реагируют на звук.', '0–5 bots per side and 4 difficulty levels. Bots throw grenades and react to sound.'] },
+  { tag: ['XARITALAR', 'КАРТЫ', 'MAPS'], title: ['Sarob, Changtepa, Qishloq, Ombor', 'Sarob, Changtepa, Qishloq, Ombor', 'Sarob, Changtepa, Qishloq, Ombor'], text: ['Klassik layoutlar: palace, long A, banana, A main va boshqalar.', 'Классические планировки: palace, long A, banana, A main и другие.', 'Classic layouts: palace, long A, banana, A main and more.'] },
 ];
+const newsFor = () => { const i = { uz: 0, ru: 1, en: 2 }[getLang()] ?? 0; return NEWS.map(n => ({ tag: n.tag[i], title: n.title[i], text: n.text[i] })); };
 function refreshLobby() {
   ui.renderProfile(profile, { rankOf, levelOf });
   ui.loadoutM4 = profile.loadout.m4;
@@ -332,7 +338,7 @@ function refreshLobby() {
     catch { ui.toast('Server xatosi. Qayta urinib ko‘ring.'); }
     refreshLobby();
   });
-  if (ui.view === 'news') ui.renderNews(NEWS);
+  if (ui.view === 'news') ui.renderNews(newsFor());
 }
 function updateShowcase() {
   if (playing || !world.map) return;
@@ -343,11 +349,11 @@ function updateShowcase() {
   const nameEl = document.querySelector('#lobby-name');
   ui.onAuth = () => openAuth();
   document.querySelector('#account-btn').onclick = () => openAuth();
-  const langEl = document.querySelector('#lang'); langEl.value = getLang(); langEl.onchange = () => setLang(langEl.value);
+  const langEl = document.querySelector('#lang'); langEl.value = getLang(); langEl.onchange = () => { setLang(langEl.value); refreshLobby(); };
   nameEl.oninput = () => { if (!profile.demo) return; profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
   ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
   ui.botSettings(botCfg, cfg => store.set('bots', JSON.stringify(cfg)));
-  friends.renderRail();
+  friends.renderRail(); friends.renderParty();
   document.querySelectorAll('.tb-nav [data-view]').forEach(b => b.onclick = () => { ui.showView(ui.view === b.dataset.view ? 'home' : b.dataset.view); refreshLobby(); });
   document.querySelector('#nav-home').onclick = () => ui.showView('home');
   document.querySelector('#fullscreen').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => {}); };
@@ -441,6 +447,7 @@ function frame(nowMs) {
       const fwd = meshQ.set(0, 0, -1).applyQuaternion(world.camera.quaternion), d = world.map.collider.wallDistance(pose.eye.x, pose.eye.y, pose.eye.z, fwd.x, fwd.y, fwd.z, 1.2);
       const target = Math.max(0, Math.min(1, (0.85 - d) / 0.5)); wallPush += (target - wallPush) * Math.min(1, dt * 14);
       weapons.update(dt, controller.viewmodel, { wallPush });
+      deadView = false;
       const inv = weapons.inventory, sw = inv.weapon(), zf = inv.zoom > 0 && sw?.scope ? sw.scope[inv.zoom - 1] : 0;
       scopeK += ((zf ? 1 : 0) - scopeK) * Math.min(1, dt * 14);
       const targetFov = zf || 74; if (Math.abs(world.camera.fov - targetFov) > 0.05) { world.camera.fov += (targetFov - world.camera.fov) * Math.min(1, dt * 16); world.camera.updateProjectionMatrix(); }
@@ -448,7 +455,10 @@ function frame(nowMs) {
       const scoped = scopeK > 0.7; scopeEl.classList.toggle('on', scoped); if (scoped) weapons.root.visible = false;
     } else {
       // spectate: follow a living teammate (else anyone) through their eyes; otherwise tilt the death camera
-      const remote = network.remote(now), spec = remote.find(p => p.alive && p.id !== id && p.team === me?.team);
+      // LMB / RMB cycle through living teammates (anyone alive when the team is wiped)
+      deadView = true;
+      const remote = network.remote(now), mates = remote.filter(p => p.alive && p.id !== id && p.team === me?.team).sort((a, b) => (a.id < b.id ? -1 : 1));
+      const pool = mates.length ? mates : remote.filter(p => p.alive && p.id !== id), spec = pool.length ? pool[((specPick % pool.length) + pool.length) % pool.length] : null;
       if (spec && state.phase !== 'warmup') { world.setCamera(V.set(spec.char.x, spec.char.y + 1.62 - 0.57 * (spec.char.crouch || 0), spec.char.z), spec.char.yaw, spec.char.pitch, 0); ui.spectate(spec.name); specId = spec.id; }
       else { world.setCamera(pose.eye, controller.yaw, Math.max(-0.6, controller.pitch - 0.25), 0.25); specId = null; }
       weapons.root.visible = false;

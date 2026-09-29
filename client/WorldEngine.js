@@ -468,7 +468,10 @@ export class WorldEngine {
         if (p.team === localTeam) { const l = this.label(p.name); a.add(l); l.position.y = 2.1; this.labels.set(p.id, l); }
       }
       if (!p.char) { a.visible = false; continue; }                           // enemy not in line of sight (anti-wallhack)
-      const c = p.char, speed = Math.hypot(c.vx, c.vz);
+      // gait follows real displacement, not reported velocity: blocked / frozen / dead players never "walk in place"
+      const c = p.char, u = a.userData, moved = u.lastX === undefined ? 0 : Math.hypot(c.x - u.lastX, c.z - u.lastZ) / Math.max(dt, 1e-3);
+      u.lastX = c.x; u.lastZ = c.z; u.moveSpeed = (u.moveSpeed ?? 0) + (Math.min(moved, 8) - (u.moveSpeed ?? 0)) * Math.min(1, dt * 12);
+      const speed = p.alive ? Math.min(Math.hypot(c.vx, c.vz), u.moveSpeed) : 0;
       a.position.set(c.x, c.y, c.z);
       holdWeapon(a, p.weapon);
       a.visible = true;
