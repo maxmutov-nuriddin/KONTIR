@@ -3,8 +3,12 @@ import { angleDelta, RULES, TICK_RATE } from '../../shared/constants.js';
 
 export class Network {
   constructor(onSnapshot, onDisconnect) {
-    this.socket = io({ autoConnect: false, reconnection: false, timeout: 6000 });
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const DEFAULT_SERVER = 'https://kontir.onrender.com';
+    const serverUrl = import.meta.env.VITE_SERVER_URL || (typeof window !== 'undefined' && (window.__KONTIR_SERVER__ || localStorage.getItem('kontir.serverUrl'))) || (isLocal ? undefined : DEFAULT_SERVER);
+    this.socket = io(serverUrl, { autoConnect: false, reconnection: true, reconnectionAttempts: 10, reconnectionDelay: 1000, timeout: 10000 });
     this.latest = null; this.frames = []; this.received = 0; this.id = null; this.rtt = 0; this.lastSent = -1;
+    let disconnectTimer = null;
     this.socket.on('probe', ack => { if (typeof ack === 'function') ack(); });
     this.socket.on('snapshot', state => {
       if (!this.id || (this.latest && state.tick < this.latest.tick)) return;
@@ -13,7 +17,16 @@ export class Network {
       this.received = performance.now(); onSnapshot(state);
     });
     this.socket.on('kicked', () => onDisconnect('AFK'));
-    this.socket.on('disconnect', reason => { if (reason !== 'io client disconnect') onDisconnect(reason); });
+    this.socket.on('connect', () => {
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+    });
+    this.socket.on('disconnect', reason => {
+      if (reason === 'io client disconnect') return;
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      disconnectTimer = setTimeout(() => {
+        if (!this.socket.connected) onDisconnect(reason);
+      }, 4000);
+    });
   }
   async connect() {
     if (this.socket.connected) return;

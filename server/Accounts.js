@@ -16,7 +16,7 @@ export const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 export class Accounts {
   constructor(file, { now = () => Date.now(), mongoUri = process.env.MONGODB_URI } = {}) {
     this.file = file;
-    this.mongoUri = mongoUri;
+    this.mongoUri = (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT || process.execArgv.some(a => a.includes('test')) || file?.includes('kontir-acc-')) ? null : mongoUri;
     this.now = now;
     this.users = {};
     this.tokens = {};
@@ -34,7 +34,7 @@ export class Accounts {
       this.messages = d.messages || {};
     } catch { /* first run */ }
 
-    if (this.mongoUri) {
+    if (this.mongoUri && process.env.NODE_ENV !== 'test') {
       try {
         this.client = new MongoClient(this.mongoUri, { serverSelectionTimeoutMS: 5000 });
         await this.client.connect();
@@ -147,6 +147,13 @@ export class Accounts {
     return this.public(u);
   }
   award(key, stats) { const u = this.users[key]; if (!u) return null; const gains = applyMatch(u, stats); this.save(); return { gains, profile: this.public(u) }; }
+  awardCoins(key, amount) {
+    const u = this.users[key]; if (!u) return null;
+    const add = Math.max(0, Math.min(2000, Math.round(Number(amount) || 0)));
+    u.coins = (u.coins || 0) + add;
+    this.save();
+    return this.public(u);
+  }
 
   // ---- friends: requests (incoming list on the target), mutual friend lists, direct messages (last 50 per pair)
   rel(u) { u.friends ||= []; u.requests ||= []; return u; }

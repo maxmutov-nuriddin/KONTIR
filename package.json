@@ -11,6 +11,7 @@
     "maps": "node tools/build-maps.mjs",
     "prebuild": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "build": "vite build",
+    "build:zip": "npm run build && cd dist && zip -r ../kontir-yandex.zip . -x \"*.DS_Store\" && cd ..",
     "pretest": "node tools/scan-models.mjs && node tools/build-maps.mjs --if-missing",
     "test": "node --test tests/*.test.js",
     "test:browser": "node tests/browser-smoke.mjs",

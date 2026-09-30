@@ -71,7 +71,7 @@ export class WorldEngine {
   constructor(canvas, { quality = 'medium' } = {}) {
     if (!Object.hasOwn(QUALITY, quality)) quality = 'medium';
     this.canvas = canvas; this.qualityName = quality; this.quality = QUALITY[quality];
-    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'default', stencil: false }); // MSAA is fixed at creation
+    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance', stencil: false }); // MSAA is fixed at creation
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -221,7 +221,7 @@ export class WorldEngine {
   async loadMap(meta, progress = () => {}) {
     this.disposeMap();
     progress(0.05, 'Xarita yuklanmoqda');
-    const fetchBytes = async url => { const r = await fetch(`/maps/${url}`); if (!r.ok) throw new Error(`${url}: ${r.status}`); return new Uint8Array(await r.arrayBuffer()); };
+    const fetchBytes = async url => { const r = await fetch(`./maps/${url}`); if (!r.ok) throw new Error(`${url}: ${r.status}`); return new Uint8Array(await r.arrayBuffer()); };
     const visualBytes = await fetchBytes(meta.file);
     const collisionBytes = meta.collision ? await fetchBytes(meta.collision) : visualBytes;
     progress(0.3, 'To‘qnashuv BVH qurilmoqda');

@@ -26,7 +26,7 @@ export class UI {
         <header class="topbar">
           <div class="tb-left"><button id="nav-home" class="tb-icon" title="Bosh sahifa" aria-label="Bosh sahifa">⌂</button><button id="settings" class="tb-icon" title="Sozlamalar" aria-label="Sozlamalar">⚙</button><button id="fullscreen" class="tb-icon" title="To‘liq ekran" aria-label="To‘liq ekran">⛶</button></div>
           <nav class="tb-nav"><button data-view="inventory">INVENTAR</button><button data-view="loadout">LOADOUT</button><button data-view="play" id="play-nav" class="tb-play">O‘YNASH</button><button data-view="store">DO‘KON</button><button data-view="news">YANGILIKLAR</button></nav>
-          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
+          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><button id="btn-free-coins" class="tb-bonus-btn" title="Reklama ko‘rib bepul tanga olish">🎬 +150 ◈</button><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
         </header>
         <aside class="rail">
           <div class="rail-me"><div class="avatar" id="rail-avatar">O</div><span class="rail-level" id="rail-level">1</span></div>
@@ -78,7 +78,7 @@ export class UI {
           <div class="top-right"><button id="pause-button">ESC <span>MENYU</span></button><div id="killfeed"></div></div></div>
         <div id="crosshair" style="--gap:6px"><i></i><i></i><i></i><i></i></div><div id="hitmarker"><i></i><i></i><i></i><i></i></div><div id="damage-flash"></div><div id="dmg-dirs"></div><div id="flashbang"></div>
         <div id="objective"></div><div id="interaction"><span></span><div><i></i></div></div><div id="round-banner"></div><div id="chat"><div id="chat-log"></div><form id="chat-form" hidden><span id="chat-scope">HAMMA</span><input id="chat-input" maxlength="120" autocomplete="off" spellcheck="false"></form></div><div id="radio-menu" hidden></div><div id="pings"></div>
-        <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span></div>
+        <div id="death-notice" class="hidden"><strong>SIZ YO‘Q QILINDINGIZ</strong><span>Keyingi raundni kuting · TAB — natijalar</span><button id="btn-revive" class="revive-btn hidden">🎬 QAYTA TIRILISH (REKLAMA)</button></div>
         <div class="hud-bottom">
           <div class="vitals"><div class="stat hp"><small>HP</small><strong id="health">100</strong></div><div class="stat ar"><small id="armor-label">ARMOR</small><strong id="armor">0</strong></div><div class="money" id="money">$800</div></div>
           <div class="key-hints"><span><kbd>1-5</kbd> SLOT</span><span><kbd>Q</kbd> ALMASHTIRISH</span><span><kbd>B</kbd> XARID</span><span><kbd>F</kbd> KO‘RIK</span><span><kbd>Z</kbd> RADIO</span><span><kbd>X</kbd> PING</span><span><kbd>Y/U</kbd> CHAT</span><span><kbd>G</kbd> TASHLASH</span><span><kbd>E</kbd> OLISH / DEFUSE</span></div>
@@ -94,7 +94,10 @@ export class UI {
     this.el = Object.fromEntries(['health', 'armor', 'armor-label', 'ammo', 'reserve', 'money', 'phase', 'clock', 'round', 't-score', 'ct-score', 'weapon-name', 'reload-status', 'fps', 'ping', 'objective', 'drawcalls', 'tickinfo', 't-alive', 'ct-alive', 'qswitch', 'slots'].map(id => [id, document.getElementById(id)]));
     this.weaponsTable = WEAPONS; this.view = 'home';
     this.locked = false; this.lastPhase = ''; this.lastHealth = 100; this.slotKey = ''; this.aliveKey = '';
+    this.revivedThisRound = false; this.isPractice = false;
     $('#close').onclick = () => this.modal.close(); this.modal.addEventListener('click', e => { if (e.target === this.modal && !this.locked) this.modal.close(); });
+    $('#btn-free-coins')?.addEventListener('click', () => this.onFreeCoins?.());
+    $('#btn-revive')?.addEventListener('click', () => this.onRevive?.());
     $('.brand').onclick = e => e.preventDefault();
   }
   ready() { gsap.to('#loader', { autoAlpha: 0, duration: 0.5, onComplete: () => $('#loader')?.remove() }); gsap.from('.lobby-main > *', { opacity: 0, y: 16, stagger: 0.07, duration: 0.6, ease: 'power3.out' }); gsap.from('.lobby-side', { opacity: 0, x: 20, duration: 0.6, delay: 0.15 }); }
@@ -127,7 +130,7 @@ export class UI {
   async drawThumb(id) {
     const canvas = document.querySelector(`[data-thumb="${CSS.escape(id)}"]`); if (!canvas) return;
     const g = canvas.getContext('2d'), grad = g.createLinearGradient(0, 0, 160, 100); grad.addColorStop(0, '#2b3533'); grad.addColorStop(1, '#141b1c'); g.fillStyle = grad; g.fillRect(0, 0, 160, 100);
-    let text = ''; try { const r = await fetch(`/maps/${id}.txt`); if (r.ok) text = await r.text(); } catch { /* user GLB without layout */ }
+    let text = ''; try { const r = await fetch(`./maps/${id}.txt`); if (r.ok) text = await r.text(); } catch { /* user GLB without layout */ }
     const rows = text.trim().split('\n').filter(Boolean); if (!rows.length) { g.fillStyle = '#e5b96a'; g.font = '700 38px Barlow Condensed, sans-serif'; g.fillText(id.slice(0, 2).toUpperCase(), 16, 62); return; }
     const cols = Math.max(...rows.map(r => r.length)), cell = Math.min(150 / cols, 92 / rows.length), ox = (160 - cols * cell) / 2, oy = (100 - rows.length * cell) / 2;
     const color = ch => ('#23'.includes(ch) ? null : ch === 'A' || ch === 'B' ? '#d98a3a' : ch === 't' ? '#e5b96a' : ch === 'x' ? '#5c8fd6' : ch === 'R' ? '#6f6a5c' : '#b8a888');
@@ -288,7 +291,7 @@ export class UI {
       <div class="set-tabs">${[['general', 'UMUMIY'], ['mouse', 'SICHQONCHA'], ['keys', 'KLAVIATURA']].map(([k, l]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="set-page" data-page="general">
         <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
-        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[30, 60, 90, 120].map(v => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${v}</button>`).join('')}</div></div>
+        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[30, '30'], [60, '60'], [120, '120'], [144, '144'], [0, 'MAX']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
         <p class="note">TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p></div>
       <div class="set-page" data-page="mouse">
@@ -354,14 +357,20 @@ export class UI {
       <div class="buy-cols">${columns.map(col => `<div>${col.map(g => `<h4>${GROUP_NAMES[g]}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}`).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
     document.querySelectorAll('[data-buy]:not([disabled])').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
   }
-  results(state, onExit, gains = null) {
+  results(state, onExit, gains = null, onDoubleReward = null) {
     const rows = t => state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<div><span>${esc(p.name)}</span><b>${p.kills} / ${p.assists} / ${p.deaths}</b></div>`).join('');
+    const canDouble = gains && gains.coins > 0 && typeof onDoubleReward === 'function';
     this.dialog(`<small class="eyebrow">OPERATION COMPLETE</small><h2>${state.result?.winner ? `${TEAM_LABEL[state.result.winner]} — G‘OLIB.` : 'DURANG.'}</h2>
       <div class="final-scores"><span>T <b>${state.scores.TERRORIST}</b></span><span>CT <b>${state.scores.COUNTER_TERRORIST}</b></span></div>
       <div class="teams"><div><h4>T · K / A / D</h4><div class="roster">${rows('TERRORIST')}</div></div><div><h4>CT · K / A / D</h4><div class="roster">${rows('COUNTER_TERRORIST')}</div></div></div>
-      ${gains ? `<div class="gains"><span>+${gains.xp} XP</span><span>◈ +${gains.coins}</span><span>${gains.rating >= 0 ? '+' : ''}${gains.rating} REYTING</span>${gains.levelUp ? '<span class="up">YANGI DARAJA!</span>' : ''}</div>` : ''}
+      ${gains ? `<div class="gains" id="results-gains"><span>+${gains.xp} XP</span><span id="results-coins">◈ +${gains.coins}</span><span>${gains.rating >= 0 ? '+' : ''}${gains.rating} REYTING</span>${gains.levelUp ? '<span class="up">YANGI DARAJA!</span>' : ''}</div>` : ''}
+      ${canDouble ? `<button id="btn-double-reward" class="secondary full reward-btn">🎬 2x TANGALAR (+${gains.coins} ◈ REKLAMA)</button>` : ''}
       <button id="results-exit" class="primary full">BOSH MENYU ${arrow}</button>`, true);
     $('#results-exit').onclick = onExit;
+    if (canDouble) {
+      const btn = $('#btn-double-reward');
+      if (btn) btn.onclick = () => onDoubleReward(btn);
+    }
   }
 
   // ------------------------------------------------------------------------------------------- in-game
@@ -431,6 +440,11 @@ export class UI {
     prog.style.display = a && a.progress > 0 ? 'block' : 'none';
     if (a) { prog.querySelector('span').textContent = a.kind === 'plant' ? 'O‘RNATILMOQDA…' : 'ZARARSIZLANTIRILMOQDA…'; prog.querySelector('i').style.width = `${Math.min(100, a.progress / (a.kind === 'plant' ? RULES.plantSeconds : a.need) * 100)}%`; }
     $('#death-notice').classList.toggle('hidden', p.alive || state.phase === 'matchEnd');
+    const reviveBtn = $('#btn-revive');
+    if (reviveBtn) {
+      const canRevive = !p.alive && (state.practice || this.isPractice) && state.phase === 'live' && !this.revivedThisRound;
+      reviveBtn.classList.toggle('hidden', !canRevive);
+    }
     if (p.health < this.lastHealth) { gsap.killTweensOf('#damage-flash'); gsap.fromTo('#damage-flash', { opacity: 0.35 }, { opacity: 0, duration: 0.5 }); } this.lastHealth = p.health;
     if (this.lastPhase !== state.phase) {
       this.lastPhase = state.phase; const banner = $('#round-banner');

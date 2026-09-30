@@ -1,6 +1,9 @@
 node_modules/
 dist/
 test-results/
+*.zip
+.DS_Store
+yandex_media/
 .env*
 !.env.example
 *.log

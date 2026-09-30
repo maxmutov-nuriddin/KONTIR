@@ -114,7 +114,23 @@ const P = [
   [/^(.+) — sotib olindi\. INVENTARdan qurolga qo‘ying\.$/, ['$1 — куплено. Поставьте в ИНВЕНТАРЕ.', '$1 — purchased. Equip it in INVENTORY.']],
 ];
 
-let lang = (() => { try { const s = localStorage.getItem(KEY); if (LANGS[s]) return s; } catch { /* ignore */ } const n = (navigator.language || '').slice(0, 2); return n === 'ru' ? 'ru' : n === 'en' ? 'en' : 'uz'; })();
+export function normalizeLang(l) {
+  if (!l) return 'ru';
+  const c = String(l).slice(0, 2).toLowerCase();
+  if (c === 'ru' || c === 'be' || c === 'uk' || c === 'kk') return 'ru';
+  if (c === 'uz') return 'uz';
+  return 'en';
+}
+
+let lang = (() => {
+  try {
+    const yl = typeof window !== 'undefined' && window.ysdk?.environment?.i18n?.lang;
+    if (yl) return normalizeLang(yl);
+  } catch { /* ignore */ }
+  try { const s = localStorage.getItem(KEY); if (LANGS[s]) return s; } catch { /* ignore */ }
+  const n = (typeof navigator !== 'undefined' ? (navigator.language || '') : '').slice(0, 2);
+  return n === 'ru' ? 'ru' : n === 'en' ? 'en' : 'uz';
+})();
 const originals = new WeakMap(), ATTRS = ['title', 'aria-label', 'placeholder'];
 const idx = () => (lang === 'ru' ? 0 : 1);
 

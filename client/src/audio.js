@@ -5,7 +5,7 @@ import { cuesFor } from './reload.js';
 import { WEAPONS } from '../../shared/weapons.js';
 
 export class AudioEngine {
-  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); this.clips = new Map(); }
+  constructor() { this.ctx = null; this.volume = 0.8; this.noiseBuffer = null; this.lastFoot = 0; this.ringNode = null; this.shots = new Map(); this.clips = new Map(); this.muted = false; this.paused = false; }
 
   /** Must run inside a user gesture (the lock button). Safe to call repeatedly. */
   unlock() {
@@ -13,7 +13,7 @@ export class AudioEngine {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
       this.ctx = new Ctx({ latencyHint: 'interactive' });
-      this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
+      this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : this.volume;
       this.comp = this.ctx.createDynamicsCompressor(); this.comp.threshold.value = -14; this.comp.ratio.value = 5;
       this.master.connect(this.comp); this.comp.connect(this.ctx.destination);
       const len = this.ctx.sampleRate * 2, buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = buf.getChannelData(0);
@@ -23,12 +23,29 @@ export class AudioEngine {
       for (let c = 0; c < 2; c++) { const ch = ir.getChannelData(c); for (let i = 0; i < irLen; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 3.2); }
       this.reverb = this.ctx.createConvolver(); this.reverb.buffer = ir;
       this.reverbGain = this.ctx.createGain(); this.reverbGain.gain.value = 0.32; this.reverb.connect(this.reverbGain); this.reverbGain.connect(this.master);
-      this.loadClip('/audio/terwin.wav');
-      this.loadClip('/audio/ctwin.wav');
+      this.loadClip('./audio/terwin.wav');
+      this.loadClip('./audio/ctwin.wav');
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state === 'suspended' && !this.paused) this.ctx.resume().catch(() => {});
   }
-  setVolume(v) { this.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.8; if (this.master) this.master.gain.value = this.volume; }
+  setVolume(v) { this.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.8; if (this.master && !this.muted) this.master.gain.value = this.volume; }
+
+  pause() {
+    this.paused = true;
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
+  }
+  resume() {
+    this.paused = false;
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+  }
+  mute() {
+    this.muted = true;
+    if (this.master) this.master.gain.value = 0;
+  }
+  unmute() {
+    this.muted = false;
+    if (this.master) this.master.gain.value = this.volume;
+  }
 
   setListener(camera) {
     if (!this.ctx) return;
@@ -226,7 +243,7 @@ export class AudioEngine {
   }
   roundWin(team) {
     if (!team) return;
-    const url = team === 'TERRORIST' ? '/audio/terwin.wav' : (team === 'COUNTER_TERRORIST' || team === 'CT') ? '/audio/ctwin.wav' : null;
+    const url = team === 'TERRORIST' ? './audio/terwin.wav' : (team === 'COUNTER_TERRORIST' || team === 'CT') ? './audio/ctwin.wav' : null;
     if (url) this.playClip(url, 0.95);
   }
 }

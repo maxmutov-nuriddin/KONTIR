@@ -115,6 +115,9 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     try { url = new URL(req.url, 'http://localhost'); decodeURIComponent(url.pathname); }
     catch { res.writeHead(400); res.end(); return; }
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
     if (url.pathname === '/health') {
       res.setHeader('Content-Type', 'application/json');
@@ -133,7 +136,8 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       res.end(data);
     } catch { res.writeHead(404); res.end('Run npm run dev, or npm run build && npm start.'); }
   });
-  const io = new Server(http, { maxHttpBufferSize: 32768, cors: process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN.split(',') } : undefined });
+  const corsOrigin = !process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*' ? '*' : process.env.CORS_ORIGIN.split(',').map(s => s.trim());
+  const io = new Server(http, { maxHttpBufferSize: 32768, cors: { origin: corsOrigin, methods: ['GET', 'POST'] } });
 
   /** Loadout preferences from the (demo) profile: starting pistol per side. Validated, then applied to the current loadout. */
   function applyLoadout(room, player, loadout) {
@@ -274,7 +278,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('commands', batch => {
       const now = performance.now();
       if (now - socket.data.window > 1000) { socket.data.window = now; socket.data.packets = 0; }
-      if (++socket.data.packets > 120 || !Array.isArray(batch) || batch.length > 32 || !batch.every(validCommand)) return;
+      if (++socket.data.packets > 300 || !Array.isArray(batch) || batch.length > 32 || !batch.every(validCommand)) return;
       rooms.get(socket.data.room)?.enqueue(socket.id, batch);
     });
     socket.on('start', (_, ack) => {
@@ -295,6 +299,14 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('chat', msg => { if (msg && typeof msg === 'object') rooms.get(socket.data.room)?.chat(socket.id, msg.text, msg.team === true); });
     socket.on('radio', n => rooms.get(socket.data.room)?.radio(socket.id, n));
     socket.on('ping', pt => { if (pt && typeof pt === 'object') rooms.get(socket.data.room)?.ping(socket.id, +pt.x, +pt.y, +pt.z); });
+    socket.on('practice:revive', (_, ack) => {
+      const room = rooms.get(socket.data.room);
+      if (!room || !room.practice) return typeof ack === 'function' && ack({ error: 'Faqat mashq rejimida.' });
+      const p = room.players.get(socket.id);
+      if (!p || p.alive || room.phase !== 'live') return typeof ack === 'function' && ack({ error: 'Tirilish imkoni yo‘q.' });
+      room.respawn(p);
+      if (typeof ack === 'function') ack({ ok: true });
+    });
     // ---- accounts: username + password (no e-mail); guests play the demo profile
     const authOk = () => { const t = performance.now(); if (t - (socket.data.authAt ?? -1e9) > 60000) { socket.data.authAt = t; socket.data.authN = 0; } return ++socket.data.authN <= 8; };
     const signIn = (ack, r) => { bindAccount(socket, r.profile.name.toLowerCase()); ack({ ok: true, ...r }); };
@@ -317,6 +329,13 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     socket.on('account:buy', (finish, ack) => {
       if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' });
       try { ack({ ok: true, profile: accounts.buy(key, String(finish)) }); } catch (e) { ack({ error: e.message }); }
+    });
+    socket.on('account:reward', (req, ack) => {
+      if (typeof ack !== 'function') return;
+      const key = socket.data.account; if (!key) return ack({ error: 'auth' });
+      const coins = Math.max(1, Math.min(2000, Number(req?.coins) || 150));
+      const p = accounts.awardCoins(key, coins);
+      ack(p ? { ok: true, profile: p } : { error: 'failed' });
     });
     // ---- friends: search, requests, list with presence, direct messages, WebRTC voice signalling (friends only)
     const acct = (ack, fn) => { if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' }); try { ack({ ok: true, ...fn(key) }); } catch (e) { ack({ error: e.message }); } };
@@ -363,7 +382,8 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       // No humans: stop bot physics immediately, retain the room briefly for joins.
       if (room.humans().length === 0) {
         room.emptyAt ??= now;
-        if (now - room.emptyAt > 20000) matchmaker.remove(code);
+        const maxEmpty = room.isPublic ? 25000 : 120000;
+        if (now - room.emptyAt > maxEmpty) matchmaker.remove(code);
         continue;
       }
       room.emptyAt = null;
@@ -425,7 +445,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
   const probes = setInterval(() => {
     for (const socket of io.sockets.sockets.values()) {
       const started = performance.now();
-      socket.timeout(1500).emit('probe', error => {
+      socket.timeout(4000).emit('probe', error => {
         if (error) return;
         const p = rooms.get(socket.data.room)?.players.get(socket.id);
         if (p) p.rtt = p.rtt * 0.6 + Math.min(500, performance.now() - started) * 0.4;

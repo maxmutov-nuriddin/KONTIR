@@ -1,4 +1,5 @@
 import './style.css';
+import { yandexSDK } from './yandexSDK.js';
 import { FramePacer } from './frame-pacer.js';
 import { spectatorTarget } from './spectator.js';
 import * as THREE from 'three';
@@ -26,7 +27,7 @@ const profile = loadProfile(); saveProfile(profile);
 let fireList = [], scopeK = 0;
 const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
-const pacer = new FramePacer(store.get('fpsLimit', 30)); // 30 FPS default for battery/heat
+const pacer = new FramePacer(Number(store.get('fpsLimit', 60))); // 60 FPS default for smooth gameplay
 let world;
 try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') }); }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
@@ -121,9 +122,40 @@ function receive(next) {
   else if (ui.modal.querySelector('.room-code')) { ui.modal.close(); ui.resume(!controller.locked); }
   if (state.phase === 'matchEnd' && !resultShown) {
     resultShown = true; controller.unlock(); ui.resume(false);
+    yandexSDK.gameplayStop();
+    yandexSDK.showFullscreenAd();
     const me = state.players.find(p => p.id === id), won = !!(me && state.result?.winner === me.team), draw = !state.result?.winner;
     const gains = !profile.demo ? serverGains : me ? recordMatch(profile,{ won, draw, kills: me.kills, deaths: me.deaths, assists: me.assists, rounds: (state.scores?.TERRORIST || 0) + (state.scores?.COUNTER_TERRORIST || 0) }) : null;
-    ui.results(state, leave, gains); refreshLobby();
+    const onDoubleReward = (btn) => {
+      btn.disabled = true;
+      yandexSDK.showRewardedAd({
+        onRewarded: async () => {
+          const bonusCoins = gains ? gains.coins : 50;
+          if (!profile.demo && getToken()) {
+            try {
+              const r = await network.request('account:reward', { coins: bonusCoins });
+              if (r?.profile) adopt(profile, r.profile);
+            } catch {
+              profile.coins += bonusCoins;
+              saveProfile(profile);
+            }
+          } else {
+            profile.coins += bonusCoins;
+            saveProfile(profile);
+          }
+          refreshLobby();
+          ui.toast(`2x mukofot olindi! +${bonusCoins} ◈ tanga berildi.`);
+          const coinsEl = document.querySelector('#results-coins');
+          if (coinsEl && gains) coinsEl.textContent = `◈ +${gains.coins * 2} (2x MUKOFOT)`;
+          btn.textContent = '✓ 2x TANGALAR OLINDI';
+        },
+        onError: () => {
+          btn.disabled = false;
+          ui.toast('Reklama yuklanmadi. Qayta urinib ko‘ring.');
+        }
+      });
+    };
+    ui.results(state, leave, gains, onDoubleReward); refreshLobby();
   }
   if (state.phase !== 'matchEnd') { resultShown = false; serverGains = null; }
 }
@@ -152,7 +184,9 @@ function handleEvent(e, me) {
       if (e.attacker === id) { ui.hitmarker(e.part === 'head', e.killed); audio.hitmarker(e.part === 'head'); }
       if (e.target === id) {
         audio.hurt();
-        const dx = e.from.x - prediction.char.x, dz = e.from.z - prediction.char.z;
+        const px = prediction?.char?.x ?? 0, pz = prediction?.char?.z ?? 0;
+        const fx = e.from?.x ?? px, fz = e.from?.z ?? pz;
+        const dx = fx - px, dz = fz - pz;
         ui.damageIndicator(controller.yaw - Math.atan2(-dx, -dz));
         world.shake += 0.6;
       }
@@ -184,7 +218,7 @@ function handleEvent(e, me) {
     case 'flash': if (e.target === id) { ui.flash(e.duration, e.full); audio.ring(Math.min(6, e.duration + 1)); } break;
     case 'exploded': world.effects.explosion(e.x, e.y, e.z, 'c4'); audio.explosion(e, true); world.shake += 4; break;
     case 'planted': audio.plant(); break;
-    case 'round': world.effects.clear(); ui.lastPhase = ''; ui.slotKey = ''; if (me) weapons.setTeam(me.team); world.csm?.updateFrustums(); break;
+    case 'round': world.effects.clear(); ui.lastPhase = ''; ui.slotKey = ''; ui.revivedThisRound = false; if (me) weapons.setTeam(me.team); world.csm?.updateFrustums(); break;
     case 'live': audio.beep(true); break;
     case 'roundEnd': if (e.winner) audio.roundWin(e.winner); break;
     default: break;
@@ -231,11 +265,16 @@ async function enter(result, my) {
     prediction = new Prediction(world.map.collider, weapons);
     state = network.latest || state;
     playing = true; friends.applyMic(); lastEvent = state.events.at(-1)?.id || 0; resultShown = false; acc = 0; sendAcc = 0;
+    ui.isPractice = !!result.practice || !!state.practice || mode === 'practice';
+    ui.revivedThisRound = false;
+    yandexSDK.gameplayStart();
     ui.showGame(world.map.name); ui.hideBusy(); receive(state);
   // straight into the game: no deploy screen; if the browser refuses the lock, any click on the scene captures the mouse
   ui.resume(false); if (state.phase !== 'warmup') { try { controller.lock(); } catch { /* click fallback */ } }
 }
 function leave() {
+  yandexSDK.gameplayStop();
+  yandexSDK.showFullscreenAd();
   generation++; joining = false; playing = false; friends.applyMic(); controller.unlock(); network.leave();
   state = null; id = null; prediction = null; controller.clearInput(); world.clearActors(); world.effects.clear(); world.bombRig.group.visible = false; world.bombLight.intensity = 0;
   weapons.inventory.reset('TERRORIST'); weapons.setActive(null); ui.showMenu(); ui.resume(false);
@@ -351,8 +390,62 @@ function updateShowcase() {
 {
   const nameEl = document.querySelector('#lobby-name');
   ui.onAuth = () => openAuth();
+  ui.onFreeCoins = () => {
+    audio.click();
+    yandexSDK.showRewardedAd({
+      onRewarded: async () => {
+        const bonus = 150;
+        if (!profile.demo && getToken()) {
+          try {
+            const r = await network.request('account:reward', { coins: bonus });
+            if (r?.profile) adopt(profile, r.profile);
+          } catch {
+            profile.coins += bonus;
+            saveProfile(profile);
+          }
+        } else {
+          profile.coins += bonus;
+          saveProfile(profile);
+        }
+        refreshLobby();
+        ui.toast(`Tabriklaymiz! +${bonus} ◈ bepul tanga berildi.`);
+      },
+      onError: () => {
+        ui.toast('Reklama yuklanmadi yoki internet aloqasi yo‘q.');
+      }
+    });
+  };
+  ui.onRevive = () => {
+    if (ui.revivedThisRound || !playing) return;
+    audio.click();
+    yandexSDK.showRewardedAd({
+      onRewarded: () => {
+        ui.revivedThisRound = true;
+        network.socket.emit('practice:revive', {}, res => {
+          if (res?.ok) {
+            ui.toast('Qayta tirildingiz!');
+            try { controller.lock(); } catch {}
+          } else {
+            ui.toast(res?.error || 'Tirilish amalga oshmadi.');
+          }
+        });
+      },
+      onError: () => {
+        ui.toast('Reklama yuklanmadi.');
+      }
+    });
+  };
   document.querySelector('#account-btn').onclick = () => openAuth();
   const langEl = document.querySelector('#lang'); langEl.value = getLang(); langEl.onchange = () => { setLang(langEl.value); refreshLobby(); };
+  window.applyYandexLanguage = langCode => {
+    if (!langCode) return;
+    const l = String(langCode).slice(0, 2).toLowerCase();
+    const target = (l === 'ru' || l === 'be' || l === 'uk' || l === 'kk') ? 'ru' : (l === 'uz' ? 'uz' : 'en');
+    setLang(target);
+    const el = document.querySelector('#lang');
+    if (el) el.value = target;
+    refreshLobby();
+  };
   nameEl.oninput = () => { if (!profile.demo) return; profile.name = nameEl.value.trim().replace(/[<>&"]/g, '').slice(0, 18) || profile.name; saveProfile(profile); ui.renderProfile(profile, { rankOf, levelOf }); };
   ui.setMode(mode); ui.onPool = p => store.set('pool', JSON.stringify([...p]));
   ui.botSettings(botCfg, cfg => store.set('bots', JSON.stringify(cfg)));
@@ -511,7 +604,7 @@ world.renderer.setAnimationLoop(frame);
   try {
     await models.init(world.gltf);
     if (models.count()) { ui.setLoading(0.05, '3D modellar'); await models.preload(f => ui.setLoading(0.05 + f * 0.3, '3D modellar')); }
-    const manifest = await (await fetch('/maps/manifest.json')).json();
+    const manifest = await (await fetch('./maps/manifest.json')).json();
     maps = manifest.maps.filter(m => m.valid !== false); selectedMap = maps.find(m => m.id === selectedMap)?.id || maps[0].id;
     for (const id of [...pool]) if (!maps.some(m => m.id === id)) pool.delete(id);
     if (!pool.size) for (const m of maps) pool.add(m.id);
@@ -519,6 +612,10 @@ world.renderer.setAnimationLoop(frame);
     await loadMapById(selectedMap, true);
   } catch (error) { ui.toast(`Xaritalarni yuklab bo‘lmadi: ${error.message}`); }
   ui.ready();
+  yandexSDK.init({ audio, controller }).then(sdk => {
+    const ylang = sdk?.environment?.i18n?.lang || yandexSDK.getLanguage();
+    if (ylang) window.applyYandexLanguage?.(ylang);
+  }).catch(() => {});
   // saved session -> restore the account; otherwise offer sign-in / register / demo once per browser session
   const tk = getToken();
   if (tk) {
@@ -529,4 +626,4 @@ world.renderer.setAnimationLoop(frame);
 startI18n();
 
 Object.defineProperty(window, '__KONTIR__', { get: () => ({ playing, state, id, predicted: prediction?.char, pending: prediction?.pending.length, drawCalls: world.renderer.info.render.calls, triangles: world.renderer.info.render.triangles,
-  fpsLimit: pacer.limit, inventory: weapons.inventory.toJSON(), activeWeapon: weapons.activeWeaponMesh?.name, visibleRigs: [...weapons.rigs.values()].filter(r => r.group.visible).map(r => r.id), crouchFactor: controller.crouchFactor, eye: controller.eye.toArray(), world, controller, weapons, audio, TICK_RATE, WEAPONS }) });
+  fpsLimit: pacer.limit, inventory: weapons.inventory.toJSON(), activeWeapon: weapons.activeWeaponMesh?.name, visibleRigs: [...weapons.rigs.values()].filter(r => r.group.visible).map(r => r.id), crouchFactor: controller.crouchFactor, eye: controller.eye.toArray(), world, controller, weapons, audio, yandexSDK, TICK_RATE, WEAPONS }) });

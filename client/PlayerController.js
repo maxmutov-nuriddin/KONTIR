@@ -72,12 +72,11 @@ export class PlayerController {
       doc.removeEventListener('mousemove', inner);
       // Chrome / Windows sometimes report a bogus huge movement spike during fast flicks (the view "jumps" sideways):
       // drop single events far beyond the recent motion instead of turning the camera by them
-      this.lastMove = 0;
       this.controls._onMouseMove = e => {
-        const m = Math.hypot(e.movementX, e.movementY);
-        if (m > 250 && m > this.lastMove * 6 + 60) return;
-        this.lastMove = this.lastMove * 0.5 + m * 0.5;
-        inner(this.mouseOpts?.invertY ? { movementX: e.movementX, movementY: -e.movementY } : e);
+        let mx = e.movementX, my = e.movementY;
+        const m = Math.hypot(mx, my);
+        if (m > 1200) { const s = 1200 / m; mx *= s; my *= s; }
+        inner(this.mouseOpts?.invertY ? { movementX: mx, movementY: -my } : { movementX: mx, movementY: my });
       };
       doc.addEventListener('mousemove', this.controls._onMouseMove); }
     this.keys = new Set(); this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 };
@@ -134,7 +133,15 @@ export class PlayerController {
       keyup: e => this.release(e.code),
       mousedown: e => { if (this.capture) { e.preventDefault(); this.capture(`Mouse${e.button}`); return; } if (!this.locked) return; if (e.button === 1) e.preventDefault(); this.press(`Mouse${e.button}`, e); },
       mouseup: e => this.release(`Mouse${e.button}`),
-      mousemove: e => { if (this.locked && Math.hypot(e.movementX, e.movementY) <= Math.max(250, this.lastMove * 6 + 60)) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY * (this.mouseOpts.invertY ? -1 : 1); } },
+      mousemove: e => {
+        if (this.locked) {
+          let mx = e.movementX, my = e.movementY;
+          const m = Math.hypot(mx, my);
+          if (m > 1200) { const s = 1200 / m; mx *= s; my *= s; }
+          this.mouse.dx += mx;
+          this.mouse.dy += my * (this.mouseOpts.invertY ? -1 : 1);
+        }
+      },
       wheel: e => { if (this.locked) { if (this.mouseOpts.wheelSwitch) this.edges.wheel = Math.sign(e.deltaY); e.preventDefault(); } },
       contextmenu: e => { if (this.locked) e.preventDefault(); },
       blur: () => this.clearInput(),

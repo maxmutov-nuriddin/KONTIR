@@ -11,7 +11,7 @@ export const models = {
   manifest: { weapons: {}, characters: {}, props: {} }, cache: new Map(), loader: null,
   async init(loader) {
     this.loader = loader;
-    try { const r = await fetch('/models/models.json'); if (r.ok) this.manifest = { weapons: {}, characters: {}, props: {}, ...(await r.json()) }; } catch { /* no models */ }
+    try { const r = await fetch('./models/models.json'); if (r.ok) this.manifest = { weapons: {}, characters: {}, props: {}, ...(await r.json()) }; } catch { /* no models */ }
     return this;
   },
   count() { return Object.keys(this.manifest.weapons).length + Object.keys(this.manifest.characters).length + Object.keys(this.manifest.props).length; },
