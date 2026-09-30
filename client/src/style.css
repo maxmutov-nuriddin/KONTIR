@@ -159,8 +159,8 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 #use-prompt kbd { display: inline-block; min-width: 18px; margin-right: 6px; padding: 1px 5px; border: 1px solid #ffffff55; border-radius: 3px; text-align: center; color: var(--gold, #e3b04b); font: inherit; }
 
 /* ---------------- CS2-style lobby ---------------- */
-.menu-view > .lobby { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; gap: 18px; padding: 8px 0 14px; }
-.lobby-main { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; backdrop-filter: blur(6px); }
+.lobby, #view-play .lobby { flex: 1; min-height: 0; height: 100%; display: grid; grid-template-columns: 1fr 340px; gap: 18px; padding: 0; box-sizing: border-box; }
+.lobby-main { display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; backdrop-filter: blur(6px); }
 .mode-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
 .mode-tabs button { text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 3px; background: #0c1314aa; transition: .15s; }
 .mode-tabs button b { display: block; font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px; }
@@ -182,7 +182,7 @@ input[type=text], input:not([type]) { width: 100%; height: 42px; background: #ff
 .map-grid.pool-mode .map-card.pooled .check::after { content: '✓'; position: absolute; inset: -2px 0 0 2px; color: #111; font-weight: 900; font-size: 13px; }
 .map-grid.pool-mode .map-card:not(.pooled) { opacity: .55; }
 .map-grid .map-card.selected { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
-.lobby-side { display: flex; flex-direction: column; gap: 10px; }
+.lobby-side { display: flex; flex-direction: column; gap: 10px; min-height: 0; height: 100%; }
 .party, .side-block, #search-status { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 14px; backdrop-filter: blur(6px); }
 .party-head { display: flex; justify-content: space-between; font-size: 9px; letter-spacing: 1.6px; color: var(--muted); margin-bottom: 10px; }
 .party-me { display: flex; gap: 12px; align-items: center; }
@@ -399,3 +399,12 @@ dialog.auth-modal { width: min(440px, 94vw); padding: 28px 30px 24px; }
 .pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 34px; border-radius: 3px; font-size: 16px; opacity: .7; }
 .pw-eye:hover, .pw-eye.on { opacity: 1; background: #ffffff12; }
 .pause-set { display: block; margin: 10px auto 0; height: 40px; padding: 0 18px; }
+
+/* Yandex Games SDK UI Elements */
+.revive-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; padding: 8px 18px; background: linear-gradient(135deg, #e5b96a, #d49a38); color: #111a1c; font: 800 13px 'Barlow Condensed', sans-serif; letter-spacing: 1.2px; border: none; border-radius: 4px; cursor: pointer; box-shadow: 0 4px 14px #e5b96a40; transition: transform .15s, filter .15s; pointer-events: auto; }
+.revive-btn:hover { transform: scale(1.04); filter: brightness(1.1); }
+.tb-bonus-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; background: #e5b96a22; border: 1px solid #e5b96a88; color: var(--gold); border-radius: 4px; font: 700 12px 'Barlow Condensed', sans-serif; letter-spacing: 1px; cursor: pointer; transition: .15s; margin-left: 4px; }
+.tb-bonus-btn:hover { background: #e5b96a3d; border-color: var(--gold); transform: translateY(-1px); }
+.reward-btn { margin-top: 10px; background: linear-gradient(135deg, #e5b96a33, #e5b96a15); border-color: var(--gold); color: #fff; font: 800 15px 'Barlow Condensed', sans-serif; letter-spacing: 1.4px; }
+.reward-btn:hover { background: linear-gradient(135deg, #e5b96a55, #e5b96a25); }
+
