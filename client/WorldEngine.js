@@ -30,11 +30,12 @@ THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const QUALITY = {
-  ultra: { pixelRatio: 1.5, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170 },
-  high: { pixelRatio: 1.25, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 2, maxFar: 150 },
-  // O'RTA: native-sharp (MSAA, full resolution) but light on the GPU: one 1024 px shadow cascade rendered every other frame
-  medium: { pixelRatio: 1, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 70, shadowEvery: 2 },
-  low: { pixelRatio: 0.7, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 3, maxFar: 60 },
+  ultra: { pixelRatio: 1.25, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170, macro: true, motes: true },
+  high: { pixelRatio: 1.0, shadows: true, mapSize: 1024, post: false, msaa: 2, cascades: 2, maxFar: 120, macro: true, motes: true },
+  // O'RTA (100+ FPS): to‘liq tiniq 1080p ruxsat, soyasiz yengil render — barcha kompyuter va noutbuklarda 100+ FPS
+  medium: { pixelRatio: 1.0, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 70, macro: false, motes: false },
+  // TEZKOR: eng yengil parametrlar, eski noutbuklar uchun
+  low: { pixelRatio: 0.75, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false },
 };
 
 // World-space macro variation: breaks texture tiling with large-scale tone patches and adds wall-base grime + vertical sun-bleach streaks.
@@ -43,7 +44,7 @@ float mHash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x
 float mNoise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(mix(mHash(i + vec3(0,0,0)), mHash(i + vec3(1,0,0)), f.x), mix(mHash(i + vec3(0,1,0)), mHash(i + vec3(1,1,0)), f.x), f.y),
              mix(mix(mHash(i + vec3(0,0,1)), mHash(i + vec3(1,0,1)), f.x), mix(mHash(i + vec3(0,1,1)), mHash(i + vec3(1,1,1)), f.x), f.y), f.z); }
-float mFbm(vec3 p){ return 0.5 * mNoise(p) + 0.25 * mNoise(p * 2.03) + 0.125 * mNoise(p * 4.1) + 0.0625 * mNoise(p * 8.3); }
+float mFbm(vec3 p){ return 0.7 * mNoise(p) + 0.3 * mNoise(p * 2.03); }
 `;
 function patchMacro(material) {
   const chained = material.onBeforeCompile;
@@ -71,7 +72,7 @@ export class WorldEngine {
   constructor(canvas, { quality = 'medium' } = {}) {
     if (!Object.hasOwn(QUALITY, quality)) quality = 'medium';
     this.canvas = canvas; this.qualityName = quality; this.quality = QUALITY[quality];
-    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality !== 'low', powerPreference: 'high-performance', stencil: false }); // MSAA is fixed at creation
+    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === 'ultra' || quality === 'high', powerPreference: 'high-performance', stencil: false }); // MSAA is fixed at creation
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -143,7 +144,7 @@ export class WorldEngine {
     m.onBeforeCompile = THREE.Material.prototype.onBeforeCompile;
     m.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey;
     this.csm?.setupMaterial(m);
-    if (m.userData.macro && this.qualityName !== 'low') patchMacro(m);
+    if (m.userData.macro && this.quality.macro) patchMacro(m);
     m.needsUpdate = true;
   }
   buildSun() {
@@ -547,14 +548,19 @@ export class WorldEngine {
   render(dt, viewmodel = null) {
     this.time += dt; this.shake *= Math.exp(-dt * 7);
     this.effects.update(dt);
-    // dust motes drift around the camera
-    const arr = this.motes.geometry.attributes.position, cam = this.camera.position, seeds = this.motes.userData.seed;
-    for (let i = 0; i < seeds.length; i++) {
-      const s = seeds[i]; let x = arr.getX(i) + Math.sin(this.time * 0.3 + s) * dt * 0.25, y = arr.getY(i) + Math.cos(this.time * 0.21 + s * 1.7) * dt * 0.12, z = arr.getZ(i) + Math.sin(this.time * 0.17 + s * 0.6) * dt * 0.2;
-      x = ((x - cam.x + 30) % 60 + 60) % 60 - 30 + cam.x; z = ((z - cam.z + 30) % 60 + 60) % 60 - 30 + cam.z; y = ((y - (cam.y - 5) + 12) % 12 + 12) % 12 + cam.y - 5;
-      arr.setXYZ(i, x, y, z);
+    // dust motes drift around the camera (high/ultra only)
+    if (this.quality.motes && this.motes) {
+      this.motes.visible = true;
+      const arr = this.motes.geometry.attributes.position, cam = this.camera.position, seeds = this.motes.userData.seed;
+      for (let i = 0; i < seeds.length; i++) {
+        const s = seeds[i]; let x = arr.getX(i) + Math.sin(this.time * 0.3 + s) * dt * 0.25, y = arr.getY(i) + Math.cos(this.time * 0.21 + s * 1.7) * dt * 0.12, z = arr.getZ(i) + Math.sin(this.time * 0.17 + s * 0.6) * dt * 0.2;
+        x = ((x - cam.x + 30) % 60 + 60) % 60 - 30 + cam.x; z = ((z - cam.z + 30) % 60 + 60) % 60 - 30 + cam.z; y = ((y - (cam.y - 5) + 12) % 12 + 12) % 12 + cam.y - 5;
+        arr.setXYZ(i, x, y, z);
+      }
+      arr.needsUpdate = true;
+    } else if (this.motes) {
+      this.motes.visible = false;
     }
-    arr.needsUpdate = true;
     // shadow throttling (O'RTA): re-render the cascade every Nth frame; the light rig only moves on those frames so maps stay consistent
     const every = this.quality.shadowEvery || 1, r0 = this.renderer;
     this.frameNo = (this.frameNo || 0) + 1;

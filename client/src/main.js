@@ -27,7 +27,12 @@ const profile = loadProfile(); saveProfile(profile);
 let fireList = [], scopeK = 0;
 const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
-const pacer = new FramePacer(Number(store.get('fpsLimit', 60))); // 60 FPS default for smooth gameplay
+let savedFps = store.get('fpsLimit', null);
+if (savedFps === null || savedFps === '30' || savedFps === 30) {
+  savedFps = '0';
+  store.set('fpsLimit', 0);
+}
+const pacer = new FramePacer(Number(savedFps)); // MAX / Uncapped by default (100+ FPS)
 let world;
 try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') }); }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
@@ -523,17 +528,18 @@ let previous = performance.now(), slowSince = 0, specId = null, frameMs = 16, la
 const meshQ = new THREE.Vector3();
 function frame(nowMs) {
   if (!pacer.ready(nowMs, { hidden: document.hidden, active: playing && controller.locked })) return;
-  const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.max(0, Math.min(0.25, raw)); fps += (1 / Math.max(0.001, raw) - fps) * 0.04;
+  const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.max(0, Math.min(0.25, raw)); fps += (1 / Math.max(0.001, raw) - fps) * 0.15;
   const now = performance.now();
   // dynamic resolution: steer the smoothed frame time toward the pacer target before dropping a whole quality tier
   frameMs += (raw * 1000 - frameMs) * 0.05;
   if (playing && controller.locked && nowMs - lastRes > 1500 && store.get('adaptive', '1') !== '0') {
-    const target = 1000 / Math.min(60, pacer.limit || 60), k = world.resScale ?? 1;
+    const targetFps = pacer.limit > 0 ? pacer.limit : 144;
+    const target = 1000 / targetFps, k = world.resScale ?? 1;
     if (frameMs > target * 1.2 && k > 0.75) { world.setResolutionScale(k - 0.05); lastRes = nowMs; }
     else if (frameMs < target * 0.8 && k < 1) { world.setResolutionScale(k + 0.05); lastRes = nowMs; }
   }
   // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
-  if (playing && controller.locked && fps < Math.min(28, pacer.limit * 0.8) && (world.resScale ?? 1) <= 0.76 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality({ ultra: 'high', high: 'medium', medium: 'low' }[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
+  if (playing && controller.locked && fps < 28 && (world.resScale ?? 1) <= 0.76 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality({ ultra: 'high', high: 'medium', medium: 'low' }[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
   heroHolder.visible = !playing && !world.showcase; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {

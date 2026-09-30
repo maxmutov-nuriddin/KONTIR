@@ -291,9 +291,9 @@ export class UI {
       <div class="set-tabs">${[['general', 'UMUMIY'], ['mouse', 'SICHQONCHA'], ['keys', 'KLAVIATURA']].map(([k, l]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="set-page" data-page="general">
         <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
-        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[30, '30'], [60, '60'], [120, '120'], [144, '144'], [0, 'MAX']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[60, '60'], [120, '120'], [144, '144'], [0, 'MAX (100+)']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
-        <p class="note">TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.</p></div>
+        <p class="note">TEZKOR: past ruxsat, eski noutbuklar uchun. O‘RTA (tavsiya): to‘liq tiniq ruxsat, yengil render — barcha kompyuterlarda 100+ FPS va maksimal ravon harakat. YUQORI: yumshoq soyalar va effektlar. ULTRA: GTAO + bloom, 3 × 2048 px soya.</p></div>
       <div class="set-page" data-page="mouse">
         <label for="sensitivity">SICHQONCHA SEZGIRLIGI <b id="sens-val">${m.sensitivity.toFixed(2)}</b></label><input id="sensitivity" type="range" min="0.15" max="2" step="0.01" value="${m.sensitivity}">
         <label for="zoom-sens">SCOPE SEZGIRLIGI <b id="zoom-val">${m.zoomSensitivity.toFixed(2)}</b></label><input id="zoom-sens" type="range" min="0.3" max="1.5" step="0.05" value="${m.zoomSensitivity}">
