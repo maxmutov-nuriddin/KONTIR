@@ -1,11 +1,12 @@
 // One authoritative 5v5 match: lobby/team allocation, MR12 round state machine, economy, combat with
 // lag-compensated hit registration, grenades, bomb objective and bots.
 import { randomBytes } from 'node:crypto';
-import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, UNIT, neutralInput, otherTeam, clamp, validCommand } from '../shared/constants.js';
+import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, neutralInput, otherTeam, clamp, validCommand } from '../shared/constants.js';
 import { createPlayer, eyeHeight, horizontalSpeed, stepPlayer } from '../shared/movement.js';
 import { Inventory } from '../shared/inventory.js';
-import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, speedMul, inaccuracy, makeRandom, rayHitPlayer, shotDirection } from '../shared/weapons.js';
+import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, loadSpeedMul, inaccuracy, makeRandom, rayHitPlayer, shotDirection } from '../shared/weapons.js';
 import { LagCompensator } from './LagCompensator.js';
+import { PENETRATION } from '../shared/collision.js';
 import { BotBrain } from './Bots.js';
 
 const BOT_NAMES = ['NOVA', 'GHOST', 'ATLAS', 'VIPER', 'RAVEN', 'ORION', 'COBRA', 'DELTA', 'SABLE', 'ONYX', 'KESTREL', 'BISHOP', 'TITAN', 'MAMBA', 'FALCON', 'JACKAL', 'HYDRA', 'LYNX', 'RONIN', 'WOLF'];
@@ -433,13 +434,15 @@ export class Room {
         return best;
       };
       hit = scan(0, limit);
-      // wall penetration: thin cover (crates, doors, low walls) up to the weapon's penetration depth, with damage loss
-      if (!hit && wall && (w.penetration ?? 0) > 0) {
+      // wall penetration by material: planks and sheet metal are shot through, masonry barely, sandbags not at all;
+      // the damage left depends on how much of the round's power the material ate
+      const power = (w.penetration ?? 0) * (wall ? PENETRATION[wall.surface] ?? 1 : 1);
+      if (!hit && wall && power > 0) {
         const px = origin.x + dir.x * (limit + 0.01), py = origin.y + dir.y * (limit + 0.01), pz = origin.z + dir.z * (limit + 0.01);
-        const exit = this.collider.raycast(px, py, pz, dir.x, dir.y, dir.z, w.penetration + 0.02);
+        const exit = this.collider.raycast(px, py, pz, dir.x, dir.y, dir.z, power + 0.02);
         const thickness = exit ? exit.distance : Infinity;
-        if (thickness <= w.penetration) {
-          from = limit + 0.01 + thickness; dmgScale = Math.max(0.2, 0.85 - 0.6 * thickness / w.penetration);
+        if (thickness <= power) {
+          from = limit + 0.01 + thickness; dmgScale = Math.max(0.2, 0.85 - 0.6 * thickness / power);
           const next = this.collider.raycast(origin.x + dir.x * (from + 0.01), origin.y + dir.y * (from + 0.01), origin.z + dir.z * (from + 0.01), dir.x, dir.y, dir.z, 250);
           const end = from + 0.01 + (next ? next.distance : 250);
           const h2 = scan(from, end);
@@ -455,8 +458,9 @@ export class Room {
         const acc = hits.get(hit.target.id) || { target: hit.target, part: hit.part, damage: 0, killed: false };
         acc.damage += dmg.health; acc.killed = acc.killed || killed; if (hit.part === 'head') acc.part = 'head'; hits.set(hit.target.id, acc);
       }
-      first = first || { to, hit: !!hit, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null, pen };
-      if (pellets > 1 && i > 0) this.emit('pellet', { shooter: p.id, from: origin, to, wall: !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz } : null });
+      const wallInfo = !hit && wall ? { nx: wall.nx, ny: wall.ny, nz: wall.nz, s: wall.surface } : null;   // s: surface for impact fx
+      first = first || { to, hit: !!hit, wall: wallInfo, pen: pen && wall ? { ...pen, s: wall.surface } : pen };
+      if (pellets > 1 && i > 0) this.emit('pellet', { shooter: p.id, from: origin, to, wall: wallInfo });
     }
     let info = null;
     for (const h of hits.values()) {
@@ -496,7 +500,7 @@ export class Room {
   throwGrenade(p, ev) {
     const w = WEAPONS[ev.weapon], c = p.char, o = this.eye(p);
     const dir = { x: -Math.sin(c.yaw) * Math.cos(c.pitch + 0.1), y: Math.sin(c.pitch + 0.1), z: -Math.cos(c.yaw) * Math.cos(c.pitch + 0.1) };
-    const speed = 19 * ev.strength + 1;
+    const speed = 13.2 * ev.strength + 0.8;                       // a real overhand throw (~14 m/s) under Earth gravity
     const start = { x: o.x + dir.x * 0.45, y: o.y + dir.y * 0.45 - 0.1, z: o.z + dir.z * 0.45 };
     const clear = this.collider.wallDistance(o.x, o.y, o.z, start.x - o.x, start.y - o.y, start.z - o.z, 0.6);
     if (clear < 0.44) { start.x = o.x; start.y = o.y; start.z = o.z; }
@@ -637,10 +641,11 @@ export class Room {
       return;
     }
     if (p.team === 'COUNTER_TERRORIST' && b.state === 'planted' && Math.hypot(c.x - b.x, c.y - b.y, c.z - b.z) < 2.2 && cmd.interact && !cmd.fire && !cmd.fire2 && !p.inv.reloading && still && this.hasSight(this.eye(p), { x: b.x, y: b.y + 0.15, z: b.z }, true)) {
+      // one defuser at a time: checked before starting, so a waiting CT does not re-announce defuseStart every tick
+      if ([...this.players.values()].some(q => q !== p && q.alive && q.action?.kind === 'defuse')) { p.action = null; return; }
       const need = p.kit ? RULES.defuseKitSeconds : RULES.defuseSeconds;
       p.action = p.action?.kind === 'defuse' ? p.action : { kind: 'defuse', progress: 0, need };
       if (p.action.progress === 0) this.emit('defuseStart', { who: p.id, kit: p.kit });
-      if ([...this.players.values()].some(q => q !== p && q.alive && q.action?.kind === 'defuse')) { p.action = null; return; }
       p.action.progress += DT;
       if (p.action.progress >= need) {
         b.state = 'defused'; b.defuser = p.id; p.action = null; p.money = Math.min(RULES.maxMoney, p.money + 300);
@@ -686,14 +691,15 @@ export class Room {
     p.lastLook.yaw = cmd.yaw; p.lastLook.pitch = cmd.pitch;
     const movement = !canMove ? { ...neutralInput(), yaw: cmd.yaw, pitch: cmd.pitch } : cmd;
     if (!p.alive) { p.char.vx = p.char.vz = 0; return; } // the body stays put: no turning / leg motion from a dead player's input
-    p.char.speedMul = speedMul(p.inv.weapon()?.id);
+    p.char.speedMul = loadSpeedMul(p.inv);                    // whole carried load: held weapon, stowed kit, scope
     const ev = stepPlayer(p.char, movement, this.collider);
     if (ev.footstep) { this.emit('footstep', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z }); this.noise(p, 16); }
     if (ev.jumped) this.emit('jump', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z });
     if (ev.landed > 2) {
       this.emit('land', { who: p.id, x: p.char.x, y: p.char.y, z: p.char.z, speed: ev.landed });
-      const fall = ev.landed / UNIT;
-      if (fall > 580 && (this.phase === 'live' || this.phase === 'post')) this.damage(p, null, Math.round((fall - 580) * 0.2252), 0, 'fall', false);
+      // realistic fall damage: harmless up to ~3.7 m, a 6 m drop costs ~40 HP, ~10 m is lethal
+      const over = ev.landed - RULES.fallDamageMinSpeed;
+      if (over > 0 && (this.phase === 'live' || this.phase === 'post')) this.damage(p, null, Math.round(over * 18), 0, 'fall', false);
     }
     if (!p.alive) return;
     const events = p.inv.step(cmd, { canFire: p.alive && live });

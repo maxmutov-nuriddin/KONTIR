@@ -1,5 +1,5 @@
 import { gsap } from 'gsap';
-import { WEAPONS, BUY_ITEMS } from '../../shared/weapons.js';
+import { WEAPONS, BUY_ITEMS, weaponMass, speedMul } from '../../shared/weapons.js';
 import { RULES } from '../../shared/constants.js';
 
 const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
@@ -14,10 +14,12 @@ const RPM = w => Math.round(60 / w.interval);
 const GROUP_NAMES = { PISTOLS: 'PISTOLS', SMGS: 'SMG', HEAVY: 'SHOTGUN', RIFLES: 'RIFLES', GRENADES: 'GRENADES', GEAR: 'GEAR' };
 const statLine = id => {
   const w = WEAPONS[id];
-  if (w?.kind === 'gun') return `${w.damage}${w.pellets ? ` × ${w.pellets}` : ''} DMG · ${RPM(w)} RPM${w.scope ? ' · SCOPE' : ''}`;
+  // weight and the resulting run speed (u/s) with the weapon in hand
+  if (w?.kind === 'gun') return `${w.damage}${w.pellets ? ` × ${w.pellets}` : ''} DMG · ${RPM(w)} RPM · ${weaponMass(id).toFixed(1)} kg · ${Math.round(250 * speedMul(id))} u/s${w.scope ? ' · SCOPE' : ''}`;
   return { he: '98 DMG · 8.5 M', flash: '2 TAGACHA', smoke: '18 SONIYA', molotov: '7 s OLOV', incendiary: '7 s OLOV', decoy: 'SOXTA OTISH', kevlar: '100 ARMOR', helmet: '100 ARMOR + DUBULG‘A', defuser: '5 s DEFUSE' }[id] || '';
 };
 
+export const QUALITY_NOTE = 'TEZKOR: sahna 75 % ruxsatda, FSR uslubida keskinlashtiriladi — eng zaif noutbuklar uchun. O‘RTA: to‘liq ruxsat, soyasiz, eng yuqori FPS. TINIQ (eski PC uchun tavsiya): to‘liq ruxsat, 4x MSAA, keskinlashtirish va yengil soya — FPS tushsa ruxsat avtomatik pasayadi, tasvir esa tiniq qoladi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya.';
 export class UI {
   constructor() {
     $('#app').innerHTML = `
@@ -290,10 +292,10 @@ export class UI {
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
       <div class="set-tabs">${[['general', 'UMUMIY'], ['mouse', 'SICHQONCHA'], ['keys', 'KLAVIATURA']].map(([k, l]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="set-page" data-page="general">
-        <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
+        <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'crisp', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
         <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[60, '60'], [120, '120'], [144, '144'], [0, 'MAX (100+)']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
-        <p class="note">TEZKOR: past ruxsat, eski noutbuklar uchun. O‘RTA (tavsiya): to‘liq tiniq ruxsat, yengil render — barcha kompyuterlarda 100+ FPS va maksimal ravon harakat. YUQORI: yumshoq soyalar va effektlar. ULTRA: GTAO + bloom, 3 × 2048 px soya.</p></div>
+        <p class="note">${QUALITY_NOTE}</p></div>
       <div class="set-page" data-page="mouse">
         <label for="sensitivity">SICHQONCHA SEZGIRLIGI <b id="sens-val">${m.sensitivity.toFixed(2)}</b></label><input id="sensitivity" type="range" min="0.15" max="2" step="0.01" value="${m.sensitivity}">
         <label for="zoom-sens">SCOPE SEZGIRLIGI <b id="zoom-val">${m.zoomSensitivity.toFixed(2)}</b></label><input id="zoom-sens" type="range" min="0.3" max="1.5" step="0.05" value="${m.zoomSensitivity}">

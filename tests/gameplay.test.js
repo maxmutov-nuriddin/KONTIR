@@ -53,6 +53,26 @@ test('wall penetration: thin cover is shot through with reduced damage, thick wa
   room.collider = real;
 });
 
+test('penetration depends on the material: a 0.4 m wooden crate is shot through, 0.2 m of masonry or a sandbag is not', () => {
+  const room = mk(); const a = room.add('a', 'A', 'TERRORIST'), b = room.add('b', 'B', 'COUNTER_TERRORIST'); live(room);
+  const real = room.collider, board = { x: 5, t: 0.4, surface: 'wood' };
+  room.collider = { ...real, bounds: real.bounds, raycast: (ox, oy, oz, dx, dy, dz, far) => {
+    if (dx > 0 && ox < board.x) { const d = (board.x - ox) / dx; return d <= far ? { distance: d, x: board.x, y: oy, z: oz, nx: -1, ny: 0, nz: 0, surface: board.surface } : null; }
+    if (dx > 0 && ox >= board.x && ox < board.x + board.t) { const d = (board.x + board.t - ox) / dx; return d <= far ? { distance: d, x: board.x + board.t, y: oy, z: oz, nx: 1, ny: 0, nz: 0, surface: board.surface } : null; }
+    return null;
+  }, wallDistance: () => 999, resolveCapsule: () => false };
+  Object.assign(a.char, { x: 0, y: 0, z: 0, yaw: -Math.PI / 2, pitch: 0 }); Object.assign(b.char, { x: 10, y: 0, z: 0, yaw: 0 });
+  a.inv.give('ak47', { select: true });
+  const shoot = () => { b.health = 100; b.alive = true; room.fireShot(a, { weapon: 'ak47', index: 0, punch: { yaw: 0, pitch: 0 }, burst: 0, zoom: 0 }, { viewTick: room.tick }); return 100 - b.health; };
+  assert.ok(shoot() > 0, 'AK round goes through a 0.4 m crate');
+  Object.assign(board, { t: 0.2, surface: 'concrete' }); assert.equal(shoot(), 0, '0.2 m of masonry stops it');
+  Object.assign(board, { t: 0.1, surface: 'sandbag' }); assert.equal(shoot(), 0, 'sandbags stop rifle rounds');
+  Object.assign(board, { t: 0.1, surface: 'metal' }); const sheet = shoot();
+  Object.assign(board, { t: 0.1, surface: 'wood' }); const plank = shoot();
+  assert.ok(sheet > 0 && plank > sheet, `thin steel costs more damage than wood (${sheet} < ${plank})`);
+  room.collider = real;
+});
+
 test('anti-wallhack: enemies behind walls are not sent; team chat / radio / pings only reach the team', () => {
   const room = mk(); const a = room.add('a', 'A', 'TERRORIST'), b = room.add('b', 'B', 'COUNTER_TERRORIST'), m = room.add('m', 'M', 'TERRORIST'); live(room);
   const snapB = () => room.snapshot('a').players.find(p => p.id === 'b');

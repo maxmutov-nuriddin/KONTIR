@@ -4,9 +4,13 @@
 // Pure logic (no sockets, injectable clock) so it is unit-testable; server.js wires it to Socket.IO.
 import { randomBytes } from 'node:crypto';
 
+// fillAfterMs: a partial group (2+) starts with bots after this wait. soloAfterMs: one searcher while others are also
+// queued (for other maps). aloneAfterMs: nobody else is searching this mode at all — waiting longer cannot find anyone,
+// so the match starts with bots almost at once (low-population servers used to make players wait 90 s and the
+// ACCEPT pop-up then expired unnoticed: "PLAY never starts").
 export const MODES = Object.freeze({
-  competitive: { label: 'COMPETITIVE', size: 10, fillAfterMs: 45000, soloAfterMs: 90000 },
-  casual: { label: 'CASUAL', size: 10, fillAfterMs: 12000, soloAfterMs: 20000 },
+  competitive: { label: 'COMPETITIVE', size: 10, fillAfterMs: 30000, soloAfterMs: 45000, aloneAfterMs: 6000 },
+  casual: { label: 'CASUAL', size: 10, fillAfterMs: 8000, soloAfterMs: 12000, aloneAfterMs: 3000 },
 });
 
 export class MatchQueue {
@@ -76,7 +80,8 @@ export class MatchQueue {
           const group = free.filter(e => e.maps.has(mapId));
           if (!group.length) continue;
           const waited = now - group[0].since;
-          const ready = group.length >= cfg.size || (group.length >= 2 && waited >= cfg.fillAfterMs) || waited >= cfg.soloAfterMs;
+          const alone = free.length === 1 && waited >= (cfg.aloneAfterMs ?? cfg.soloAfterMs);
+          const ready = group.length >= cfg.size || (group.length >= 2 && waited >= cfg.fillAfterMs) || waited >= cfg.soloAfterMs || alone;
           if (!ready) continue;
           // prefer the longest-waiting player's maps, then bigger groups
           const score = group.length * 1000 + (group.includes(free[0]) ? 500 : 0);
@@ -84,7 +89,9 @@ export class MatchQueue {
         }
         if (!best) break;
         const id = 'M' + randomBytes(4).toString('hex').toUpperCase();
-        const match = { id, mapId: best.mapId, mode, players: best.group.map(e => e.id), accepted: new Set(), declined: new Set(), deadline: now + this.acceptMs, size: cfg.size };
+        const players = best.group.map(e => e.id);
+        // a one-player match needs no ACCEPT round: pressing SEARCH already was the consent
+        const match = { id, mapId: best.mapId, mode, players, accepted: new Set(players.length === 1 ? players : []), declined: new Set(), deadline: now + this.acceptMs, size: cfg.size, solo: players.length === 1 };
         for (const e of best.group) e.matchId = id;
         this.matches.set(id, match);
         actions.push({ type: 'found', match });

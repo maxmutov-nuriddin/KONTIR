@@ -14,10 +14,15 @@ test('GPU frame budget is capped across 60/144/240 Hz displays, menu and hidden 
   }
   const pacer = new FramePacer(120); let menu = 0;
   for (let t = 0; t < 1000; t++) if (pacer.ready(t, { active: false })) menu++;
-  assert.equal(menu, 30);
+  assert.equal(menu, 60);
+  // an uncapped game still caps the menu at 60 FPS
+  const free = new FramePacer(0); let freeMenu = 0, freeGame = 0;
+  for (let t = 0; t < 1000; t++) { if (free.ready(t, { active: false })) freeMenu++; }
+  for (let t = 1000; t < 2000; t++) { if (free.ready(t)) freeGame++; }
+  assert.equal(freeMenu, 60); assert.equal(freeGame, 1000);
   assert.equal(pacer.ready(2000, { hidden: true }), false);
   assert.equal(pacer.ready(9000), true);
-  pacer.setLimit(NaN); assert.equal(pacer.limit, 60);
+  pacer.setLimit(NaN); assert.equal(pacer.limit, 0);
 });
 
 test('viewmodel springs remain bounded and settle at 4 FPS', () => {

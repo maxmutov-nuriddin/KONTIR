@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { WeaponManager } from '../WeaponManager.js';
 import { ViewmodelDynamics } from '../PlayerController.js';
-import { animateOperator, buildOperator, holdWeapon } from './characters.js';
+import { animateOperator, buildOperator, holdWeapon, setHoldPose } from './characters.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -44,7 +44,18 @@ function forceReload(wm) {
   wm.react({ type: 'reloadStart', weapon: id });
   inv.reloading = true; inv.reloadProgress = () => Number(at);
 }
-if (mode === 'rig') {
+if (mode === 'gun') {
+  // bare weapon model, studio-lit from the side (design review of the procedural arsenal)
+  const vs = new THREE.Scene(); vs.background = new THREE.Color(0x9aa6ab); environment(vs, sunDir); vs.environmentIntensity = 1.0;
+  vs.add(new THREE.HemisphereLight(0xdfe8f2, 0x6b5c48, 0.6)); const key = new THREE.DirectionalLight(0xfff1dc, 3.2); key.position.set(1.5, 2.5, 1); vs.add(key);
+  const rim = new THREE.DirectionalLight(0xcfe0ff, 1.6); rim.position.set(-1.5, 1, -2); vs.add(rim);
+  const rig = buildWeaponRig(id); vs.add(rig.group);
+  const box = new THREE.Box3().setFromObject(rig.group), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  camera = new THREE.PerspectiveCamera(24, innerWidth / innerHeight, 0.01, 20);
+  const [ax, ay, az] = (q.get('dir') || '1,0.12,0.18').split(',').map(Number), d = Math.max(size.z, size.y * 1.6) * 2.5;
+  camera.position.set(c.x + ax * d, c.y + ay * d, c.z + az * d); camera.lookAt(c);
+  tick = () => { renderer.clear(); renderer.render(vs, camera); };
+} else if (mode === 'rig') {
   // rig inspection: the first-person rig (weapon + sleeves + hands) seen from outside
   const vs = new THREE.Scene(); vs.background = new THREE.Color(0x8c9aa1); environment(vs, sunDir); vs.environmentIntensity = 0.7;
   vs.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.4)); vs.environmentIntensity = 0.9; { const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); vs.add(rim); } const l = new THREE.DirectionalLight(0xffe1b0, 3.5); l.position.set(-1.5, 3, 2); vs.add(l);
@@ -71,7 +82,7 @@ if (mode === 'rig') {
   const actor = buildOperator(team, Number(q.get('seed') || 1)); scene.add(actor);
   actor.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   const crouch = Number(q.get('crouch') || 0), pitch = Number(q.get('pitch') || 0), yaw = Number(q.get('yaw') || 0.6), speed = Number(q.get('speed') || 0);
-  holdWeapon(actor, id);
+  holdWeapon(actor, id); if (q.get('pose')) setHoldPose(actor, q.get('pose'));
   const focus = mode === 'orbit' ? 1.0 : 0.95, dist = Number(q.get('dist') || (mode === 'orbit' ? 2.2 : 3.6));
   tick = (dt, t) => {
     animateOperator(actor, { speed, yaw: 0, pitch, crouch, alive: true, dt, moveYaw: speed ? Math.PI : undefined });

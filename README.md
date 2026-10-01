@@ -74,10 +74,10 @@ tools/           build-maps.mjs va grid asosidagi xarita generatori
 
 | Tugma | Amal |
 |---|---|
-| WASD | Harakat — **250 u/s** |
+| WASD | Harakat — yuksiz **250 u/s** (6,35 m/s), qurol og‘irligi bilan kamayadi (pastga qarang); orqaga 72 %, yonga 90 % |
 | **Shift** | Jimgina yurish — **130 u/s**, qadam ovozi hodisasi umuman yo‘q |
-| **Ctrl** / C | Cho‘kish — **100 u/s**, kamera **1.65 → 1.05 m** silliq |
-| Space | Sakrash (yangi bosish; havoda `airAccelerate = 12`, `maxAirSpeed = 30`) |
+| **Ctrl** / C | Cho‘kib yurish — **85 u/s**, kamera **1.65 → 1.05 m** silliq |
+| Space | Sakrash — real **~0,55 m** (gravitatsiya 9,81 m/s²); havoda yo‘nalishni deyarli o‘zgartirib bo‘lmaydi |
 | **1–5** | Asosiy / Pistolet / Pichoq / Granata (qayta bosilsa HE→Flash→Smoke) / C4 |
 | **Q** | Oxirgi qurolga qaytish (`currentSlot` ⇄ `previousSlot`) |
 | Sichqoncha g‘ildiragi | Keyingi/oldingi slot |
@@ -87,6 +87,17 @@ tools/           build-maps.mjs va grid asosidagi xarita generatori
 | **Y** / **U** | Umumiy chat / jamoa chati |
 | **Z** (+1–9) | Radio buyruqlari menyusi |
 | **X** / o‘rta tugma | Ping — nishon joyiga jamoaga belgi |
+
+### Realistik harakat va qurol og‘irligi
+
+Har bir qurolning haqiqiy og‘irligi bor (`shared/weapons.js` → `MASS`, kg, o‘qli magazin bilan): Glock 0,9 · USP 1,0 · Deagle 2,0 · MP9 1,4 · P90 2,9 · M4A4 3,4 · AK-47 4,3 · AWP 6,9 · Negev 7,6 · C4 2,5. Tezlik koeffitsienti `loadSpeedMul(inventory)` = `1 − 0,034 × qo‘ldagi kg − 0,008 × orqadagi yuk (boshqa qurollar, granatalar, C4)`; scope bilan nishonga olinganda × 0,62. Natija: pichoq ~248, Glock ~242, M4 ~221, AK ~213, AWP ~191 u/s (xarid menyusida har qurol uchun kg va u/s ko‘rsatiladi).
+
+- **Tezlanish** ham yukka bog‘liq: og‘ir qurol bilan tezlikni sekinroq olasiz.
+- **Sakrash:** og‘ir yuk bilan pastroq (Negev ~ −8 %); ketma-ket sakrash charchatadi (keyingisi pastroq), yerda ~0,7 s dam olinsa tiklanadi. Sakrash tezlik qo‘shmaydi, qo‘nish esa tezlikning bir qismini oladi — bunny-hop va air-strafe yo‘q.
+- **Ledge’lar (1,2 m)** ga endi sakrab chiqib bo‘lmaydi — zinapoya / rampadan chiqiladi.
+- **Tushish shikasti:** ~3,7 m gacha zararsiz, 6 m ≈ 40 HP, ~10 m o‘ldiradi.
+- **Granatalar** real gravitatsiyada, uloqtirish tezligi ~14 m/s (masofa avvalgidek).
+- **Viewmodel:** og‘ir qurol sichqonchaga kechroq ergashadi, sekinroq qaytadi va yurganda ko‘proq tebranadi.
 
 ## Qoidalar (competitive MR12)
 
@@ -176,11 +187,15 @@ O‘q ovozi endi oscillator “baraban” emas: `client/src/gunsynth.js` har bir
 
 ## Grafika
 
-ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (soyasiz), **O‘RTA** (1 × 1024 px soya, har 2-kadrda, MSAA), **YUQORI** (2 × 1024 px soya, 1.25× ruxsat, MSAA), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
+ACESFilmic tone mapping (`exposure = 1.0`), fizik sky + PMREM IBL, **2/3 kaskadli CSM** (PCFSoft, kaskad bo‘yicha `bias/normalBias`), protsedur PBR (albedo + normal + roughness/metalness: gips, g‘isht, beton, yog‘och, konteyner gofrasi, asfalt, gazlama…), dunyo koordinatali makro-variatsiya va devor tagidagi kir, kadr uchun statik batching (material × 28 m chunk, frustum culling), alohida viewmodel o‘tishi (o‘z FOV va yorug‘ligi). Sifat darajalari: **TEZKOR** (sahna 75 % ruxsatda + FXAA + RCAS keskinlashtirish, soyasiz), **O‘RTA** (to‘liq ruxsat, soyasiz, to‘g‘ridan-to‘g‘ri canvasga — eng yuqori FPS), **TINIQ** (eski PC uchun tavsiya: to‘liq ruxsat, 4x MSAA, RCAS, 1 × 1024 px soya har 2-kadrda), **YUQORI** (2 × 1024 px soya, 4x MSAA), **ULTRA** (GTAO + bloom, 3 × 2048 px soya).
+
+TEZKOR / TINIQ / YUQORI [`client/src/upscaler.js`](client/src/upscaler.js) orqali chiziladi: sahna va viewmodel bitta HalfFloat render-target’ga (kerak bo‘lsa MSAA bilan), so‘ng bitta to‘liq ekran o‘tishida bilinear kattalashtirish + FSR 1 RCAS keskinlashtirish + ACES + sRGB. Dinamik ruxsat faqat shu ichki target’ni kichraytiradi (canvas doim to‘liq ruxsatda), shuning uchun FPS tushganda ham tasvir xiralashmaydi. Canvas MSAA kontekst yaratilganda qotib qoladi — endi AA render-target’da, sifat almashtirilganda darhol ishlaydi. Float render-target qo‘llanmaydigan GPU’da avtomatik to‘g‘ridan-to‘g‘ri renderga qaytiladi.
+
+Operatorlar ([`client/src/characters.js`](client/src/characters.js)): protsedur CS2 uslubidagi taktik operator — plate carrier / chest rig, modul cho‘ntaklar, radio va antenna, FAST shlem + quloqchinlar (CT), balaklava + ko‘zoynak (T), tizzaliklar, botinkalar. Barcha qismlar bitta qattiq skinned mesh’ga yig‘ilgan (operator = 1 draw call), 2 bosqichli LOD (≈9k / ≈1.5k uchburchak), jamoa uchun bitta PBR material: ripstop mato teksturasi, shader’dagi kamuflyaj, har-cho‘qqi roughness / metalness. T — iliq cho‘l ranglari, CT — sovuq ko‘kimtir-kulrang: uzoqdan ham farqlanadi.
 
 Qo‘llar: har bir qurol uchun barmoqlari egilgan qo‘lqopli qo‘l bitta geometriyaga “pishiriladi” (1 draw call), yeng tirsak nuqtasiga yo‘naltiriladi. Uchinchi shaxs operatorlar qurolni xuddi shu qo‘l pozalari bilan ushlaydi: yelka→tirsak→bilak ikki bo‘g‘inli analitik IK bilan har kadr qo‘lga yetkaziladi; qurol modeli material bo‘yicha bitta mesh’ga birlashtirilgan (keshlangan).
 
-Standart rejim: **O‘RTA + 60 FPS** — to‘liq ruxsat + MSAA (tiniq), bitta 1024 px soya kaskadi har ikkinchi kadrda yangilanadi (GPU kam yuklanadi, qurilma qizimaydi). Dinamik ruxsat: kadr vaqti maqsaddan 20 % oshsa ruxsat 0.75× gacha pasayadi (xiralashib ketmaydi), keyin qaytadi; shunda ham past bo‘lsa sifat bir pog‘ona tushadi. Sozlamalarda 30/60/90/120 FPS tanlanadi. Menyu va pauza ekrani ko‘pi bilan 30 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
+Standart rejim: **O‘RTA**, FPS limitsiz (MAX). Dinamik ruxsat: kadr vaqti maqsaddan 20 % oshsa ichki ruxsat pasayadi (TEZKOR/TINIQ/YUQORI’da 60 % gacha, RCAS bilan tiniq; O‘RTA’da 75 %), keyin qaytadi; shunda ham FPS < 28 bo‘lsa sifat bir pog‘ona tushadi (ULTRA → YUQORI → TINIQ → O‘RTA → TEZKOR). Maqsad: tanlangan FPS limiti, MAX’da esa 60 FPS. Sozlamalarda 60/120/144/MAX tanlanadi. Menyu va pauza ekrani ko‘pi bilan 60 FPS; yashirin tabda render to‘xtaydi, ammo serverdagi o‘yin davom etadi. 30 soniya buyruqsiz qolgan socket uziladi. FPS limiti o‘yin fizikasining 64 Hz tezligini o‘zgartirmaydi. Oldindan saqlangan sifat sozlamasi saqlanadi.
 
 Vite endi tizimning fayl hodisalaridan foydalanadi. Zarur bo‘lgan tarmoq disklari uchun `KONTIR_POLLING=1 npm run dev` bilan polling yoqiladi.
 

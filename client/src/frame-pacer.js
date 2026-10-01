@@ -1,4 +1,5 @@
 /** Bounds GPU work independently of the fixed 64 Hz gameplay accumulator. */
+export const MENU_FPS = 60;
 export class FramePacer {
   constructor(limit = 0) { this.setLimit(limit); this.next = null; }
   setLimit(value) {
@@ -7,8 +8,9 @@ export class FramePacer {
   }
   ready(now, { hidden = false, active = true } = {}) {
     if (hidden) { this.next = null; return false; }
-    if (this.limit === 0 || this.limit >= 240) return true;
-    const targetFps = active ? this.limit : Math.min(60, this.limit);
+    // menu / pause / death screen never needs more than 60 FPS, even with an uncapped limit: old GPUs stay cool
+    const targetFps = active ? this.limit : Math.min(MENU_FPS, this.limit || MENU_FPS);
+    if (targetFps === 0 || targetFps >= 240) return true;
     const interval = 1000 / targetFps;
     if (this.next !== null && now + 0.25 < this.next) return false;
     this.next = this.next === null || now - this.next > interval ? now + interval : this.next + interval;

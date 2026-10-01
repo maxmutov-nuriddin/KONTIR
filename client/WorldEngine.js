@@ -21,22 +21,30 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-
 import { buildMapData } from '../shared/maps.js';
 import { applyPBR, recipeFor } from './src/materials.js';
 import { Effects } from './src/effects.js';
-import { animateOperator, buildOperator, holdWeapon } from './src/characters.js';
+import { animateOperator, buildOperator, holdWeapon, prebuildOperators, setHoldPose, setOperatorDetail } from './src/characters.js';
 import { RIG_IDS, buildWeaponRigTP, buildWeaponRig } from './src/viewmodels.js';
 import { models } from './src/models.js';
+import { Upscaler } from './src/upscaler.js';
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
-const QUALITY = {
-  ultra: { pixelRatio: 1.25, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170, macro: true, motes: true },
-  high: { pixelRatio: 1.0, shadows: true, mapSize: 1024, post: false, msaa: 2, cascades: 2, maxFar: 120, macro: true, motes: true },
-  // O'RTA (100+ FPS): to‘liq tiniq 1080p ruxsat, soyasiz yengil render — barcha kompyuter va noutbuklarda 100+ FPS
-  medium: { pixelRatio: 1.0, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 70, macro: false, motes: false },
-  // TEZKOR: eng yengil parametrlar, eski noutbuklar uchun
-  low: { pixelRatio: 0.75, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false },
+// pixelRatio: canvas (output) DPR cap. render: scene DPR cap for the upscaler path (FSR-style: scene rendered at
+// render/pixelRatio of the canvas, then sharpened by RCAS). msaa on the upscaler path is runtime-switchable.
+// operatorLod: distance (m) at which operators switch to their low-poly LOD.
+export const QUALITY = {
+  ultra: { pixelRatio: 1.25, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170, macro: true, motes: true, operatorLod: 30 },
+  high: { pixelRatio: 1.25, render: 1.0, sharpen: 0.25, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 2, maxFar: 120, macro: true, motes: true, operatorLod: 22 },
+  // TINIQ: eski/oddiy PC uchun eng toza tasvir — to‘liq ruxsat, 4x MSAA, RCAS keskinlashtirish, bitta yengil soya
+  // kaskadi (har 2-kadrda). FPS tushsa ichki ruxsat 60 % gacha pasayadi, lekin RCAS tufayli tasvir xiralashmaydi.
+  crisp: { pixelRatio: 1.5, render: 1.0, sharpen: 0.55, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 42, shadowEvery: 2, macro: true, motes: false, operatorLod: 16 },
+  // O'RTA (100+ FPS): to‘liq 1080p ruxsat, soyasiz yengil render, to‘g‘ridan-to‘g‘ri canvasga
+  medium: { pixelRatio: 1.0, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 70, macro: false, motes: false, operatorLod: 14 },
+  // TEZKOR: sahna 75 % ruxsatda, RCAS bilan tiniq qilib kattalashtiriladi — eng zaif noutbuklar uchun
+  low: { pixelRatio: 1.0, render: 0.75, sharpen: 0.45, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false, operatorLod: 10 },
 };
+export const QUALITY_ORDER = ['low', 'medium', 'crisp', 'high', 'ultra'];
 
 // World-space macro variation: breaks texture tiling with large-scale tone patches and adds wall-base grime + vertical sun-bleach streaks.
 const MACRO_GLSL = /* glsl */`
@@ -66,13 +74,20 @@ function patchMacro(material) {
   material.customProgramCacheKey = () => `kontir-macro-v2-${material.defines?.CSM_CASCADES || 0}`;
 }
 const CHUNK = 28;
+const MIN_INTERNAL_SCALE = 0.55;
+const tmpColor = new THREE.Color();
+const SHOWCASE_DIST = 5.2, SHOWCASE_SPAN = 2.78;   // lobby camera distance (m) and framed height (m)
+const tmpSize = new THREE.Vector2(), LOD_TAN = Math.tan(THREE.MathUtils.degToRad(37));
 const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpM = new THREE.Matrix4();
 
 export class WorldEngine {
   constructor(canvas, { quality = 'medium' } = {}) {
     if (!Object.hasOwn(QUALITY, quality)) quality = 'medium';
     this.canvas = canvas; this.qualityName = quality; this.quality = QUALITY[quality];
-    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: quality === 'ultra' || quality === 'high', powerPreference: 'high-performance', stencil: false }); // MSAA is fixed at creation
+    // Canvas MSAA is fixed at context creation, so anti-aliasing lives in render targets instead (upscaler / composer):
+    // switching quality in Settings then takes effect immediately instead of after a reload.
+    const renderer = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+    renderer.info.autoReset = false;            // one frame = scene + viewmodel + present: count them together
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -81,7 +96,10 @@ export class WorldEngine {
     renderer.autoClear = false;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio));
     renderer.setSize(innerWidth, innerHeight, false);
-    this.maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    // sharper ground / walls at grazing angles: 16x anisotropic filtering on the crisp tiers, 8x on the light ones
+    this.maxAniso = Math.min(quality === 'low' || quality === 'medium' ? 8 : 16, renderer.capabilities.getMaxAnisotropy());
+    this.texSize = quality === 'low' ? 256 : 512;           // procedural map texture resolution
+    this.canUpscale = Upscaler.supported(renderer); this.upscaler = null;
 
     this.scene = new THREE.Scene(); this.viewScene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.05, 700); this.camera.rotation.order = 'YXZ'; this.scene.add(this.camera);
@@ -91,7 +109,7 @@ export class WorldEngine {
     this.viewSun = new THREE.DirectionalLight(0xffffff, 3); this.viewSun.position.set(2, 3, 2); this.viewScene.add(this.viewSun, this.viewSun.target);
     // cool rim light from beyond the weapon: separates metal edges and hands from the background
     this.viewRim = new THREE.DirectionalLight(0xcfe0ff, 1.4); this.viewRim.position.set(1.2, 1.4, -3); this.viewScene.add(this.viewRim, this.viewRim.target);
-    this.effects = new Effects(this.scene, this.camera);
+    this.effects = new Effects(this.scene, this.camera, { lightCount: quality === 'ultra' || quality === 'high' ? 3 : 1 });
     this.actors = new Map(); this.labels = new Map(); this.materials = new Set();
     this.shake = 0; this.time = 0; this.menuMode = true; this.mapGroup = null; this.map = null; this.sunDir = new THREE.Vector3(-0.45, 0.7, 0.4).normalize();
     this.gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -120,14 +138,55 @@ export class WorldEngine {
     const envScene = new THREE.Scene(); envScene.add(make(100));
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT?.dispose(); this.envRT = pmrem.fromScene(envScene, 0.02); pmrem.dispose(); disposeTree(envScene);
-    this.scene.environment = this.envRT.texture; this.scene.environmentIntensity = overcast ? 0.8 : 0.72;
+    // sun : sky balance of a real day — direct sun clearly dominates on clear days (crisp light/shade separation),
+    // an overcast sky is softer and more even
+    this.scene.environment = this.envRT.texture; this.scene.environmentIntensity = overcast ? 0.7 : 0.5;
     this.viewScene.environment = this.envRT.texture; this.viewScene.environmentIntensity = 0.9;
     this.scene.fog = new THREE.FogExp2(new THREE.Color(env.fog), env.fogDensity);
-    this.hemi.color.set(env.ambient); this.viewHemi.color.set(env.ambient);
+    this.hemi.color.set(env.ambient); this.viewHemi.color.set(env.ambient); this.hemi.intensity = overcast ? 0.26 : 0.17;
+    this.sunScale = overcast ? 1.0 : 1.15;
     this.renderer.toneMappingExposure = env.exposure ?? 1.0;
     this.viewSun.color.set(env.sunColor); this.viewSun.intensity = env.sunIntensity * 1.1;
     this.buildSun();
     this.moteMat.opacity = overcast ? 0.18 : 0.42;
+  }
+  /**
+   * Horizon dressing (2 draw calls, unlit, pre-hazed vertex colours): a ground apron out to the horizon so nothing
+   * floats over empty sky, low near hills, and a taller far range fading into the sky colour (aerial perspective).
+   */
+  buildBackdrop(env) {
+    if (this.backdrop) { this.scene.remove(this.backdrop); this.backdrop.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); }
+    const overcast = env.sky === 'overcast', haze = new THREE.Color(env.fog), group = new THREE.Group(); group.name = 'backdrop';
+    const h1 = (x, k) => { const v = Math.sin(x * 127.1 + k * 311.7) * 43758.5453; return v - Math.floor(v); };
+    const noise = (t, f, k) => { const x = t * f, i = Math.floor(x), u = x - i, a = h1(i % f, k), b = h1((i + 1) % f, k); return a + (b - a) * u * u * (3 - 2 * u); };
+    const half = Math.max(this.map?.bounds?.x || 120, this.map?.bounds?.z || 120) / 2;
+    // ground apron: starts under the map's own apron, runs to the hills, fogged like the rest of the world
+    const ground = new THREE.Mesh(new THREE.RingGeometry(half + 28, 460, 64, 1), new THREE.MeshStandardMaterial({ color: overcast ? 0x8c887d : 0xbba57a, roughness: 1, metalness: 0 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.15; ground.receiveShadow = false; group.add(ground);
+    const ring = (R, base, amp, freq, rows, near, far, k) => {
+      const N = 256, pos = [], col = [], idx = [], c = new THREE.Color();
+      for (let i = 0; i <= N; i++) {
+        const t = i / N, ang = t * Math.PI * 2;
+        const ridge = base + amp * (0.5 * noise(t, freq, k) + 0.28 * noise(t, freq * 3, k + 1) + 0.14 * noise(t, freq * 9, k + 2) + 0.08 * noise(t, freq * 27, k + 3)) * (0.45 + 0.55 * noise(t, 3, k + 4));
+        for (let r = 0; r < rows; r++) {
+          const q = r / (rows - 1), y = -4 + (ridge + 4) * Math.pow(q, 0.8), rad = R - q * R * 0.04;
+          pos.push(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
+          // lower slopes melt into the haze, ridges keep a little rock colour and shading per facet direction
+          const facing = 0.9 + 0.1 * Math.cos(ang * 7 + noise(t, 11, k) * 6);
+          c.copy(far).lerp(near, q * 0.5).multiplyScalar(facing).lerp(haze, 0.7 - 0.35 * q);
+          col.push(c.r, c.g, c.b);
+        }
+      }
+      for (let i = 0; i < N; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide })); m.frustumCulled = false;
+      return m;
+    };
+    const rock = new THREE.Color(overcast ? 0x5f6468 : 0x9a8466), dust = new THREE.Color(overcast ? 0x7c8388 : 0xb39d7a), blue = new THREE.Color(overcast ? 0x8d959b : 0x9fa9b5);
+    group.add(ring(420, 16, 44, 6, 5, rock, blue, 1));      // far range: ~2-8 degrees above the horizon, hazy blue
+    group.add(ring(270, 3, 15, 9, 4, dust, rock, 7));       // near hills: low, warm, less haze
+    group.renderOrder = -1;
+    this.backdrop = group; this.scene.add(group);
   }
   clearSun() {
     if (this.csm) {
@@ -144,21 +203,30 @@ export class WorldEngine {
     m.onBeforeCompile = THREE.Material.prototype.onBeforeCompile;
     m.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey;
     this.csm?.setupMaterial(m);
-    if (m.userData.macro && this.quality.macro) patchMacro(m);
+    const macro = !!(m.userData.macro && this.quality.macro), patch = m.userData.shaderPatch;
+    if (macro) patchMacro(m);
+    if (patch) {
+      // material-owned GLSL edits (e.g. operator camo / per-vertex roughness) chained after CSM + macro
+      const chained = m.onBeforeCompile;
+      m.onBeforeCompile = (shader, renderer) => { chained?.call(m, shader, renderer); patch(shader); };
+    }
+    if (macro || patch) m.customProgramCacheKey = () => `kontir-${macro ? 'macro-v2' : 'plain'}-${m.userData.shaderPatchKey || ''}-${m.defines?.CSM_CASCADES || 0}`;
     m.needsUpdate = true;
   }
+  /** Registers a material with the engine once (CSM / macro hooks); shared materials are prepared a single time. */
+  adoptMaterial(m) { if (!this.materials.has(m)) { this.materials.add(m); this.prepareMaterial(m); } }
   buildSun() {
     this.clearSun();
     const q = this.quality, env = this.env;
     if (!q.shadows) {
-      this.sun = new THREE.DirectionalLight(env.sunColor, env.sunIntensity);
+      this.sun = new THREE.DirectionalLight(env.sunColor, env.sunIntensity * (this.sunScale ?? 1));
       this.sun.position.copy(this.sunDir).multiplyScalar(100); this.scene.add(this.sun, this.sun.target);
       for (const m of this.materials) this.prepareMaterial(m);
       return;
     }
     this.csm = new CSM({
       maxFar: q.maxFar, cascades: q.cascades, mode: 'practical', parent: this.scene, shadowMapSize: q.mapSize,
-      lightDirection: this.sunDir.clone().negate(), camera: this.camera, lightIntensity: env.sunIntensity, lightNear: 1, lightFar: 400, shadowBias: -0.0002,
+      lightDirection: this.sunDir.clone().negate(), camera: this.camera, lightIntensity: env.sunIntensity * (this.sunScale ?? 1), lightNear: 1, lightFar: 400, shadowBias: -0.0002,
     });
     this.csm.fade = true;
     this.csm.lights.forEach((light, i) => {
@@ -172,9 +240,12 @@ export class WorldEngine {
   }
   applyQualityTargets() {
     const r = this.renderer, q = this.quality;
-    r.setPixelRatio(Math.min(devicePixelRatio || 1, q.pixelRatio) * (this.resScale ?? 1));
+    r.setPixelRatio(this.outputPixelRatio());
     r.shadowMap.enabled = q.shadows;
     this.disposeComposer();
+    const wantUpscale = !q.post && q.render !== undefined;
+    if (wantUpscale && this.canUpscale) { this.upscaler ??= new Upscaler(); this.sizeUpscaler(); }
+    else { this.upscaler?.dispose(); this.upscaler = null; }
     if (q.post) {
       const size = r.getDrawingBufferSize(new THREE.Vector2());
       const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: q.msaa });
@@ -183,6 +254,12 @@ export class WorldEngine {
       const gtao = this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y);
       gtao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.4, scale: 1.1, samples: 10, distanceFallOff: 1.0, screenSpaceRadius: false });
       gtao.blendIntensity = 0.85;
+      // GTAO only hides points/lines from its depth+normal pass: sprites (name labels, smoke, puffs) and depth-less
+      // transparent effects were treated as solid quads and stamped dark AO boxes behind them
+      gtao._overrideVisibility = function () {
+        const cache = this._visibilityCache;
+        this.scene.traverse(o => { if (o.visible && (o.isPoints || o.isLine || o.isLine2 || o.isSprite || (o.material && !Array.isArray(o.material) && o.material.transparent && !o.material.depthWrite))) { o.visible = false; cache.push(o); } });
+      };
       composer.addPass(gtao);
       const view = this.viewPass = new RenderPass(this.viewScene, this.viewCamera); view.clear = false; view.clearDepth = true; composer.addPass(view);
       composer.addPass(new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.18, 0.7, 0.92));
@@ -193,6 +270,27 @@ export class WorldEngine {
     if (this.composer) { for (const pass of this.composer.passes) pass.dispose?.(); this.composer.dispose(); }
     this.composer = null; this.gtao = null;
   }
+  /** Canvas DPR. The upscaler path keeps the canvas at full resolution and scales only the scene target. */
+  outputPixelRatio() {
+    const q = this.quality, dpr = devicePixelRatio || 1;
+    if (this.upscaler || (!q.post && q.render !== undefined && this.canUpscale)) return Math.min(dpr, q.pixelRatio);
+    // no float targets: fall back to rendering the scene straight to a (smaller) canvas
+    return Math.min(dpr, q.render ?? q.pixelRatio) * (this.resScale ?? 1);
+  }
+  /** Scene resolution relative to the canvas on the upscaler path. */
+  baseRenderScale() {
+    const q = this.quality, dpr = devicePixelRatio || 1, out = Math.min(dpr, q.pixelRatio);
+    return Math.min(1, Math.min(dpr, q.render ?? out) / out);
+  }
+  renderScale() { return Math.max(MIN_INTERNAL_SCALE, this.baseRenderScale() * (this.resScale ?? 1)); }
+  sizeUpscaler() {
+    if (!this.upscaler) return;
+    const size = this.renderer.getDrawingBufferSize(tmpSize), k = this.renderScale();
+    // sharpen harder when the scene is upsampled (dynamic resolution), lightly at native resolution
+    // (too much RCAS on a heavily upsampled image turns aliasing into hard stair-steps: capped)
+    const sharpen = Math.min(0.7, (this.quality.sharpen ?? 0.3) + (1 - k) * 0.4);
+    this.upscaler.setSize(size.x * k, size.y * k, this.quality.msaa || 0, sharpen);
+  }
   setQuality(name) {
     if (!Object.hasOwn(QUALITY, name) || name === this.qualityName) return;
     this.qualityName = name; this.quality = QUALITY[name];
@@ -201,15 +299,17 @@ export class WorldEngine {
     this.resize();
     for (const m of this.materials) m.needsUpdate = true;
   }
-  /** Dynamic resolution: 0.6..1 of the tier's pixel ratio, applied only on meaningful changes (a resize reallocates targets). */
+  /** Dynamic resolution, applied only on meaningful changes (a resize reallocates targets). */
+  // RCAS keeps an upsampled scene sharp down to 60 % — but never below MIN_INTERNAL_SCALE of the canvas in total
+  get minResolutionScale() { return this.upscaler ? Math.ceil(Math.min(1, Math.max(0.6, MIN_INTERNAL_SCALE / this.baseRenderScale())) * 20) / 20 : 0.75; }
   setResolutionScale(k) {
-    k = Math.round(Math.max(0.75, Math.min(1, k)) * 20) / 20;   // never below 75 %: stays sharp
+    k = Math.round(Math.max(this.minResolutionScale, Math.min(1, k)) * 20) / 20;
     if (k === (this.resScale ?? 1)) return false;
     this.resScale = k; this.resize(); return true;
   }
   resize() {
     const w = innerWidth, h = innerHeight;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio) * (this.resScale ?? 1)); this.renderer.setSize(w, h, false);
+    this.renderer.setPixelRatio(this.outputPixelRatio()); this.renderer.setSize(w, h, false); this.sizeUpscaler();
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.viewCamera.aspect = w / h; this.viewCamera.updateProjectionMatrix();
     this.composer?.setPixelRatio(this.renderer.getPixelRatio()); this.composer?.setSize(w, h); this.csm?.updateFrustums();
   }
@@ -228,6 +328,7 @@ export class WorldEngine {
     progress(0.3, 'To‘qnashuv BVH qurilmoqda');
     const data = this.map = buildMapData(meta, collisionBytes);
     this.setEnvironment(meta.env);
+    this.buildBackdrop(meta.env);
     progress(0.5, 'Geometriya tayyorlanmoqda');
     const gltf = await this.gltf.parseAsync(visualBytes.buffer.slice(visualBytes.byteOffset, visualBytes.byteOffset + visualBytes.byteLength), '');
     const group = this.mapGroup = new THREE.Group(); group.name = `map_${meta.id}`;
@@ -298,7 +399,7 @@ export class WorldEngine {
     });
     for (const { material, geos, decor } of buckets.values()) {
       material.side = THREE.FrontSide; material.envMapIntensity = 1;
-      if (!material.map && !material.normalMap) applyPBR(material, recipeFor(material.name || ''), { anisotropy: this.maxAniso });
+      if (!material.map && !material.normalMap) applyPBR(material, recipeFor(material.name || ''), { anisotropy: this.maxAniso, size: this.texSize });
       else for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (material[k]) material[k].anisotropy = this.maxAniso;
       if (/glass|window/i.test(material.name)) { material.envMapIntensity = 1.6; material.metalness = 0.25; }
       this.materials.add(material);
@@ -426,7 +527,11 @@ export class WorldEngine {
     group.position.copy(this.camera.position).addScaledVector(f, 4);
     const add = obj => { obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; for (const m of [].concat(o.material)) if (!this.materials.has(m)) { this.materials.add(m); this.prepareMaterial(m); } } }); group.add(obj); };
     for (const id of RIG_IDS) add(buildWeaponRigTP(id).group);
-    for (const team of ['TERRORIST', 'COUNTER_TERRORIST']) { const op = buildOperator(team, 1); add(op); op.userData.dispose = true; }
+    prebuildOperators();
+    for (const team of ['TERRORIST', 'COUNTER_TERRORIST']) for (const lod of [0, 1]) {
+      // compile both LOD meshes (same program; the skinned variant must be compiled once per material)
+      const op = buildOperator(team, 1); op.userData.lods?.forEach((m, i) => { m.visible = i === lod; }); add(op); op.userData.dispose = true;
+    }
     this.scene.add(group);
     // three.js only compiles visible objects: reveal pooled effects (tracers, decals, puffs, flashes) for the compile pass
     const hidden = [], reveal = root => root.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
@@ -465,7 +570,7 @@ export class WorldEngine {
       if (!a || a.userData.team !== p.team) {
         if (a) this.releaseTree(a);
         a = buildOperator(p.team, [...p.id].reduce((n, c) => n + c.charCodeAt(0), 0)); this.actors.set(p.id, a); this.scene.add(a);
-        a.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) { this.materials.add(m); this.prepareMaterial(m); } } });
+        a.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) this.adoptMaterial(m); });
         if (p.team === localTeam) { const l = this.label(p.name); a.add(l); l.position.y = 2.1; this.labels.set(p.id, l); }
       }
       if (!p.char) { a.visible = false; continue; }                           // enemy not in line of sight (anti-wallhack)
@@ -475,7 +580,10 @@ export class WorldEngine {
       const speed = p.alive ? Math.min(Math.hypot(c.vx, c.vz), u.moveSpeed) : 0;
       a.position.set(c.x, c.y, c.z);
       holdWeapon(a, p.weapon);
+      if (a.userData.weapon) a.userData.weapon.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) this.adoptMaterial(m); });
       a.visible = true;
+      // scoped (narrow FOV) views keep the detailed mesh proportionally further away
+      setOperatorDetail(a, this.camera.position.distanceTo(a.position), (this.quality.operatorLod || 16) * LOD_TAN / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
       animateOperator(a, { speed: c.grounded ? speed : speed * 0.4, yaw: c.yaw, pitch: c.pitch, crouch: c.crouch || 0, alive: p.alive, dt, moveYaw: speed > 0.2 ? Math.atan2(-c.vx, -c.vz) : undefined });
       const l = this.labels.get(p.id); if (l) l.visible = p.alive;
     }
@@ -499,45 +607,124 @@ export class WorldEngine {
     this.camera.updateMatrixWorld(true);
   }
   /**
-   * Lobby showcase (CS2-style): an operator holding the loadout weapon, standing in an open spot of the loaded map,
-   * framed full-length by a still camera. opts = { team, weapon, finish, applyFinish } or null to remove.
+   * Lobby showcase (CS2-style): an operator in a low-ready hold, standing full-length in a sunlit open spot of the
+   * loaded map, framed by a still telephoto camera. opts = { team, weapon, applyFinish } or null to remove.
    */
   setShowcase(opts) {
     const prev = this.showcase;
-    if (prev) { prev.actor.removeFromParent(); this.showcase = null; }
+    if (prev) {
+      this.releaseTree(prev.actor);
+      for (const o of [prev.shadow, prev.blob]) if (o) { o.removeFromParent(); o.geometry.dispose(); o.material.dispose(); }
+      prev.shadowRT?.dispose(); this.showcase = null;
+    }
     if (!opts || !this.map) return;
     const actor = buildOperator(opts.team, 7);
+    setHoldPose(actor, 'low');
     holdWeapon(actor, opts.weapon);
     const rig = actor.userData.rigs.get(opts.weapon);
     if (rig && opts.applyFinish) opts.applyFinish(rig.group);
-    actor.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; for (const m of [].concat(o.material)) if (!this.materials.has(m)) { this.materials.add(m); this.prepareMaterial(m); } } });
-    // pick the most open direction around the side's spawn so the camera has room in front of the character
-    const spawns = this.map.spawns?.[opts.team] || this.map.spawns?.TERRORIST || [{ x: 0, y: 0, z: 0 }], col = this.map.collider;
-    let best = null;
-    const free = (s, a, far) => { const dx = -Math.sin(a), dz = -Math.cos(a); return Math.min(col.wallDistance(s.x, s.y + 1.4, s.z, dx, 0, dz, far), col.wallDistance(s.x, s.y + 0.4, s.z, dx, 0, dz, far)); };
-    for (const s of spawns.slice(0, 8)) for (let i = 0; i < 24; i++) {
-      // camera side needs ~3.4 m; the background behind the operator should be a long open street
-      const a = i / 24 * Math.PI * 2, d = free(s, a, 8), behind = free(s, a + Math.PI, 60);
-      const score = (d >= 3.4 ? 100 : d * 10) + behind;
-      if (!best || score > best.score) best = { s, a, d, score };
-    }
-    const { s, a } = best, dist = Math.min(3.1, best.d - 0.4);
-    actor.position.set(s.x, s.y, s.z);
+    // the showcase casts its own crisp sun shadow (buildShowcaseShadow) in every tier, not a blurry cascade texel smear
+    actor.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; for (const m of [].concat(o.material)) this.adoptMaterial(m); } });
+    const spot = this.findShowcaseSpot(opts.team);
+    const { s, a } = spot, ground = s.y;
+    actor.position.set(s.x, ground, s.z);
     this.scene.add(actor);
-    this.showcase = { actor, base: new THREE.Vector3(s.x, s.y, s.z), camYaw: a, dist, spin: 0 };
+    // telephoto framing: the whole operator (~1.85 m) fills ~2/3 of the height with the feet above the player card
+    const dist = Math.max(2.6, Math.min(SHOWCASE_DIST, spot.free - 0.4));
+    const fov = THREE.MathUtils.radToDeg(2 * Math.atan(SHOWCASE_SPAN / 2 / dist));
+    this.showcase = { actor, base: new THREE.Vector3(s.x, ground, s.z), camYaw: a, dist, fov, spin: 0 };
+    this.buildShowcaseShadow(this.showcase, ground);
+  }
+  /** Most photogenic standing spot: clear line to the camera, a deep street behind, sunlit, sun from the camera side. */
+  findShowcaseSpot(team) {
+    const col = this.map.collider, sp = this.map.spawns || {};
+    const own = sp[team] || [], other = sp[team === 'TERRORIST' ? 'COUNTER_TERRORIST' : 'TERRORIST'] || [];
+    const cands = [...own.slice(0, 10), ...(this.map.sites || []).map(x => ({ x: x.x, y: x.y, z: x.z })), ...other.slice(0, 4)];
+    if (!cands.length) cands.push({ x: 0, y: 0, z: 0 });
+    const sunH = tmpV2.set(this.sunDir.x, 0, this.sunDir.z).normalize();
+    const clear = (s, dx, dz, far) => {
+      let d = far;
+      for (const h of [0.25, 1.0, 1.75]) for (const off of [-0.45, 0, 0.45]) {
+        const ox = s.x + dz * off, oz = s.z - dx * off;
+        d = Math.min(d, col.wallDistance(ox, s.y + h, oz, dx, 0, dz, far));
+      }
+      return d;
+    };
+    const lit = s => !col.raycast(s.x, s.y + 1.3, s.z, this.sunDir.x, this.sunDir.y, this.sunDir.z, 90);
+    let best = null;
+    cands.forEach((s, ci) => {
+      const sunny = lit(s), bias = ci < own.length ? 25 : 0;
+      for (let i = 0; i < 24; i++) {
+        const a = i / 24 * Math.PI * 2, dx = -Math.sin(a), dz = -Math.cos(a);
+        const free = clear(s, dx, dz, SHOWCASE_DIST + 1.2), behind = col.wallDistance(s.x, s.y + 1.6, s.z, -dx, 0, -dz, 60);
+        const facing = dx * sunH.x + dz * sunH.z;                // camera on the sunny side = lit face, shadow falls behind
+        const score = (free >= SHOWCASE_DIST + 0.4 ? 120 : free * 14) + Math.min(behind, 35) + (sunny ? 60 : 0) + 30 * (1 - Math.abs(facing - 0.55)) + bias;
+        if (!best || score > best.score) best = { s, a, free, score };
+      }
+    });
+    return best;
+  }
+  /**
+   * Sun shadow for the showcase, identical in every quality tier (no shadow maps): the operator's meshes are re-drawn
+   * flattened along the sun direction into a small top-down mask texture (opaque, so overlapping parts never darken
+   * twice), which one ground quad then lays down as a soft shadow. A contact blob grounds the feet.
+   */
+  buildShowcaseShadow(sc, ground) {
+    const mat = this.planarShadowMat ??= new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false, fog: false, toneMapped: false });
+    mat.userData.shared = true;
+    const L = this.sunDir, sy = Math.max(0.3, L.y), gy = ground + 0.01;
+    sc.shadowMatrix = new THREE.Matrix4().set(sy, -L.x, 0, L.x * gy, 0, 0, 0, sy * gy, 0, -L.z, sy, L.z * gy, 0, 0, 0, sy);
+    const scene = sc.shadowScene = new THREE.Scene(); sc.pairs = [];
+    const shown = o => { for (let p = o; p && p !== sc.actor; p = p.parent) if (!p.visible) return false; return true; };
+    sc.actor.updateMatrixWorld(true);
+    sc.actor.traverse(o => {
+      if (!o.isMesh || !shown(o)) return;
+      if (o.isSkinnedMesh) {
+        if (o.name !== 'operator_lod0') return;
+        const m = new THREE.SkinnedMesh(o.geometry, mat); m.bindMode = THREE.DetachedBindMode; m.bind(o.skeleton, new THREE.Matrix4());
+        m.matrixAutoUpdate = false; m.frustumCulled = false; m.matrix.copy(sc.shadowMatrix); scene.add(m);
+      } else { const m = new THREE.Mesh(o.geometry, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; scene.add(m); sc.pairs.push([o, m]); }
+    });
+    // mask camera: top-down over the area the shadow can reach (it rotates with the player's drag)
+    const reach = 1.9 * Math.hypot(L.x, L.z) / sy, size = Math.max(4, 2 * reach + 1.6), half = size / 2;
+    const cam = sc.shadowCam = new THREE.OrthographicCamera(-half, half, half, -half, 0.5, 20);
+    cam.position.set(sc.base.x, gy + 10, sc.base.z); cam.up.set(0, 0, -1); cam.lookAt(sc.base.x, gy, sc.base.z); cam.updateMatrixWorld(true);
+    sc.shadowRT = new THREE.WebGLRenderTarget(512, 512, { depthBuffer: false, stencilBuffer: false });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ color: 0x0b0806, alphaMap: sc.shadowRT.texture, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, fog: false, toneMapped: false }));
+    quad.rotation.x = -Math.PI / 2; quad.position.set(sc.base.x, gy, sc.base.z); quad.renderOrder = 1; this.scene.add(quad); sc.shadow = quad;
+    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshBasicMaterial({ map: this.blobTexture(), transparent: true, depthWrite: false, opacity: 0.5, fog: false, toneMapped: false, color: 0x000000 }));
+    blob.rotation.x = -Math.PI / 2; blob.position.set(sc.base.x, gy + 0.002, sc.base.z); blob.renderOrder = 2; this.scene.add(blob); sc.blob = blob;
+  }
+  /** Re-renders the showcase shadow mask (lobby only, 512² and a handful of draw calls). */
+  updateShowcaseShadow(sc) {
+    const r = this.renderer;
+    sc.actor.updateMatrixWorld(true);
+    for (const [src, dst] of sc.pairs) { dst.visible = src.visible && src.parent?.visible !== false; dst.matrix.multiplyMatrices(sc.shadowMatrix, src.matrixWorld); }
+    const prevTarget = r.getRenderTarget(), prevColor = r.getClearColor(tmpColor), prevAlpha = r.getClearAlpha();
+    r.setRenderTarget(sc.shadowRT); r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    r.render(sc.shadowScene, sc.shadowCam);
+    r.setRenderTarget(prevTarget); r.setClearColor(prevColor, prevAlpha);
+  }
+  blobTexture() {
+    if (this._blob) return this._blob;
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,0.9)'); grd.addColorStop(0.45, 'rgba(255,255,255,0.35)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    this._blob = new THREE.CanvasTexture(c); this._blob.userData.shared = true; return this._blob;
   }
   showcaseSpin(delta) { if (this.showcase) this.showcase.spin += delta; }
   setMenuCamera(time) {
     const sc = this.showcase;
     if (sc) {
       const dx = -Math.sin(sc.camYaw), dz = -Math.cos(sc.camYaw), b = sc.base;
-      const sway = Math.sin(time * 0.35) * 0.04;
-      if (this.camera.fov !== 42) { this.camera.fov = 42; this.camera.updateProjectionMatrix(); }
-      this.camera.position.set(b.x + dx * sc.dist + dz * sway, b.y + 1.12 + Math.sin(time * 0.5) * 0.02, b.z + dz * sc.dist - dx * sway);
-      this.camera.lookAt(b.x - dz * 0.12, b.y + 0.98, b.z + dx * 0.12); this.camera.updateMatrixWorld(true);
-      // the operator faces the camera (plus the player's drag), breathing idle
-      animateOperator(sc.actor, { speed: 0, yaw: sc.camYaw + sc.spin + 0.35, pitch: -0.06 + Math.sin(time * 1.3) * 0.015, crouch: 0, alive: true, dt: 1 / 60 });
+      const sway = Math.sin(time * 0.3) * 0.03;
+      if (this.camera.fov !== sc.fov) { this.camera.fov = sc.fov; this.camera.updateProjectionMatrix(); }
+      this.camera.position.set(b.x + dx * sc.dist + dz * sway, b.y + 1.02 + Math.sin(time * 0.45) * 0.012, b.z + dz * sc.dist - dx * sway);
+      this.camera.lookAt(b.x, b.y + 0.76, b.z); this.camera.updateMatrixWorld(true);
+      // the operator faces the camera, a quarter turn off-axis like a catalogue shot (plus the player's drag), breathing idle
+      animateOperator(sc.actor, { speed: 0, yaw: sc.camYaw + sc.spin + 0.42, pitch: -0.04 + Math.sin(time * 1.3) * 0.012, crouch: 0, alive: true, dt: 1 / 60 });
       sc.actor.position.set(b.x, b.y, b.z);
+      if (sc.shadow) this.updateShowcaseShadow(sc);
       return;
     }
     if (this.camera.fov !== 74) { this.camera.fov = 74; this.camera.updateProjectionMatrix(); }
@@ -571,13 +758,20 @@ export class WorldEngine {
     this.viewSun.position.copy(tmpV).multiplyScalar(4); this.viewSun.target.position.set(0, 0, 0);
     tmpE.setFromQuaternion(tmpQ, 'YXZ'); this.viewScene.environmentRotation?.copy(tmpE);
     this.viewScene.visible = viewmodel !== false;
+    const r = this.renderer; r.info.reset();
     if (this.composer) { this.viewPass.enabled = viewmodel !== false; this.composer.render(dt); return; }
-    const r = this.renderer; r.clear(); r.render(this.scene, this.camera);
+    if (this.upscaler) {
+      r.setRenderTarget(this.upscaler.rt); r.clear(); r.render(this.scene, this.camera);
+      if (viewmodel !== false) { r.clearDepth(); r.render(this.viewScene, this.viewCamera); }
+      this.upscaler.present(r);
+      return;
+    }
+    r.clear(); r.render(this.scene, this.camera);
     if (viewmodel !== false) { r.clearDepth(); r.render(this.viewScene, this.viewCamera); }
   }
   dispose() {
     this.renderer.setAnimationLoop(null); removeEventListener('resize', this.onResize);
-    this.disposeMap(); this.clearSun(); this.disposeComposer(); this.envRT?.dispose();
+    this.disposeMap(); this.clearSun(); this.disposeComposer(); this.upscaler?.dispose(); this.envRT?.dispose();
     disposeTree(this.scene); disposeTree(this.viewScene); this.renderer.dispose();
   }
 }

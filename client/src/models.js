@@ -18,7 +18,7 @@ export const models = {
   load(path) {
     if (!this.cache.has(path)) {
       const entry = { gltf: null, promise: null };
-      entry.promise = this.loader.loadAsync(`/models/${path}`).then(g => { entry.gltf = g; g.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.geometry.userData.shared = true; for (const m of [].concat(o.material)) m.userData.shared = true; } }); return g; })
+      entry.promise = this.loader.loadAsync(`./models/${path}`).then(g => { entry.gltf = g; g.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.geometry.userData.shared = true; for (const m of [].concat(o.material)) m.userData.shared = true; } }); return g; })
         .catch(error => { console.warn(`model ${path}:`, error.message); return null; });
       this.cache.set(path, entry);
     }

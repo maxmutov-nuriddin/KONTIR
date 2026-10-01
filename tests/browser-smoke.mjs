@@ -43,11 +43,13 @@ try {
   await page.click('#guide-nav'); assert.ok(await page.locator('.control-grid').isVisible()); await page.click('#close');
 
   await page.click('#settings');
-  await page.click('[data-fps="30"]'); assert.equal(await k(page, () => window.__KONTIR__.fpsLimit), 30);
-  await page.click('[data-fps="60"]'); await page.click('#close');
+  await page.click('[data-fps="120"]'); assert.equal(await k(page, () => window.__KONTIR__.fpsLimit), 120);
+  await page.click('[data-fps="60"]'); assert.equal(await k(page, () => window.__KONTIR__.fpsLimit), 60);
+  await page.click('[data-q="crisp"]'); assert.equal(await k(page, () => window.__KONTIR__.world.qualityName), 'crisp');
+  await page.click('#close');
   await page.evaluate(async () => {
     const world = window.__KONTIR__.world;
-    for (const quality of ['high', 'ultra', 'medium', 'low', 'high', 'medium', 'low']) {
+    for (const quality of ['high', 'ultra', 'crisp', 'medium', 'low', 'high', 'crisp', 'medium', 'low']) {
       world.setQuality(quality);
       await world.renderer.compileAsync(world.scene, world.camera);
       world.render(1 / 60, false);
@@ -82,9 +84,12 @@ try {
   assert.deepEqual(await cur(), [2, 3]);
   await page.keyboard.press('KeyQ'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 3);
   await page.keyboard.press('KeyQ'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 2);
-  await page.keyboard.press('Digit5'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 5);
-  assert.deepEqual(await k(page, () => window.__KONTIR__.visibleRigs), ['c4'], 'only the active weapon mesh is visible');
-  await page.keyboard.press('KeyQ'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 2);
+  // the C4 goes to a random terrorist each round: only the carrier can select slot 5
+  if (await k(page, () => !!window.__KONTIR__.weapons.inventory.weaponId(5))) {
+    await page.keyboard.press('Digit5'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 5);
+    assert.deepEqual(await k(page, () => window.__KONTIR__.visibleRigs), ['c4'], 'only the active weapon mesh is visible');
+    await page.keyboard.press('KeyQ'); await page.waitForFunction(() => window.__KONTIR__.inventory.current === 2);
+  }
   assert.deepEqual(await k(page, () => window.__KONTIR__.visibleRigs), ['glock']);
   await page.screenshot({ path: 'test-results/buy-phase.png' });
 
@@ -96,7 +101,7 @@ try {
   await page.keyboard.press('Digit3'); // knife: full 250 u/s (guns slow you down)
   await page.keyboard.down('KeyW'); await untilSpeed(250, 8);
   await page.keyboard.down('ShiftLeft'); await untilSpeed(130, 6);
-  await page.keyboard.up('ShiftLeft'); await page.keyboard.down('ControlLeft'); await untilSpeed(100, 6);
+  await page.keyboard.up('ShiftLeft'); await page.keyboard.down('ControlLeft'); await untilSpeed(85, 6);   // realistic crouch-walk
   await page.keyboard.up('KeyW');
   await untilEye(1.05);
   await page.keyboard.up('ControlLeft'); await untilEye(1.65);
@@ -118,7 +123,7 @@ try {
     await page.keyboard.press('KeyZ'); await page.locator('#radio-menu').waitFor({ state: 'visible' });
     await page.keyboard.press('Digit1'); await page.locator('#chat-log .cl', { hasText: '(radio)' }).waitFor({ timeout: 10000 });
   }
-  console.log('PASS: menu, practice 5v5, buy, slots + Q quick-switch, speeds 250/130/100, crouch eye 1.65 -> 1.05, firing, scoreboard, chat/radio');
+  console.log('PASS: menu, practice 5v5, buy, slots + Q quick-switch, speeds 250/130/85, crouch eye 1.65 -> 1.05, firing, scoreboard, chat/radio');
 
   // --- two humans: strict team allocation over real sockets
   await page.keyboard.press('Escape');

@@ -2,7 +2,7 @@ import { GridMap, finalizeMarkers } from './builder.mjs';
 
 /** IRON HARBOR: container terminal. Warehouse centre, stacked-container mazes, raised crane-yard site. */
 export function buildHarbor() {
-  const m = new GridMap({ id: 'harbor', cols: 30, rows: 38, seed: 21, wallMaterials: ['concrete', 'plaster_blue', 'concrete', 'metal'] });
+  const m = new GridMap({ id: 'harbor', cols: 30, rows: 38, seed: 21, wallMaterials: ['concrete', 'plaster_blue', 'concrete', 'metal_wall'] });
   m.border('#');
   const building = (c0, r0, c1, r1, doors) => {
     m.fill(c0, r0, c1, r1, '#').fill(c0 + 1, r0 + 1, c1 - 1, r1 - 1, 'R');

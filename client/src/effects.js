@@ -33,10 +33,23 @@ function holeTexture() {
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 
-const UP = new THREE.Vector3(0, 1, 0), tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tmpS = new THREE.Vector3(1, 1, 1);
+// Impact look per surface class (shared/collision.js SURFACES): dust colour / count, sparks, splinters, decal tint & size.
+const IMPACT = {
+  concrete: { dust: 0xb9b2a5, dustN: 5, spark: 0xffd9a0, sparkN: 3, chip: 0x8d877c, chipN: 3, decal: 0x5a554e, size: 1 },
+  metal: { dust: 0x8f9294, dustN: 2, spark: 0xffc46a, sparkN: 10, chipN: 0, decal: 0x2c2e30, size: 0.7 },
+  wood: { dust: 0xaa8c63, dustN: 4, sparkN: 0, chip: 0x6b4a2c, chipN: 5, decal: 0x3a2a1c, size: 0.9 },
+  sand: { dust: 0xd7c497, dustN: 9, sparkN: 0, chip: 0xc2ab7c, chipN: 2, decal: 0x8a7a5a, size: 1.3 },
+  sandbag: { dust: 0xcdb98f, dustN: 7, sparkN: 0, chip: 0xb49b6a, chipN: 2, decal: 0x6e6046, size: 1.1 },
+  glass: { dust: 0xdfe8ee, dustN: 2, spark: 0xffffff, sparkN: 7, chipN: 0, decal: 0xcfd8de, size: 1 },
+  cloth: { dust: 0x9a9483, dustN: 2, sparkN: 0, chipN: 0, decal: 0x4a463e, size: 0.8 },
+  foliage: { dust: 0x7f9a5a, dustN: 3, sparkN: 0, chip: 0x5f7a3c, chipN: 4, decal: 0x3f4a2c, size: 0.6 },
+};
+const UP = new THREE.Vector3(0, 1, 0), tmpCol = new THREE.Color(), tmpV = new THREE.Vector3(), tmpCam = new THREE.Vector3(), tmpUp = new THREE.Vector3(), tmpN = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tmpS = new THREE.Vector3(1, 1, 1);
 
 export class Effects {
-  constructor(scene, camera) {
+  /** lightCount: pooled flash lights. Every point light costs every lit pixel even at intensity 0, so the light
+   *  presets keep a single one (constant count => no shader recompiles). */
+  constructor(scene, camera, { lightCount = 3 } = {}) {
     this.scene = scene; this.camera = camera; this.time = 0;
     this.soft = radialTexture([[0, 'rgba(255,255,255,1)'], [0.4, 'rgba(255,255,255,0.55)'], [1, 'rgba(255,255,255,0)']]);
     this.fire = radialTexture([[0, 'rgba(255,250,220,1)'], [0.25, 'rgba(255,190,90,0.9)'], [0.6, 'rgba(230,80,20,0.45)'], [1, 'rgba(120,30,10,0)']]);
@@ -47,14 +60,15 @@ export class Effects {
     this.tracers = Array.from({ length: 24 }, () => { const m = new THREE.Mesh(this.tracerGeo, this.tracerMat); m.visible = false; m.frustumCulled = false; scene.add(m); return { mesh: m, live: false, from: new THREE.Vector3(), dir: new THREE.Vector3(), len: 0, t: 0, speed: 420 }; });
     // bullet-hole decals (instanced ring buffer)
     const holeMat = new THREE.MeshBasicMaterial({ map: holeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
-    this.decals = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), holeMat, 256); this.decals.count = 0; this.decals.frustumCulled = false; this.decalHead = 0; this.decalCount = 0; scene.add(this.decals);
+    this.decals = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), holeMat, 256); this.decals.count = 0;
+    this.decals.setColorAt(0, tmpCol.set(0xffffff));                                       // per-surface tint this.decals.frustumCulled = false; this.decalHead = 0; this.decalCount = 0; scene.add(this.decals);
     // sprites for puffs / sparks / blood / fire
     this.puffs = Array.from({ length: 160 }, () => {
       const m = new THREE.SpriteMaterial({ map: this.soft, transparent: true, depthWrite: false, fog: true }); const s = new THREE.Sprite(m); s.visible = false; scene.add(s);
       return { s, live: false, life: 0, age: 0, vel: new THREE.Vector3(), grow: 1, size: 1, gravity: 0, opacity: 1, spin: 0 };
     });
     // pooled lights: constant light count => no shader recompiles when effects fire
-    this.lights = Array.from({ length: 3 }, () => { const l = new THREE.PointLight(0xffb060, 0, 22, 2); l.castShadow = false; scene.add(l); return { light: l, life: 0, peak: 0 }; });
+    this.lights = Array.from({ length: Math.max(1, lightCount) }, () => { const l = new THREE.PointLight(0xffb060, 0, 22, 2); l.castShadow = false; scene.add(l); return { light: l, life: 0, peak: 0 }; });
     // smoke volumes
     this.smokes = new Map(); this.fires = new Map();
     // shell casings
@@ -88,17 +102,22 @@ export class Effects {
   }
   impact(point, normal, kind = 'wall') {
     if (kind === 'wall') {
+      const fx = IMPACT[normal.s] || IMPACT.concrete;
       const n = tmpV.set(normal.nx, normal.ny, normal.nz).normalize();
       tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-      const size = 0.09 + Math.random() * 0.05; tmpS.set(size, size, 1);
+      const size = (0.09 + Math.random() * 0.05) * fx.size; tmpS.set(size, size, 1);
+      // decal tint: the hole's soot is multiplied by the surface colour (bright chip on plaster, dark pit in steel)
+      this.decals.setColorAt(this.decalHead, tmpCol.set(fx.decal).lerp(tmpCol.clone().set(0xffffff), 0.35)); this.decals.instanceColor.needsUpdate = true;
       tmpM.compose(new THREE.Vector3(point.x + n.x * 0.006, point.y + n.y * 0.006, point.z + n.z * 0.006), tmpQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.random() * 6.28)), tmpS);
       this.decals.setMatrixAt(this.decalHead, tmpM); this.decalHead = (this.decalHead + 1) % 256; this.decalCount = Math.min(256, this.decalCount + 1); this.decals.count = this.decalCount; this.decals.instanceMatrix.needsUpdate = true;
       const base = new THREE.Vector3(point.x, point.y, point.z);
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < fx.dustN; i++) {
         const v = new THREE.Vector3((Math.random() - 0.5) * 0.9, Math.random() * 0.7, (Math.random() - 0.5) * 0.9).addScaledVector(n, 0.9 + Math.random() * 0.9);
-        this.spawnPuff(base.clone().addScaledVector(n, 0.03), { color: 0xcdb98f, size: 0.16 + Math.random() * 0.12, grow: 3.6, life: 0.55 + Math.random() * 0.4, vel: v.multiplyScalar(0.85), gravity: -0.6, opacity: 0.42 });
+        this.spawnPuff(base.clone().addScaledVector(n, 0.03), { color: fx.dust, size: (0.14 + Math.random() * 0.12) * (normal.s === 'sand' ? 1.3 : 1), grow: 3.6, life: 0.55 + Math.random() * 0.5, vel: v.multiplyScalar(0.85), gravity: normal.s === 'sand' ? 1.2 : -0.6, opacity: 0.42 });
       }
-      for (let i = 0; i < 4; i++) this.spawnPuff(base, { color: 0xffd9a0, size: 0.028, grow: 0.5, life: 0.18, vel: new THREE.Vector3((Math.random() - 0.5) * 2.4, Math.random() * 2.2, (Math.random() - 0.5) * 2.4).addScaledVector(n, 2.6), gravity: 9, opacity: 1, additive: true });
+      // sparks (hot, additive) on steel / stone / glass; chips and splinters (solid, falling) on wood / stone / sand
+      for (let i = 0; i < fx.sparkN; i++) this.spawnPuff(base, { color: fx.spark, size: 0.022 + Math.random() * 0.012, grow: 0.4, life: 0.12 + Math.random() * 0.14, vel: new THREE.Vector3((Math.random() - 0.5) * 3.2, Math.random() * 2.6, (Math.random() - 0.5) * 3.2).addScaledVector(n, 3.2), gravity: 9, opacity: 1, additive: true });
+      for (let i = 0; i < fx.chipN; i++) this.spawnPuff(base, { color: fx.chip, size: 0.02 + Math.random() * 0.02, grow: 1, life: 0.45 + Math.random() * 0.3, vel: new THREE.Vector3((Math.random() - 0.5) * 1.8, Math.random() * 1.8, (Math.random() - 0.5) * 1.8).addScaledVector(n, 1.8), gravity: 9.8, opacity: 0.95 });
     } else {
       const base = new THREE.Vector3(point.x, point.y, point.z);
       for (let i = 0; i < 6; i++) this.spawnPuff(base, { color: 0x8c1c16, size: 0.09 + Math.random() * 0.06, grow: 2.4, life: 0.5, vel: new THREE.Vector3((Math.random() - 0.5) * 1.6, Math.random() * 1.2, (Math.random() - 0.5) * 1.6), gravity: 4, opacity: 0.7 });
@@ -166,9 +185,9 @@ export class Effects {
       if (tail >= t.len) { t.live = false; t.mesh.visible = false; continue; }
       const len = Math.max(0.05, head - tail);
       tmpV.copy(t.from).addScaledVector(t.dir, (head + tail) / 2);
-      const toCam = new THREE.Vector3().subVectors(cam, tmpV).normalize();
-      const up = new THREE.Vector3().crossVectors(toCam, t.dir).normalize();
-      const n = new THREE.Vector3().crossVectors(t.dir, up);
+      const toCam = tmpCam.subVectors(cam, tmpV).normalize();
+      const up = tmpUp.crossVectors(toCam, t.dir).normalize();
+      const n = tmpN.crossVectors(t.dir, up);
       tmpM.makeBasis(t.dir, up, n).setPosition(tmpV); t.mesh.matrix.copy(tmpM); t.mesh.matrixAutoUpdate = false;
       t.mesh.matrix.scale(tmpS.set(len, t.width, 1)); t.mesh.matrixWorld.copy(t.mesh.matrix); t.mesh.matrixWorldNeedsUpdate = false;
     }
@@ -261,5 +280,7 @@ export class Effects {
     this.smokes.clear(); this.fires.clear(); this.decalCount = 0; this.decals.count = 0;
     for (const pr of this.projectiles.values()) disposeTree(pr.rig.group);
     this.projectiles.clear();
+    for (const p of this.pings || []) { p.s.removeFromParent(); p.s.material.map.dispose(); p.s.material.dispose(); }
+    if (this.pings) this.pings.length = 0;
   }
 }

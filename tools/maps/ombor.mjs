@@ -7,7 +7,7 @@ import { GridMap, finalizeMarkers } from './builder.mjs';
  *   B MAIN (west lane) -> B site (HEAVEN raised platform, SUN ROOM roofed) <- CHECKERS (roofed) <- CT
  */
 export function buildOmbor() {
-  const m = new GridMap({ id: 'ombor', cols: 42, rows: 44, seed: 9090, containers: true, wallMaterials: ['concrete', 'metal', 'concrete', 'brick', 'plaster_blue'],
+  const m = new GridMap({ id: 'ombor', cols: 42, rows: 44, seed: 9090, containers: true, wallMaterials: ['concrete', 'metal_wall', 'concrete', 'brick', 'plaster_blue'],
     groundMaterial: 'asphalt', raisedMaterial: 'concrete', stairMaterial: 'concrete', spawnYaw: { T: 0, CT: Math.PI } });
   m.fill(0, 0, 41, 43, '#');
   const open = (c0, r0, c1, r1, lvl = 0, ch = '.') => { m.fill(c0, r0, c1, r1, ch); m.setLevel(c0, r0, c1, r1, lvl); };

@@ -4,6 +4,7 @@ import { MeshCollider } from '../shared/collision.js';
 import { boxMesh, rampMesh } from '../shared/geometry.js';
 import { createPlayer, stepPlayer, eyeHeight, playerHeight } from '../shared/movement.js';
 import { DT, MOVEMENT as M, UNIT, neutralInput } from '../shared/constants.js';
+import { loadSpeedMul, speedMul } from '../shared/weapons.js';
 import { writeGLB, parseGLB } from '../shared/glb.js';
 
 function world() {
@@ -31,13 +32,32 @@ test('falls from height, lands, and never tunnels', () => {
   const p = spawn(0, 60, 0); p.grounded = false; run(p, {}, 6);
   assert.ok(p.grounded && Math.abs(p.y) < 1e-2, `y=${p.y}`);
 });
-test('run speed reaches exactly 250 u/s, shift walk 130 u/s, crouch 100 u/s', () => {
+test('unloaded run 250 u/s, shift walk 130 u/s, crouch-walk 85 u/s; back-pedal and side-step are slower', () => {
+  const sp = p => Math.hypot(p.vx, p.vz);
   const a = spawn(0, 0, 0); run(a, { forward: 1 }, 2);
-  assert.ok(Math.abs(Math.hypot(a.vx, a.vz) - 250 * UNIT) < 0.02);
+  assert.ok(Math.abs(sp(a) - 250 * UNIT) < 0.02);
   const b = spawn(0, 0, 0); run(b, { forward: 1, walk: true }, 2);
-  assert.ok(Math.abs(Math.hypot(b.vx, b.vz) - 130 * UNIT) < 0.02);
+  assert.ok(Math.abs(sp(b) - 130 * UNIT) < 0.02);
   const c = spawn(0, 0, 0); run(c, { forward: 1, crouch: true }, 2);
-  assert.ok(Math.abs(Math.hypot(c.vx, c.vz) - 100 * UNIT) < 0.02, `${Math.hypot(c.vx, c.vz) / UNIT}`);
+  assert.ok(Math.abs(sp(c) - 85 * UNIT) < 0.02, `${sp(c) / UNIT}`);
+  const back = spawn(0, 0, 0); run(back, { forward: -1 }, 2);
+  assert.ok(Math.abs(sp(back) - 250 * UNIT * M.backSpeed) < 0.02, `back ${sp(back) / UNIT}`);
+  const side = spawn(0, 0, 60); run(side, { right: 1 }, 2);   // open floor: no wall within reach
+  assert.ok(Math.abs(sp(side) - 250 * UNIT * M.strafeSpeed) < 0.02, `side ${sp(side) / UNIT}`);
+});
+test('carried weight lowers top speed and acceleration (AK 4.3 kg vs knife)', () => {
+  const sp = p => Math.hypot(p.vx, p.vz);
+  const knife = spawn(); knife.speedMul = speedMul('knife'); const ak = spawn(); ak.speedMul = speedMul('ak47'); const awp = spawn(); awp.speedMul = speedMul('awp');
+  run(knife, { forward: 1 }, 0.25); run(ak, { forward: 1 }, 0.25); run(awp, { forward: 1 }, 0.25);
+  assert.ok(sp(knife) > sp(ak) && sp(ak) > sp(awp), 'heavier gets going slower');
+  run(knife, { forward: 1 }, 2); run(ak, { forward: 1 }, 2); run(awp, { forward: 1 }, 2);
+  assert.ok(Math.abs(sp(ak) / UNIT - 250 * speedMul('ak47')) < 1 && sp(ak) / UNIT < 216 && sp(ak) / UNIT > 208, `ak ${sp(ak) / UNIT}`);
+  assert.ok(sp(awp) / UNIT < 195, `awp ${sp(awp) / UNIT}`);
+  // whole load: the bomb carrier with a rifle out is slower than the same rifleman without the C4, scoping slows more
+  const inv = { current: 1, zoom: 0, grenades: {}, weaponId: s => ({ 1: 'awp', 2: 'glock', 3: 'knife', 5: 'c4' })[s] || null };
+  const plain = { ...inv, weaponId: s => ({ 1: 'awp', 2: 'glock', 3: 'knife' })[s] || null };
+  assert.ok(loadSpeedMul(inv) < loadSpeedMul(plain));
+  assert.ok(loadSpeedMul({ ...inv, zoom: 1 }) < loadSpeedMul(inv) * 0.7);
 });
 test('friction stops the player and never reverses velocity', () => {
   const p = spawn(); run(p, { forward: 1 }, 1); run(p, {}, 1);
@@ -64,24 +84,39 @@ test('walls stop the player and slide along them', () => {
   assert.ok(p.x < 9.7, `x=${p.x}`);
   assert.ok(p.z < -5, `slid along wall, z=${p.z}`);
 });
-test('jump height matches Source (57 units) and requires a fresh press', () => {
-  const p = spawn(); let peak = 0;
-  for (let i = 0; i < 128; i++) { stepPlayer(p, cmd({ jump: true }), collider); peak = Math.max(peak, p.y); }
-  assert.ok(peak > 56 * UNIT && peak < 58.5 * UNIT, `peak=${peak / UNIT}u`);
+const jumpPeak = p => { let peak = p.y; for (let i = 0; i < 128; i++) { stepPlayer(p, cmd({ jump: i === 0 }), collider); peak = Math.max(peak, p.y); } return peak; };
+test('realistic jump: ~0.56 m under Earth gravity, needs a fresh press, lower with a heavy weapon', () => {
+  const peak = jumpPeak(spawn());
+  assert.ok(peak > 0.52 && peak < 0.6, `peak=${peak} m`);
   const q = spawn(); const e = run(q, { jump: true }, 3);
   assert.equal(e.filter(x => x.jumped).length, 1, 'holding space must not auto-bhop');
+  const heavy = spawn(); heavy.speedMul = speedMul('negev');
+  assert.ok(jumpPeak(heavy) < peak - 0.03, 'a 7.6 kg machine gun jumps lower');
 });
-test('air acceleration: strafing gains speed beyond run speed, capped at 30 u/s projection', () => {
+// jumps again on the very tick it lands (no rest on the ground)
+const chainPeak = p => { let peak = p.y, i = 0, up = false; stepPlayer(p, cmd({ jump: true }), collider);
+  for (; i < 200; i++) { const e = stepPlayer(p, cmd({ jump: false }), collider); peak = Math.max(peak, p.y); if (!p.grounded) up = true; if (up && e.landed) break; } return peak; };
+test('repeated jumps tire the legs; resting recovers them', () => {
+  const p = spawn(), first = chainPeak(p), second = chainPeak(p), third = chainPeak(p);
+  assert.ok(second < first - 0.02 && third < second, `${first} ${second} ${third}`);
+  run(p, {}, 2.5); assert.ok(Math.abs(jumpPeak(p) - first) < 0.01, 'fully recovered after rest');
+});
+test('no air-strafe speed gain: mid-air steering cannot exceed the take-off speed', () => {
   const p = spawn(); run(p, { forward: 1 }, 1);
+  const take = Math.hypot(p.vx, p.vz);
   stepPlayer(p, cmd({ forward: 1, jump: true, yaw: p.yaw }), collider);
   let yaw = 0, top = 0;
-  for (let i = 0; i < 90; i++) { yaw += 0.028; stepPlayer(p, cmd({ right: 1, yaw }), collider); top = Math.max(top, Math.hypot(p.vx, p.vz)); }
-  assert.ok(top > 250 * UNIT * 1.02, `air strafe top=${top / UNIT}u/s`);
+  for (let i = 0; i < 40; i++) { yaw += 0.028; stepPlayer(p, cmd({ right: 1, yaw }), collider); top = Math.max(top, Math.hypot(p.vx, p.vz)); }
+  assert.ok(top <= take + 0.05, `air top=${top} take-off=${take}`);
 });
-test('bunny-hop cap limits jump speed to 110 % of run speed', () => {
+test('jumping never adds speed and every landing costs momentum', () => {
   const p = spawn(); p.vx = 20; p.vz = 0;
   stepPlayer(p, cmd({ jump: true }), collider);
-  assert.ok(Math.hypot(p.vx, p.vz) <= 250 * UNIT * 1.1 + 0.2);
+  assert.ok(Math.hypot(p.vx, p.vz) <= 250 * UNIT + 1e-6);
+  const r = spawn(); run(r, { forward: 1 }, 1.5); const before = Math.hypot(r.vx, r.vz);
+  stepPlayer(r, cmd({ forward: 1, jump: true, yaw: r.yaw }), collider);
+  let landed = 0; for (let i = 0; i < 80 && !landed; i++) landed = stepPlayer(r, cmd({ forward: 1, yaw: r.yaw }), collider).landed;
+  assert.ok(landed > 3 && Math.hypot(r.vx, r.vz) < before * 0.85, `landed ${landed} speed ${Math.hypot(r.vx, r.vz)} / ${before}`);
 });
 test('steps up stairs (0.2 m risers) and low crates, walks up a ramp', () => {
   const s = spawn(30, 0, 12, 0); let peak = 0;
@@ -92,7 +127,7 @@ test('steps up stairs (0.2 m risers) and low crates, walks up a ramp', () => {
   assert.ok(cratePeak > 0.38, `crate peak=${cratePeak}`);
   const blocked = spawn(-20, 0, 6, 0); run(blocked, { forward: 1 }, 1.6);
   assert.ok(blocked.y < 0.05 && blocked.z > 0.5, `0.6 m block must stop the player, y=${blocked.y} z=${blocked.z}`);
-  const r = spawn(0, 0, -14, 0); run(r, { forward: 1 }, 1.4);
+  const r = spawn(0, 0, -14, 0); run(r, { forward: 1 }, 1.9);
   assert.ok(r.y > 1.2 && r.grounded, `ramp y=${r.y} z=${r.z}`);
 });
 test('silent walk emits zero footstep events; running and crouch behave per spec', () => {
@@ -100,6 +135,10 @@ test('silent walk emits zero footstep events; running and crouch behave per spec
   const crouch = run(spawn(), { forward: 1, crouch: true }, 3).filter(e => e.footstep).length;
   const running = run(spawn(), { forward: 1 }, 3).filter(e => e.footstep).length;
   assert.equal(walk, 0); assert.equal(crouch, 0); assert.ok(running >= 6, `running steps=${running}`);
+});
+test('raycasts report the surface material of the hit triangle', () => {
+  assert.equal(collider.raycast(-10, 3, 0, 0, -1, 0, 10).surface, 'wood', 'crate box');
+  assert.equal(collider.raycast(0, 3, 0, 0, -1, 0, 10).surface, 'concrete', 'concrete floor');
 });
 test('BVH raycast and floor lookup', () => {
   const hit = collider.raycast(0, 5, 0, 0, -1, 0, 50);

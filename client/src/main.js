@@ -19,7 +19,7 @@ import { weaponMaterials } from './viewmodels.js';
 import { models } from './models.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { DT, TICK_RATE } from '../../shared/constants.js';
-import { WEAPONS, inaccuracy } from '../../shared/weapons.js';
+import { WEAPONS, inaccuracy, weaponMass } from '../../shared/weapons.js';
 
 const store = { get: (k, d) => { try { return localStorage.getItem(`kontir.${k}`) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(`kontir.${k}`, v); } catch { /* private mode */ } } };
 const ui = new UI(), audio = new AudioEngine();
@@ -182,7 +182,7 @@ function handleEvent(e, me) {
         world.effects.tracer(muzzle, e.to, true);
       }
       if (e.hit) world.effects.impact(e.to, {}, 'flesh'); else if (e.wall) world.effects.impact(e.to, e.wall, 'wall');
-      if (e.pen) { const d = V.set(e.to.x - e.from.x, e.to.y - e.from.y, e.to.z - e.from.z).normalize(); world.effects.impact(e.pen, { nx: d.x, ny: d.y, nz: d.z }, 'wall'); }
+      if (e.pen) { const d = V.set(e.to.x - e.from.x, e.to.y - e.from.y, e.to.z - e.from.z).normalize(); world.effects.impact(e.pen, { nx: d.x, ny: d.y, nz: d.z, s: e.pen.s }, 'wall'); }
       break;
     }
     case 'hit':
@@ -280,7 +280,7 @@ async function enter(result, my) {
 function leave() {
   yandexSDK.gameplayStop();
   yandexSDK.showFullscreenAd();
-  generation++; joining = false; playing = false; friends.applyMic(); controller.unlock(); network.leave();
+  generation++; joining = false; playing = false; friends.applyMic(); controller.unlock(); network.leave(); world.setResolutionScale(1);
   state = null; id = null; prediction = null; controller.clearInput(); world.clearActors(); world.effects.clear(); world.bombRig.group.visible = false; world.bombLight.intensity = 0;
   weapons.inventory.reset('TERRORIST'); weapons.setActive(null); ui.showMenu(); ui.resume(false);
   ui.showView('home'); updateShowcase(); refreshLobby();
@@ -338,10 +338,15 @@ async function startSearch() {
   try {
     await network.queueJoin({ name, mode, maps: [...ui.pool], loadout: { t: profile.loadout.t, ct: profile.loadout.ct } }, {
       status: st => { if (searchingMM) ui.searching(st); },
-      found: f => { audio.beep(true); ui.matchFound(f, () => network.queueAccept(f.matchId)); },
+      found: f => {
+        audio.beep(true);
+        // nobody else to wait for (bot-filled solo match): accept at once instead of a pop-up that can expire unseen
+        if (f.solo || f.players === 1) { ui.hideMatchFound(); ui.showBusy('MATCH YUKLANMOQDA…'); network.queueAccept(f.matchId); return; }
+        ui.matchFound(f, () => network.queueAccept(f.matchId));
+      },
       accepted: a => ui.matchAccepted(a.accepted),
       requeued: r => { ui.hideMatchFound(); ui.toast(r.reason); },
-      failed: r => { ui.hideMatchFound(); stopSearch(false); ui.toast(r.reason); },
+      failed: r => { ui.hideMatchFound(); ui.hideBusy(); stopSearch(false); ui.toast(r.reason); },
       ready: async result => {
         ui.hideMatchFound(); stopSearch(false);
         const my = ++generation; joining = true;
@@ -526,6 +531,8 @@ let debugCam = null;
 window.__setCam = (x, y, z, yaw = 0, pitch = 0) => { debugCam = x === null ? null : { x, y, z, yaw, pitch }; };
 let previous = performance.now(), slowSince = 0, specId = null, frameMs = 16, lastRes = 0;
 const meshQ = new THREE.Vector3();
+const QUALITY_DOWN = { ultra: 'high', high: 'crisp', crisp: 'medium', medium: 'low' };
+const QUALITY_LABEL = { low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' };
 function frame(nowMs) {
   if (!pacer.ready(nowMs, { hidden: document.hidden, active: playing && controller.locked })) return;
   const raw = (nowMs - previous) / 1000; previous = nowMs; const dt = Math.max(0, Math.min(0.25, raw)); fps += (1 / Math.max(0.001, raw) - fps) * 0.15;
@@ -533,13 +540,15 @@ function frame(nowMs) {
   // dynamic resolution: steer the smoothed frame time toward the pacer target before dropping a whole quality tier
   frameMs += (raw * 1000 - frameMs) * 0.05;
   if (playing && controller.locked && nowMs - lastRes > 1500 && store.get('adaptive', '1') !== '0') {
-    const targetFps = pacer.limit > 0 ? pacer.limit : 144;
+    // Uncapped (MAX) aims for a smooth 60, not 144: chasing 144 FPS on an old PC used to drop the resolution to 75 %
+    // permanently and made the picture blurry. A chosen limit (120 / 144) is honoured as the target.
+    const targetFps = pacer.limit > 0 ? pacer.limit : 60;
     const target = 1000 / targetFps, k = world.resScale ?? 1;
-    if (frameMs > target * 1.2 && k > 0.75) { world.setResolutionScale(k - 0.05); lastRes = nowMs; }
-    else if (frameMs < target * 0.8 && k < 1) { world.setResolutionScale(k + 0.05); lastRes = nowMs; }
+    if (frameMs > target * 1.2 && k > world.minResolutionScale) { world.setResolutionScale(k - 0.05); lastRes = nowMs; }
+    else if (frameMs < target * 0.85 && k < 1) { world.setResolutionScale(k + 0.05); lastRes = nowMs; }
   }
-  // adaptive quality: sustained < 28 FPS drops one tier (the player can raise it again in Settings)
-  if (playing && controller.locked && fps < 28 && (world.resScale ?? 1) <= 0.76 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality({ ultra: 'high', high: 'medium', medium: 'low' }[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${world.qualityName.toUpperCase()} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
+  // adaptive quality: sustained < 28 FPS at minimum resolution drops one tier (the player can raise it again in Settings)
+  if (playing && controller.locked && fps < 28 && (world.resScale ?? 1) <= world.minResolutionScale + 0.01 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(QUALITY_DOWN[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${QUALITY_LABEL[world.qualityName]} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
   heroHolder.visible = !playing && !world.showcase; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {
@@ -557,6 +566,7 @@ function frame(nowMs) {
     sendAcc += dt; if (sendAcc >= DT * 2) { sendAcc %= DT * 2; network.send(prediction.pending); }
     prediction.smooth(dt);
     const me = state.players.find(p => p.id === id), punch = weapons.visualPunch(dt);
+    controller.viewmodel.mass = weaponMass(weapons.inventory.weapon()?.id) || 1;
     const pose = controller.update(dt, { char: prediction.char, prev: prediction.prev || prediction.char, alpha: acc / DT, correction: prediction.offset, punch, alive, walking: controller.keys.has('ShiftLeft') || controller.keys.has('ShiftRight') });
     if (alive) {
       world.setCamera(pose.eye, pose.yaw, pose.pitch, pose.roll);

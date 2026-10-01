@@ -30,13 +30,16 @@ export class ViewmodelDynamics {
   constructor() {
     this.yaw = 0; this.pitch = 0; this.vyaw = 0; this.vpitch = 0;
     this.phase = 0; this.amp = 0; this.land = 0; this.vland = 0; this.jump = 0;
+    this.mass = 3;                         // kg of the weapon in hand (set every frame by the game): heavier = more inertia
     this.position = new THREE.Vector3(); this.rotation = new THREE.Euler(0, 0, 0, 'YXZ');
   }
   impulseLand(speed) { this.vland -= Math.min(2.2, speed * 0.18); }
   update(dt, { dx = 0, dy = 0, speed = 0, grounded = true, crouch = 0, walking = false }) {
-    // sway spring (impulses from mouse counts, underdamped return)
-    this.vyaw += clamp(dx, -120, 120) * 0.0085; this.vpitch += clamp(dy, -120, 120) * 0.0065;
-    const k = 210, c = 21;
+    // sway spring (impulses from mouse counts, underdamped return). A heavy weapon has more inertia: it lags the view
+    // less sharply, swings back slower and settles later; a pistol snaps around.
+    const inertia = 0.55 + 0.15 * clamp(this.mass, 0.2, 8);
+    this.vyaw += clamp(dx, -120, 120) * 0.0085 / inertia; this.vpitch += clamp(dy, -120, 120) * 0.0065 / inertia;
+    const k = 210 / inertia, c = 21 / Math.sqrt(inertia);
     const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
     for (let i = 0; i < steps; i++) {
       this.vyaw += (-k * this.yaw - c * this.vyaw) * h; this.vpitch += (-k * this.pitch - c * this.vpitch) * h;
@@ -51,7 +54,9 @@ export class ViewmodelDynamics {
     // landing spring
 
     this.jump += ((grounded ? 0 : 1) - this.jump) * Math.min(1, dt * 8);
-    const bx = Math.sin(this.phase) * 0.0085 * this.amp, by = -Math.abs(Math.sin(this.phase)) * 0.0125 * this.amp;
+    // heavier weapons bob more (the arms carry the weight with every stride)
+    const heft = 0.8 + 0.07 * clamp(this.mass, 0.2, 8);
+    const bx = Math.sin(this.phase) * 0.0085 * this.amp * heft, by = -Math.abs(Math.sin(this.phase)) * 0.0125 * this.amp * heft;
     this.position.set(-this.yaw * 0.11 + bx, this.pitch * 0.09 + by + this.land * 0.03 + this.jump * 0.006, 0);
     this.rotation.set(this.pitch * 0.9 + Math.sin(this.phase * 2) * 0.004 * this.amp + this.land * 0.03, this.yaw * 0.9 + Math.sin(this.phase) * 0.006 * this.amp, -this.yaw * 0.5 + bx * 1.5);
   }

@@ -31,22 +31,32 @@ export const RULES = Object.freeze({
   snapshotEvery: 2,           // 32 Hz snapshots from the 64 Hz simulation
   rewindMaxSeconds: 1.0,      // lag-compensation ring buffer depth
   interpolationSeconds: 0.1,
-  fallDamageMinSpeed: 580 * UNIT,
+  fallDamageMinSpeed: 8.5,   // m/s landing impact (~3.7 m drop); every m/s above costs 18 HP
 });
 
+// Realistic infantry movement (SI units). Top speeds are for an unloaded runner; the carried load (weapons.js
+// loadSpeedMul) scales speed, acceleration and jump. Gravity is Earth's; the jump is a kit-laden standing jump.
 export const MOVEMENT = Object.freeze({
-  runSpeed: 250 * UNIT,
-  walkSpeed: 130 * UNIT,
-  crouchSpeed: 100 * UNIT,
-  accelerate: 5.5,
-  airAccelerate: 12,
-  maxAirSpeed: 30 * UNIT,
-  friction: 4,
+  runSpeed: 250 * UNIT,       // 6.35 m/s sprint with only a knife; an AK in the hands -> ~5.4 m/s
+  walkSpeed: 130 * UNIT,      // 3.3 m/s brisk silent walk (Shift)
+  crouchSpeed: 85 * UNIT,     // 2.2 m/s crouch-walk
+  backSpeed: 0.72,            // back-pedalling is slower than running forward
+  strafeSpeed: 0.9,           // side-stepping
+  accelerate: 6.0,            // ground acceleration x (0.6 + 0.4 * load factor): heavy kit is slow to get going
+                              // (must stay above `friction` even at the heaviest load, or top speed is never reached)
+  airAccelerate: 1.2,         // a body in flight can barely steer (no air-strafe speed gain)
+  maxAirSpeed: 20 * UNIT,
+  friction: 4.4,
   stopSpeed: 80 * UNIT,
-  gravity: 800 * UNIT,
-  jumpSpeed: 301.99 * UNIT,
-  bunnyCap: 1.1,              // sv_enablebunnyhopping 0 behaviour: jump speed capped to 110 % of run speed
-  maxVelocity: 3500 * UNIT,
+  gravity: 9.81,              // m/s^2
+  jumpSpeed: 3.32,            // 0.56 m apex standing jump; heavier load jumps a little lower
+  jumpLoad: 0.12,             // jump speed lost at the heaviest load (factor 0.6 -> -12 %)
+  jumpFatigue: 0.38,          // each jump adds fatigue (0..1); a jump at full fatigue is 30 % weaker
+  fatigueRecovery: 0.55,      // fatigue recovered per second on the ground
+  landSlow: 0.07,             // horizontal speed lost per m/s of landing impact (knees absorb the fall)
+  landSlowMax: 0.5,
+  bunnyCap: 1.0,              // jumping never adds speed
+  maxVelocity: 60,
   footstepSpeed: 135 * UNIT,  // below this speed a step is inaudible (Source rule)
   footstepStride: 2.1,
   radius: 0.35,

@@ -12,6 +12,9 @@
  * - Safe fallbacks for offline, localhost, and adblockers
  */
 
+/** SDK methods may return promises that reject (offline, closed frame): never leave them unhandled. */
+const settle = r => { if (r && typeof r.catch === 'function') r.catch(e => console.warn('[YandexSDK]', e?.message || e)); };
+
 export class YandexSDK {
   constructor() {
     this.ysdk = null;
@@ -39,6 +42,9 @@ export class YandexSDK {
       return this.ysdk;
     }
 
+    // index.html loads the SDK script only inside the Yandex Games iframe: outside it every SDK call rejects with
+    // "No parent to post message" (unhandled errors on localhost / Render hosting).
+    if (window.__ysdkScript) await window.__ysdkScript;
     if (typeof window.YaGames === 'undefined') {
       console.log('[YandexSDK] YaGames SDK topilmadi — lokal/avtonom rejimda ishlamoqda.');
       return null;
@@ -53,7 +59,7 @@ export class YandexSDK {
 
       // Notify Yandex Games that initial assets are ready
       try {
-        ysdk.features.LoadingAPI?.ready();
+        settle(ysdk.features.LoadingAPI?.ready());
       } catch (e) {
         console.warn('[YandexSDK] LoadingAPI.ready xatolik:', e);
       }
@@ -236,7 +242,7 @@ export class YandexSDK {
    */
   gameplayStart() {
     try {
-      this.ysdk?.features?.GameplayAPI?.start();
+      settle(this.ysdk?.features?.GameplayAPI?.start());
     } catch {
       // Safe fallback
     }
@@ -247,7 +253,7 @@ export class YandexSDK {
    */
   gameplayStop() {
     try {
-      this.ysdk?.features?.GameplayAPI?.stop();
+      settle(this.ysdk?.features?.GameplayAPI?.stop());
     } catch {
       // Safe fallback
     }

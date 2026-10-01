@@ -6,7 +6,7 @@ export function createPlayer(spawn) {
   return {
     x: spawn.x, y: spawn.y, z: spawn.z, vx: 0, vy: 0, vz: 0,
     yaw: spawn.yaw || 0, pitch: 0, grounded: true, crouch: 0, prevJump: false,
-    gnx: 0, gny: 1, gnz: 0, stride: 0,
+    gnx: 0, gny: 1, gnz: 0, stride: 0, fatigue: 0,
   };
 }
 export const playerHeight = p => lerp(M.standHeight, M.crouchHeight, p.crouch);
@@ -103,8 +103,17 @@ function tryStepUp(p, collider, radius, height, from, dx, dz) {
   return { x: p.x - blocked.x, y: p.y - blocked.y, z: p.z - blocked.z };
 }
 
+/** Direction factor of the wish vector in view space: forward 1, side-step `strafeSpeed`, back-pedal `backSpeed`. */
+export function directionMul(forward, right) {
+  const f2 = forward * forward, r2 = right * right, sum = f2 + r2;
+  if (sum < 1e-9) return 1;
+  const side = r2 / sum;
+  return forward >= 0 ? 1 + (M.strafeSpeed - 1) * side : M.backSpeed + (M.strafeSpeed - M.backSpeed) * side;
+}
+
 /**
  * Advances one command. Returns { footstep, landed, jumped } where `landed` is the downward impact speed (m/s).
+ * `p.speedMul` is the carried-load factor (weapons.js loadSpeedMul): it scales top speed, acceleration and jump.
  * @param {object} p player state from createPlayer
  * @param {object} cmd input command (forward,right,jump,crouch,walk,yaw,pitch)
  * @param {import('./collision.js').MeshCollider} collider
@@ -120,12 +129,15 @@ export function stepPlayer(p, cmd, collider, dt = DT) {
   p.crouch = crouch;
   const radius = M.radius, height = playerHeight(p);
 
-  // --- jump (fresh press only, no auto-bhop) ---
-  const startGrounded = p.grounded;
+  // --- jump (fresh press only, no auto-bhop): weaker with a heavy load and when repeated (fatigue) ---
+  const startGrounded = p.grounded, load = clamp(p.speedMul ?? 1, 0.4, 1);
+  if (startGrounded) p.fatigue = Math.max(0, (p.fatigue || 0) - M.fatigueRecovery * dt);
   let jumped = false;
   if (cmd.jump && !p.prevJump && startGrounded) {
-    p.vy = M.jumpSpeed; jumped = true; events.jumped = true;
-    const cap = M.runSpeed * M.bunnyCap, hs = Math.hypot(p.vx, p.vz);
+    const heavy = clamp((1 - load) / 0.4, 0, 1);
+    p.vy = M.jumpSpeed * (1 - M.jumpLoad * heavy) * (1 - 0.3 * (p.fatigue || 0)); jumped = true; events.jumped = true;
+    p.fatigue = Math.min(1, (p.fatigue || 0) + M.jumpFatigue);
+    const cap = M.runSpeed * load * M.bunnyCap, hs = Math.hypot(p.vx, p.vz);
     if (hs > cap) { p.vx *= cap / hs; p.vz *= cap / hs; }
   }
   p.prevJump = cmd.jump;
@@ -136,11 +148,12 @@ export function stepPlayer(p, cmd, collider, dt = DT) {
   const f = cmd.forward / norm, r = cmd.right / norm;
   const wx = -Math.sin(cmd.yaw) * f + Math.cos(cmd.yaw) * r, wz = -Math.cos(cmd.yaw) * f - Math.sin(cmd.yaw) * r;
   const wishLen = Math.hypot(wx, wz);
-  const wishSpeed = wishLen * targetSpeed(cmd, p.crouch) * (p.speedMul ?? 1); // heavier weapon in hand = slower
+  // heavier load = slower; back-pedalling and side-stepping are slower than running forward
+  const wishSpeed = wishLen * targetSpeed(cmd, p.crouch) * load * directionMul(f, r);
 
   if (onGround) {
     applyFriction(p, dt);
-    if (wishLen > 1e-4) accelerate(p, wx / wishLen, wz / wishLen, wishSpeed, M.accelerate, dt);
+    if (wishLen > 1e-4) accelerate(p, wx / wishLen, wz / wishLen, wishSpeed, M.accelerate * (0.6 + 0.4 * load), dt);
   } else if (wishLen > 1e-4) airAccelerate(p, wx / wishLen, wz / wishLen, wishSpeed, M.airAccelerate, dt);
 
   if (!onGround) p.vy -= M.gravity * 0.5 * dt;
@@ -189,7 +202,11 @@ export function stepPlayer(p, cmd, collider, dt = DT) {
   if (grounded) setGround(p, groundHit);
   else if (onGround && snapDown(p, collider, radius, height, M.stepHeight)) grounded = true;
   if (grounded) {
-    if (!startGrounded || jumped) events.landed = Math.max(0, -fall);
+    if (!startGrounded || jumped) {
+      events.landed = Math.max(0, -fall);
+      // the legs absorb the impact: a landing costs horizontal momentum (no chained jump-running)
+      if (events.landed > 1.5) { const k = Math.max(1 - M.landSlowMax, 1 - M.landSlow * events.landed); p.vx *= k; p.vz *= k; }
+    }
     p.vy = 0;
   } else {
     if (!onGround) p.vy -= M.gravity * 0.5 * dt;

@@ -39,8 +39,10 @@ const D = {
   'Plant (5-slot, A/B hududida ushlab turing)': ['Установка (слот 5, удерживать на A/B)', 'Plant (slot 5, hold on A/B)'],
   'Asosiy · Pistolet · Pichoq · Granata · C4': ['Основное · Пистолет · Нож · Граната · C4', 'Primary · Pistol · Knife · Grenade · C4'],
   'Grafika': ['Графика', 'Graphics'], 'FPS limiti': ['Лимит FPS', 'FPS limit'], 'OVOZ': ['ЗВУК', 'VOLUME'], 'SICHQONCHA SEZGIRLIGI': ['ЧУВСТВИТЕЛЬНОСТЬ МЫШИ', 'MOUSE SENSITIVITY'], 'SICHQONCHA SEZGIRLIGI ': ['ЧУВСТВИТЕЛЬНОСТЬ МЫШИ ', 'MOUSE SENSITIVITY '],
-  'TEZKOR: soyasiz, kamroq yuklama. O‘RTA (tavsiya): tiniq (MSAA, to‘liq ruxsat), bitta soya kaskadi har 2-kadrda — qurilma qizimaydi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya. Menyu 30 FPS; yashirin oynada render to‘xtaydi. Pastroq FPS limiti GPU yukini kamaytiradi.':
-    ['БЫСТРО: без теней. СРЕДНЕ (рекомендуется): чётко (MSAA), один каскад теней раз в 2 кадра — устройство не греется. ВЫСОКО: тени 2 × 1024. УЛЬТРА: GTAO + bloom, тени 3 × 2048. Меню 30 FPS; в скрытой вкладке рендер останавливается.', 'FAST: no shadows. MEDIUM (recommended): sharp (MSAA), one shadow cascade every 2nd frame — stays cool. HIGH: 2 × 1024 shadows. ULTRA: GTAO + bloom, 3 × 2048 shadows. Menu runs at 30 FPS; hidden tabs stop rendering.'],
+  'TEZKOR: sahna 75 % ruxsatda, FSR uslubida keskinlashtiriladi — eng zaif noutbuklar uchun. O‘RTA: to‘liq ruxsat, soyasiz, eng yuqori FPS. TINIQ (eski PC uchun tavsiya): to‘liq ruxsat, 4x MSAA, keskinlashtirish va yengil soya — FPS tushsa ruxsat avtomatik pasayadi, tasvir esa tiniq qoladi. YUQORI: 2 × 1024 px soya. ULTRA: GTAO + bloom, 3 × 2048 px soya.':
+    ['БЫСТРО: сцена в 75 % разрешения с резкостью в стиле FSR — для самых слабых ноутбуков. СРЕДНЕ: полное разрешение без теней, максимум FPS. ЧЁТКО (рекомендуется для старых ПК): полное разрешение, 4x MSAA, резкость и лёгкие тени — при падении FPS разрешение снижается автоматически, а картинка остаётся чёткой. ВЫСОКО: тени 2 × 1024. УЛЬТРА: GTAO + bloom, тени 3 × 2048.',
+     'FAST: scene at 75 % resolution with FSR-style sharpening — for the weakest laptops. MEDIUM: full resolution, no shadows, highest FPS. CRISP (recommended for old PCs): full resolution, 4x MSAA, sharpening and light shadows — if FPS drops the resolution scales down automatically while the image stays sharp. HIGH: 2 × 1024 shadows. ULTRA: GTAO + bloom, 3 × 2048 shadows.'],
+  'TINIQ': ['ЧЁТКО', 'CRISP'],
   'YUQORI': ['ВЫСОКО', 'HIGH'], 'ULTRA': ['УЛЬТРА', 'ULTRA'],
   'Jihozingizni tanlang.': ['Выберите снаряжение.', 'Choose your gear.'], 'Raund boshidagi qurollaringiz': ['Оружие в начале раунда', 'Starting weapons'],
   'BOSHLANG‘ICH PISTOLET': ['СТАРТОВЫЙ ПИСТОЛЕТ', 'STARTING PISTOL'], 'RIFLE (do‘konda ko‘rinadigani)': ['ВИНТОВКА (в магазине)', 'RIFLE (shown in the buy menu)'],
@@ -107,9 +109,10 @@ const D = {
 };
 // numbered / templated strings
 const P = [
-  [/^RAUND (\d+) · (\d+)-YARIM$/, ['РАУНД $1 · $2-Я ПОЛОВИНА', 'ROUND $1 · HALF $2']], [/^RAUND (\d+)$/, ['РАУНД $1', 'ROUND $1']], [/^DARAJA (\d+)$/, ['УРОВЕНЬ $1', 'LEVEL $1']], [/^DARAJA (\d+) · (.+)$/, ['УРОВЕНЬ $1 · $2', 'LEVEL $1 · $2']],
+  [/^RAUND (\d+) · (\d+)-YARIM$/, ['РАУНД $1 · $2-Я ПОЛОВИНА', 'ROUND $1 · HALF $2']], [/^RAUND (\d+) · (\d+)-YARIM · (\d+) GA$/, ['РАУНД $1 · $2-Я ПОЛОВИНА · ДО $3', 'ROUND $1 · HALF $2 · FIRST TO $3']], [/^RAUND (\d+)$/, ['РАУНД $1', 'ROUND $1']], [/^DARAJA (\d+)$/, ['УРОВЕНЬ $1', 'LEVEL $1']], [/^DARAJA (\d+) · (.+)$/, ['УРОВЕНЬ $1 · $2', 'LEVEL $1 · $2']],
   [/^(.+) — RAUND SIZNIKI$/, ['$1 — РАУНД ВАШ', '$1 WIN THE ROUND']], [/^JIHOZLANING · B$/, ['ЗАКУПКА · B', 'BUY · B']], [/^(\d+) REYTING$/, ['$1 РЕЙТИНГ', '$1 RATING']],
   [/^(\d+) \/ (\d+) ONLAYN$/, ['$1 / $2 В СЕТИ', '$1 / $2 ONLINE']], [/^📞 (.+) qo‘ng‘iroq qilmoqda$/, ['📞 $1 звонит', '📞 $1 is calling']], [/^📞 (.+) — chaqirilmoqda…$/, ['📞 $1 — вызов…', '📞 $1 — calling…']], [/^🎙 (.+) — ulanmoqda…$/, ['🎙 $1 — подключение…', '🎙 $1 — connecting…']],
+  [/^FPS past: grafika (.+) rejimiga o‘tkazildi\.$/, ['Низкий FPS: графика переключена на $1.', 'Low FPS: graphics switched to $1.']],
   [/^(.+) javob bermadi\.$/, ['$1 не отвечает.', '$1 did not answer.']], [/^(.+) band\.$/, ['$1 занят(а).', '$1 is busy.']], [/^(.+) qo‘ng‘iroqni rad etdi\.$/, ['$1 отклонил(а) звонок.', '$1 declined the call.']],
   [/^(.+) — sotib olindi\. INVENTARdan qurolga qo‘ying\.$/, ['$1 — куплено. Поставьте в ИНВЕНТАРЕ.', '$1 — purchased. Equip it in INVENTORY.']],
 ];

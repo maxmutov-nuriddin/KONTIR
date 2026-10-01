@@ -124,12 +124,37 @@ export const WEAPONS = Object.freeze({
 export const GRENADES = Object.freeze(['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy']);
 export const MAX_GRENADES = 4;
 
-/** Movement speed factor for the held weapon (CS-like: knife 250 u/s, pistols 240, SMGs 230, rifles 215, AWP / Negev 200). */
+/**
+ * Loaded weight (kg, magazine in) of every carried item — real-world figures. Movement speed, acceleration and jump
+ * height scale with the load: the weapon in the hands counts fully, stowed weapons / grenades / the C4 partly.
+ */
+export const MASS = Object.freeze({
+  knife: 0.25, ak47: 4.3, m4a4: 3.4, m4a1s: 3.6, galil: 4.0, famas: 3.8, sg553: 4.2, aug: 3.9, awp: 6.9, ssg08: 3.8,
+  mp9: 1.4, mac10: 2.8, ump45: 2.5, mp7: 1.9, p90: 2.9, nova: 3.6, xm1014: 3.9, mag7: 3.4, sawedoff: 2.9, negev: 7.6,
+  glock: 0.9, usp: 1.0, p250: 0.9, fiveseven: 0.8, tec9: 1.4, cz75: 1.1, deagle: 2.0, r8: 1.6,
+  he: 0.4, flash: 0.45, smoke: 0.5, molotov: 0.7, incendiary: 0.6, decoy: 0.4, c4: 2.5,
+});
+export const weaponMass = id => (id && MASS[id]) || 0;
+const HELD_K = 0.034, STOWED_K = 0.008, SCOPED_K = 0.62;
+/** Speed factor of the held weapon alone (UI / bots): knife 0.99, pistols ~0.97, rifles ~0.85, AWP 0.77, Negev 0.74. */
 export function speedMul(id) {
-  const w = id && WEAPONS[id]; if (!w || w.melee) return 1;
-  if (id === 'awp' || id === 'negev') return 0.8;
-  if (id === 'ssg08') return 0.92;
-  return { PISTOLS: 0.96, SMGS: 0.92, HEAVY: 0.88, RIFLES: 0.86, GRENADES: 0.98 }[BUY_ITEMS[id]?.group] ?? 0.97;
+  const w = id && WEAPONS[id]; if (!w) return 1;
+  return Math.max(0.6, 1 - HELD_K * weaponMass(id));
+}
+/**
+ * Movement factor from the whole load of an Inventory (or anything with weaponId(slot), current, zoom, grenades):
+ * held weapon * 0.034 / kg + stowed kit * 0.008 / kg, and aiming down a scope slows to a careful walk.
+ * Server and client compute it from the same predicted inventory, so it is deterministic.
+ */
+export function loadSpeedMul(inv) {
+  if (!inv) return 1;
+  const held = inv.weaponId?.(inv.current) || null;
+  let stowed = 0;
+  for (const slot of [1, 2, 3, 5]) { const id = inv.weaponId?.(slot); if (id && id !== held) stowed += weaponMass(id); }
+  for (const [g, n] of Object.entries(inv.grenades || {})) if (n > 0 && g !== held) stowed += weaponMass(g) * n;
+  let k = 1 - HELD_K * weaponMass(held) - STOWED_K * stowed;
+  if (held && inv.zoom > 0 && WEAPONS[held]?.scope) k *= SCOPED_K;
+  return Math.max(0.4, Math.min(1, k));
 }
 export const BUY_ITEMS = Object.freeze({
   glock: { price: 200, team: 'TERRORIST', group: 'PISTOLS' }, usp: { price: 200, team: 'COUNTER_TERRORIST', group: 'PISTOLS' },

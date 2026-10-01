@@ -41,35 +41,65 @@ function worley(u, v, cells, seed = 3) {
 }
 
 const RECIPES = {
+  /** Desert ground: fine grain, low wind ripples, scattered pebbles and grit, faint damp / trodden patches. */
   sand(u, v) {
-    const ripple = fbm(u, v, 5, 3, 3, 4), ridge = 1 - Math.abs(fbm(u, v * 2, 6, 6, 3, 5) * 2 - 1);
-    const grain = fbm(u, v, 96, 96, 2, 6), tone = fbm(u, v, 3, 3, 4, 7);
-    const h = ripple * 0.5 + ridge * 0.35 + grain * 0.15;
-    const c = 0.82 + tone * 0.3 + (grain - 0.5) * 0.14;
-    return { h, c: [c * 1.02, c, c * 0.94], r: 0.94 };
+    const ripple = fbm(u, v, 9, 4, 3, 4), grain = fbm(u, v, 192, 192, 2, 6), tone = fbm(u, v, 3, 3, 4, 7), trod = fbm(u, v, 6, 6, 3, 8);
+    const [p1, p2] = worley(u, v, 26, 5), pebble = smooth(0.12, 0.02, p1) * smooth(0.55, 0.75, hash(Math.floor(p2 * 503), 7, 9));
+    const grit = smooth(0.78, 0.9, fbm(u, v, 128, 128, 2, 10));
+    const h = ripple * 0.35 + grain * 0.25 + pebble * 0.9 + grit * 0.15;
+    const c = 0.84 + (tone - 0.5) * 0.16 + (grain - 0.5) * 0.1 - (trod - 0.5) * 0.08 - pebble * 0.22 + grit * 0.05;
+    return { h, c: [c * 1.02, c, c * 0.93], r: 0.92 + grain * 0.06 - pebble * 0.1 };
   },
+  /** Lime / cement stucco: sponge-float grain, soft mottling, a few hairline cracks and patched repairs. */
   plaster(u, v) {
-    const mott = fbm(u, v, 4, 4, 4, 11), grain = fbm(u, v, 128, 128, 2, 12);
-    const crackN = 1 - Math.abs(fbm(u, v, 9, 9, 3, 13) * 2 - 1), crack = smooth(0.955, 0.99, crackN);
-    const streak = fbm(u * 3, v * 0.35, 6, 2, 3, 14), chip = smooth(0.78, 0.86, fbm(u, v, 24, 24, 2, 15));
-    const h = mott * 0.35 + grain * 0.25 - crack * 0.9 - chip * 0.4;
-    const c = 0.88 + mott * 0.16 + (grain - 0.5) * 0.12 - crack * 0.4 - streak * 0.1 - chip * 0.08;
-    return { h, c: [c, c, c * 0.985], r: 0.9 + grain * 0.08 };
+    const mott = fbm(u, v, 5, 5, 4, 11), grain = fbm(u, v, 160, 160, 2, 12), sponge = fbm(u, v, 48, 48, 2, 16);
+    const crack = smooth(0.988, 0.997, 1 - Math.abs(fbm(u, v, 6, 6, 4, 13) * 2 - 1)) * smooth(0.45, 0.6, fbm(u, v, 3, 3, 2, 17));
+    const patch = smooth(0.66, 0.7, fbm(u, v, 4, 4, 2, 15)), streak = fbm(u, v, 18, 1, 3, 14);
+    const h = sponge * 0.3 + grain * 0.2 + mott * 0.15 - crack * 0.6 + patch * 0.08;
+    const c = 0.9 + (mott - 0.5) * 0.1 + (grain - 0.5) * 0.06 + (sponge - 0.5) * 0.05 - crack * 0.18 - (streak - 0.5) * 0.04 + patch * 0.035;
+    return { h, c: [c, c * 0.99, c * 0.97], r: 0.88 + grain * 0.08 };
   },
+  /** Cast concrete: formwork panel seams with tie holes, fine aggregate, pores and water staining. */
   concrete(u, v) {
-    const pore = smooth(0.7, 0.8, fbm(u, v, 48, 48, 2, 21)), mott = fbm(u, v, 4, 4, 4, 22), grain = fbm(u, v, 160, 160, 2, 23);
-    const seamH = smooth(0.985, 1, Math.abs(Math.sin(v * Math.PI * 2))) , seamV = smooth(0.985, 1, Math.abs(Math.sin(u * Math.PI * 2)));
-    const seam = Math.max(seamH, seamV) * 0.9;
-    const h = mott * 0.3 + grain * 0.2 - pore * 0.4 - seam * 0.6;
-    const c = 0.84 + mott * 0.2 + (grain - 0.5) * 0.12 - pore * 0.22 - seam * 0.35;
-    return { h, c: [c, c, c], r: 0.88 + grain * 0.1 };
+    const pore = smooth(0.74, 0.82, fbm(u, v, 64, 64, 2, 21)), mott = fbm(u, v, 4, 4, 4, 22), grain = fbm(u, v, 192, 192, 2, 23);
+    const pu = mod(u * 2, 1), pv = mod(v * 2, 1);
+    const seam = Math.max(1 - smooth(0, 0.006, Math.min(pu, 1 - pu)), 1 - smooth(0, 0.006, Math.min(pv, 1 - pv)));
+    const tie = smooth(0.012, 0.006, Math.hypot(mod(u * 4, 1) - 0.5, mod(v * 4, 1) - 0.5)) * (1 - seam);
+    const stain = fbm(u, v, 12, 2, 3, 24);
+    const h = mott * 0.25 + grain * 0.2 - pore * 0.35 - seam * 0.5 - tie * 0.8;
+    const c = 0.86 + (mott - 0.5) * 0.14 + (grain - 0.5) * 0.08 - pore * 0.12 - seam * 0.16 - tie * 0.35 - (stain - 0.5) * 0.06;
+    return { h, c: [c, c, c * 1.01], r: 0.86 + grain * 0.1 };
   },
+  /** Random rubble masonry: rounded stones of varied tint and size bedded in recessed light mortar. */
   stone(u, v) {
-    const [f1, f2] = worley(u, v, 7, 31), edge = smooth(0.0, 0.14, f2 - f1), tint = hash(Math.floor(f1 * 977), 3, 32);
-    const grain = fbm(u, v, 96, 96, 3, 33), mott = fbm(u, v, 5, 5, 3, 34);
-    const h = edge * 0.8 + mott * 0.25 + grain * 0.15;
-    const c = (0.62 + tint * 0.28 + (grain - 0.5) * 0.18 + mott * 0.12) * (0.55 + 0.45 * edge);
-    return { h, c: [c * 1.03, c, c * 0.93], r: 0.93 };
+    const [f1, f2] = worley(u, v, 12, 31), joint = 1 - smooth(0.02, 0.09, f2 - f1), id = hash(Math.floor(f2 * 911), Math.floor(f1 * 97), 32);
+    const grain = fbm(u, v, 128, 128, 3, 33), mott = fbm(u, v, 6, 6, 3, 34), bulge = Math.max(0, 1 - f1 * 1.4);
+    const stoneC = 0.6 + id * 0.3 + (grain - 0.5) * 0.14 + (mott - 0.5) * 0.08;
+    const mortarC = 0.74 + (grain - 0.5) * 0.08;
+    const h = (1 - joint) * (0.5 + bulge * 0.4 + grain * 0.1) + joint * grain * 0.1;
+    const c = mix(stoneC, mortarC, joint);
+    const warm = 0.96 + id * 0.08;
+    return { h, c: [c * warm * 1.02, c, c * (0.94 - (warm - 1))], r: mix(0.84 + grain * 0.1, 0.97, joint) };
+  },
+  /** Cut stone paving: staggered rectangular slabs with worn rounded edges, tint per slab, grit in the joints. */
+  paving(u, v) {
+    const rows = 8, ry = v * rows, row = Math.floor(ry), fy = ry - row, cols = 5, rx = u * cols + (row % 2) * 0.5, col = Math.floor(rx), fx = rx - col;
+    const edge = Math.min(Math.min(fx, 1 - fx) * 0.75, Math.min(fy, 1 - fy));
+    const joint = 1 - smooth(0.0, 0.025, edge), bevel = smooth(0.025, 0.07, edge);
+    const id = hash(mod(col, cols), mod(row, rows), 191), grain = fbm(u, v, 160, 160, 3, 192), wear = fbm(u, v, 8, 8, 3, 193), grime = fbm(u, v, 3, 3, 4, 195);
+    const chip = smooth(0.8, 0.86, fbm(u, v, 24, 24, 2, 194)) * (1 - bevel);
+    const h = (1 - joint) * (0.55 + bevel * 0.35 + grain * 0.1) - chip * 0.3;
+    const c = ((1 - joint) * (0.74 + id * 0.16 + (grain - 0.5) * 0.12 + (wear - 0.5) * 0.08 - chip * 0.08) + joint * 0.46) * (1 - (grime - 0.5) * 0.18);
+    return { h, c: [c * 1.02, c, c * 0.95], r: 0.86 + grain * 0.08 + joint * 0.06 };
+  },
+  /** Corrugated steel cladding: trapezoidal vertical ribs, painted, light rust runs below fixings. */
+  cladding(u, v) {
+    const n = 20, t = mod(u * n, 1), rib = smooth(0.08, 0.2, t) * (1 - smooth(0.5, 0.62, t));
+    const facet = t < 0.2 ? 0.88 : t < 0.5 ? 1.0 : t < 0.62 ? 0.84 : 0.94;
+    const runs = smooth(0.62, 0.8, fbm(u, v, 40, 2, 3, 201)) * fbm(u, v, 6, 6, 2, 202), dirt = fbm(u, v, 4, 4, 4, 203), scratch = smooth(0.9, 0.97, fbm(u, v, 8, 128, 2, 204));
+    const h = rib * 0.9 + runs * 0.05;
+    const c = (0.78 + (dirt - 0.5) * 0.14 - scratch * 0.1) * facet * (1 - runs * 0.25);
+    return { h, c: [mix(c, c * 1.3, runs), mix(c, c * 0.9, runs), mix(c, c * 0.7, runs)], r: 0.56 + dirt * 0.2 + runs * 0.2, m: 0.3 - runs * 0.2 };
   },
   brick(u, v) {
     const rows = 32, cols = 9, ry = v * rows, row = Math.floor(ry), fy = ry - row;
@@ -84,7 +114,7 @@ const RECIPES = {
   wood(u, v) {
     const planks = 6, pu = u * planks, plank = Math.floor(pu), fu = pu - plank;
     const tint = hash(plank, 5, 51), warp = fbm(u, v, 3, 2, 3, 52) * 3;
-    const ring = fbm(u * 3 + plank * 0.37, v * 0.5, 6, 2, 3, 53) * 14 + warp;
+    const ring = fbm(u * 3 + plank * 0.37, v, 6, 1, 3, 53) * 14 + warp;          // periodic in v: no tile seam
     const fiber = fbm(u, v, 64, 3, 3, 54), g = 0.5 + 0.5 * Math.sin(ring * 6.283) ;
     const seam = 1 - smooth(0, 0.035, Math.min(fu, 1 - fu));
     const knot = smooth(0.82, 0.88, fbm(u * 2 + plank, v * 2, 5, 5, 2, 55));
@@ -98,10 +128,10 @@ const RECIPES = {
     return { h: b.h + frame * 0.35 + nail * 0.3, c: b.c.map(x => x * (1 - frame * 0.2)), r: b.r };
   },
   metal(u, v) {
-    const brushed = fbm(u, v, 3, 96, 3, 61), scratch = smooth(0.86, 0.95, fbm(u, v, 5, 128, 2, 62)), dent = fbm(u, v, 5, 5, 4, 63);
-    const h = dent * 0.3 + brushed * 0.1 - scratch * 0.15;
-    const c = 0.7 + brushed * 0.18 - scratch * 0.25 + dent * 0.08;
-    return { h, c: [c, c * 1.01, c * 1.03], r: 0.32 + brushed * 0.24 + scratch * 0.2, m: 0.92 - scratch * 0.2 };
+    const brushed = fbm(u, v, 3, 96, 3, 61), scratch = smooth(0.9, 0.97, fbm(u, v, 5, 128, 2, 62)), dent = fbm(u, v, 5, 5, 4, 63), grime = fbm(u, v, 6, 6, 3, 64);
+    const h = dent * 0.25 + brushed * 0.06 - scratch * 0.1;
+    const c = 0.66 + brushed * 0.08 - scratch * 0.12 + (dent - 0.5) * 0.06 - (grime - 0.5) * 0.12;
+    return { h, c: [c, c * 1.01, c * 1.02], r: 0.4 + brushed * 0.12 + grime * 0.2 + scratch * 0.1, m: 0.88 - scratch * 0.15 };
   },
   rust(u, v) {
     const base = RECIPES.metal(u, v), rust = smooth(0.42, 0.62, fbm(u, v, 5, 5, 5, 71)), flake = fbm(u, v, 40, 40, 3, 72);
@@ -109,24 +139,43 @@ const RECIPES = {
     return { h: base.h + rust * (0.3 + flake * 0.3), c: [mix(c, c * 1.45, rust), mix(c, c * 0.85, rust), mix(c, c * 0.6, rust)], r: mix(base.r, 0.85, rust), m: mix(0.9, 0.15, rust) };
   },
   container(u, v) {
-    const n = 24, ridge = 0.5 + 0.5 * Math.sin(u * Math.PI * 2 * n);
+    // ISO container corrugation pitch is ~27 cm (11 ribs over a 3 m UV tile); finer ribs alias into white specular stripes
+    const n = 11, ridge = 0.5 + 0.5 * Math.sin(u * Math.PI * 2 * n);
     const edgeShade = 0.5 + 0.5 * Math.sin(u * Math.PI * 2 * n + 0.6);
-    const wear = smooth(0.5, 0.75, fbm(u, v, 4, 4, 5, 81)), streak = fbm(u * 8, v * 0.6, 24, 3, 3, 82), scratch = smooth(0.88, 0.96, fbm(u, v, 6, 96, 2, 83));
+    const wear = smooth(0.5, 0.75, fbm(u, v, 4, 4, 5, 81)), streak = fbm(u, v, 48, 2, 3, 82), scratch = smooth(0.88, 0.96, fbm(u, v, 6, 96, 2, 83));
     const rust = wear * smooth(0.45, 0.7, fbm(u, v, 10, 10, 4, 84)) * 0.9;
-    const h = ridge * 0.9 + rust * 0.3;
-    const c = (0.72 + edgeShade * 0.24 - streak * 0.14 - scratch * 0.2) * (1 - rust * 0.3);
-    return { h, c: [mix(c, c * 1.4, rust), mix(c, c * 0.8, rust), mix(c, c * 0.55, rust)], r: mix(0.38 + streak * 0.2, 0.85, rust), m: mix(0.55, 0.1, rust) };
+    const h = ridge * 0.7 + rust * 0.3;
+    const c = (0.78 + edgeShade * 0.14 - streak * 0.14 - scratch * 0.2) * (1 - rust * 0.3);
+    // painted steel: the paint is a dielectric (low metalness, satin roughness) — glossy metal ridges mirrored the sky as white stripes
+    return { h, c: [mix(c, c * 1.4, rust), mix(c, c * 0.8, rust), mix(c, c * 0.55, rust)], r: mix(0.58 + streak * 0.16, 0.88, rust), m: mix(0.18, 0.08, rust) };
   },
+  /** Weathered asphalt: dense fine aggregate, a few larger stones, glossy tar patches, sparse thin cracks. */
   asphalt(u, v) {
-    const gravel = fbm(u, v, 128, 128, 3, 91), patch = fbm(u, v, 3, 3, 4, 92), crack = smooth(0.978, 0.995, 1 - Math.abs(fbm(u, v, 7, 7, 3, 93) * 2 - 1));
-    const h = gravel * 0.7 - crack * 0.5;
-    const c = 0.72 + gravel * 0.42 + patch * 0.12 - crack * 0.22;
-    return { h, c: [c * 1.03, c, c * 0.96], r: 0.88 + gravel * 0.1 };
+    const gravel = fbm(u, v, 192, 192, 2, 91), patch = fbm(u, v, 3, 3, 4, 92), crack = smooth(0.988, 0.997, 1 - Math.abs(fbm(u, v, 5, 5, 4, 93) * 2 - 1));
+    const [s1] = worley(u, v, 40, 94), stone = smooth(0.18, 0.06, s1) * smooth(0.6, 0.8, fbm(u, v, 40, 40, 1, 95));
+    const tar = smooth(0.62, 0.7, fbm(u, v, 4, 4, 3, 96));
+    const h = gravel * 0.5 + stone * 0.5 - crack * 0.6 - tar * 0.1;
+    const c = 0.78 + (gravel - 0.5) * 0.32 + (patch - 0.5) * 0.12 + stone * 0.2 - crack * 0.3 - tar * 0.22;
+    // tar sealing is darker and only slightly smoother (a low roughness here mirrors the sky like a puddle)
+    return { h, c: [c * 1.02, c, c * 0.97], r: 0.9 + gravel * 0.08 - tar * 0.12 };
   },
   cloth(u, v) {
     const weave = Math.sin(u * Math.PI * 2 * 48) * Math.sin(v * Math.PI * 2 * 48), stripe = Math.floor(u * 8) % 2;
     const n = fbm(u, v, 8, 8, 3, 101);
     return { h: weave * 0.5 + 0.5, c: [0.75 + stripe * 0.25 + n * 0.1, 0.75 + stripe * 0.2 + n * 0.1, 0.75 + stripe * 0.15 + n * 0.1], r: 0.96 };
+  },
+  /** Military ripstop: fine plain weave, a reinforcing grid every ~6 mm and faint fibre noise. Near-white albedo so
+   *  vertex colours / camo carry the hue; used by the operators' uniforms and nylon gear. */
+  ripstop(u, v) {
+    const n = 64, wu = u * n, wv = v * n, cu = mod(wu, 1), cv = mod(wv, 1);
+    const over = (Math.floor(wu) + Math.floor(wv)) % 2 === 0;
+    const warp = Math.sin(cu * Math.PI), weft = Math.sin(cv * Math.PI);
+    const yarn = over ? warp * (0.55 + 0.45 * weft) : weft * (0.55 + 0.45 * warp);
+    const grid = Math.max(1 - smooth(0, 0.18, Math.min(mod(u * 8, 1), 1 - mod(u * 8, 1)) * 8), 1 - smooth(0, 0.18, Math.min(mod(v * 8, 1), 1 - mod(v * 8, 1)) * 8));
+    const fibre = fbm(u, v, 32, 32, 2, 191), wear = fbm(u, v, 4, 4, 3, 192);
+    const h = yarn * 0.55 + grid * 0.35 + fibre * 0.1;
+    const c = 0.86 + yarn * 0.08 + grid * 0.03 + (fibre - 0.5) * 0.08 + (wear - 0.5) * 0.08;
+    return { h, c: [c, c, c], r: 0.86 + fibre * 0.1 };
   },
   glass(u, v) {
     const grime = fbm(u, v, 5, 5, 4, 111);
@@ -138,10 +187,11 @@ const RECIPES = {
     return { h: lump * 0.8 + weave * 0.1, c: [c * 1.02, c, c * 0.92], r: 0.98 };
   },
   foliage(u, v) { const n = fbm(u, v, 12, 12, 4, 131); return { h: n, c: [0.7 + n * 0.4, 0.8 + n * 0.3, 0.6], r: 0.85 }; },
+  /** Blued / parkerized steel: fine brushing, small edge-wear flecks (not blotches), slight roughness variation. */
   gunmetal(u, v) {
-    const brushed = fbm(u, v, 2, 128, 3, 141), wear = smooth(0.62, 0.8, fbm(u, v, 9, 9, 4, 142)), speck = smooth(0.8, 0.95, fbm(u, v, 96, 96, 2, 143));
-    const c = 0.32 + brushed * 0.1 + wear * 0.28 + speck * 0.12;
-    return { h: 0.5 + brushed * 0.1, c: [c, c * 1.0, c * 1.02], r: 0.36 + wear * 0.3 + brushed * 0.1, m: 0.95 - wear * 0.25 };
+    const brushed = fbm(u, v, 2, 128, 3, 141), wear = smooth(0.74, 0.86, fbm(u, v, 22, 22, 3, 142)), speck = smooth(0.84, 0.96, fbm(u, v, 96, 96, 2, 143));
+    const c = 0.34 + brushed * 0.08 + wear * 0.1 + speck * 0.05;
+    return { h: 0.5 + brushed * 0.08, c: [c, c * 1.0, c * 1.02], r: 0.42 + wear * 0.14 + brushed * 0.08, m: 0.95 - wear * 0.1 };
   },
   polymer(u, v) {
     const stipple = fbm(u, v, 96, 96, 2, 151), n = fbm(u, v, 4, 4, 3, 152);
@@ -164,9 +214,12 @@ const RECIPES = {
 /** GLB material name -> recipe. Unknown names fall back to `default`. */
 export function recipeFor(name) {
   const n = name.toLowerCase();
-  if (n.includes('sand_ground') || n.includes('sand') && n.includes('ground') || n === 'dirt' || n === 'ground') return 'sand';
+  if (n.includes('sand_ground') || n.includes('sand_raised') || n.includes('sand') && n.includes('ground') || n === 'dirt' || n === 'ground') return 'sand';
   if (n.includes('asphalt') || n.includes('road')) return 'asphalt';
   if (n.includes('container')) return 'container';
+  if (n.includes('metal_wall') || n.includes('cladding')) return 'cladding';
+  if (n.includes('floor') || n.includes('paving')) return 'paving';
+  if (n.includes('rubble')) return 'stone';
   if (n.includes('rust')) return 'rust';
   if (n.includes('brick')) return 'brick';
   if (n.includes('crate')) return 'crate';
@@ -197,7 +250,9 @@ export function textureSet(recipe, { size = 256, anisotropy = 8, normalStrength 
   }
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const l = height[y * size + mod(x - 1, size)], r = height[y * size + mod(x + 1, size)], d = height[mod(y - 1, size) * size + x], t = height[mod(y + 1, size) * size + x];
-    let nx = (l - r) * normalStrength, ny = (t - d) * normalStrength; const nz = 1, len = Math.hypot(nx, ny, nz);
+    // finite differences shrink with resolution: scale so a 512 px set has the same relief as a 256 px one
+    const k = normalStrength * size / 256;
+    let nx = (l - r) * k, ny = (t - d) * k; const nz = 1, len = Math.hypot(nx, ny, nz);
     nx /= len; ny /= len; const o = (y * size + x) * 4;
     normal.data[o] = (nx * 0.5 + 0.5) * 255; normal.data[o + 1] = (ny * 0.5 + 0.5) * 255; normal.data[o + 2] = (nz / len * 0.5 + 0.5) * 255; normal.data[o + 3] = 255;
   }

@@ -39,6 +39,8 @@ export const MATERIALS = {
   wood_dark: { color: hex(0x4a3020), roughness: 0.8, metalness: 0 },
   crate: { color: hex(0xa27a45), roughness: 0.82, metalness: 0 },
   metal: { color: hex(0x767e82), roughness: 0.42, metalness: 0.85 },
+  metal_wall: { color: hex(0x7d8a92), roughness: 0.55, metalness: 0.55 },   // corrugated steel cladding (building walls)
+  rubble: { color: hex(0x857c70), roughness: 0.97, metalness: 0 },          // broken concrete / stone debris
   rust_metal: { color: hex(0x8a5638), roughness: 0.62, metalness: 0.7 },
   container_red: { color: hex(0x9c3c2e), roughness: 0.5, metalness: 0.6 },
   container_blue: { color: hex(0x2f5f86), roughness: 0.5, metalness: 0.6 },
@@ -287,9 +289,11 @@ export class GridMap {
     for (let r = 1; r < this.rows - 1; r++) for (let c = 1; c < this.cols - 1; c++) { const ch = this.at(c, r); if ((ch === '.' || ch === ',') && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => this.isSolid(this.at(c + dc, r + dr)))) open.push([c, r]); }
     for (let i = 0; i < count && open.length; i++) {
       const [c, r] = open[Math.floor(this.rand() * open.length)];
-      const x = this.cx(c) + (this.rand() - 0.5) * this.cell * 0.9, z = this.cz(r) + (this.rand() - 0.5) * this.cell * 0.9, s = 0.12 + this.rand() * 0.34, y0 = this.base(c, r);
-      const rock = boxMesh('rk', this.rand() < 0.5 ? 'stone_base' : 'concrete', x, y0 + s * 0.4, z, s * (1 + this.rand()), s * 0.8, s * (1 + this.rand()), 1);
-      rotateMesh(rock, { ry: this.rand() * 3, rx: (this.rand() - 0.5) * 0.4, px: x, py: y0 + s * 0.4, pz: z }); this.decor.push(rock);
+      // broken chunks: irregular proportions, tipped over and half bedded in the dirt (no clean floating cubes)
+      const x = this.cx(c) + (this.rand() - 0.5) * this.cell * 0.9, z = this.cz(r) + (this.rand() - 0.5) * this.cell * 0.9, s = 0.08 + this.rand() * 0.24, y0 = this.base(c, r);
+      const sx = s * (0.8 + this.rand() * 1.1), sy = s * (0.45 + this.rand() * 0.4), sz = s * (0.7 + this.rand() * 0.9), cy = y0 + sy * 0.2;
+      const rock = boxMesh('rk', 'rubble', x, cy, z, sx, sy, sz, 1);
+      rotateMesh(rock, { ry: this.rand() * 3, rx: (this.rand() - 0.5) * 0.7, rz: (this.rand() - 0.5) * 0.7, px: x, py: cy, pz: z }); this.decor.push(rock);
     }
   }
 

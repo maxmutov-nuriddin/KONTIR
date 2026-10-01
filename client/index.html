@@ -7,7 +7,18 @@
   <meta name="description" content="KONTIR — brauzerdagi 5v5 server-authoritative taktik FPS: Source harakati, MR12, lag compensation, PBR grafika." />
   <title>KONTIR — Tactical Operations</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <script src="https://yandex.ru/games/sdk/v2"></script>
+  <!-- Yandex Games SDK: only inside the platform iframe (standalone hosting would throw "No parent to post message") -->
+  <script>
+    (function () {
+      var framed = true; try { framed = window.self !== window.top; } catch (e) { framed = true; }
+      if (!framed) return;
+      window.__ysdkScript = new Promise(function (resolve) {
+        var s = document.createElement('script'); s.src = 'https://yandex.ru/games/sdk/v2'; s.async = false;
+        s.onload = function () { resolve(true); }; s.onerror = function () { resolve(false); };
+        document.head.appendChild(s);
+      });
+    })();
+  </script>
 </head>
 <body><canvas id="scene"></canvas><main id="app"></main><script type="module" src="/src/main.js"></script></body>
 </html>

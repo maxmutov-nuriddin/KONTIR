@@ -432,7 +432,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         const meta = library.list().find(x => x.id === m.mapId);
         for (const p of m.players) {
           const s = io.sockets.sockets.get(p); if (s) s.data.queueName = queue.entries.get(p)?.name;
-          io.to(p).emit('queue:found', { matchId: m.id, mapId: m.mapId, mapName: meta?.name || m.mapId, mode: m.mode, players: m.players.length, size: m.size, acceptSeconds: Math.round((m.deadline - Date.now()) / 1000) });
+          io.to(p).emit('queue:found', { matchId: m.id, mapId: m.mapId, mapName: meta?.name || m.mapId, mode: m.mode, players: m.players.length, size: m.size, solo: !!m.solo, acceptSeconds: Math.round((m.deadline - Date.now()) / 1000) });
         }
       } else if (a.type === 'ready') startMatch(m).catch(error => { if (!quiet) console.error('match start failed', error); });
       else if (a.type === 'expired') {

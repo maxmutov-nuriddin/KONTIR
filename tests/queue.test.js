@@ -17,16 +17,30 @@ test('queue: ten players on a shared map form a match immediately; ACCEPT from a
   const ready = q.tick(); assert.equal(ready[0].type, 'ready'); assert.equal(q.entries.size, 0);
 });
 
-test('queue: small groups wait for the fill timer, only share a common map, solo searchers get a bot match later', () => {
+test('queue: small groups wait for the fill timer, only share a common map, the remaining lone searcher gets a bot match', () => {
   const now = clock(), q = new MatchQueue({ mapIds: ['a', 'b', 'c'], now, modes: { competitive: { fillAfterMs: 10000, soloAfterMs: 30000 } } });
   q.join('x', { maps: ['a', 'b'] }); q.join('y', { maps: ['b', 'c'] }); q.join('z', { maps: ['c'], mode: 'competitive' });
   assert.equal(q.tick().length, 0, 'not enough players yet');
   now.add(10001);
   const found = q.tick().filter(a => a.type === 'found');
-  assert.equal(found.length, 1); assert.deepEqual(found[0].match.players.sort(), ['x', 'y']); assert.equal(found[0].match.mapId, 'b', 'the only map both selected');
-  now.add(20001);
-  const later = q.tick().filter(a => a.type === 'found');
-  assert.deepEqual(later.map(a => a.match.players), [['z']], 'solo searcher gets a bot-filled match');
+  assert.equal(found.length, 2); assert.deepEqual(found[0].match.players.sort(), ['x', 'y']); assert.equal(found[0].match.mapId, 'b', 'the only map both selected');
+  // once x and y are matched, z is the only one left searching: it gets a bot-filled match right away, not after 30 s
+  assert.deepEqual(found[1].match.players, ['z'], 'solo searcher gets a bot-filled match');
+});
+
+test('queue: a lone searcher gets a bot match within seconds and needs no ACCEPT', () => {
+  const now = clock(), q = new MatchQueue({ mapIds: ['a', 'b'], now });
+  q.join('solo', { mode: 'competitive' });
+  assert.equal(q.tick().length, 0, 'a short grace period lets a friend join the same search');
+  now.add(6001);
+  const found = q.tick().find(a => a.type === 'found');
+  assert.deepEqual(found.match.players, ['solo']); assert.equal(found.match.solo, true);
+  assert.ok(found.match.accepted.has('solo'), 'pressing SEARCH counts as accepting a solo match');
+  assert.equal(q.tick().find(a => a.type === 'ready')?.match.id, found.match.id, 'starts on the next tick without a pop-up');
+  // with somebody else searching (other maps) the lone rule does not apply
+  const q2 = new MatchQueue({ mapIds: ['a', 'b'], now });
+  q2.join('x', { maps: ['a'] }); q2.join('y', { maps: ['b'] }); now.add(6001);
+  assert.equal(q2.tick().length, 0);
 });
 
 test('queue: a missed ACCEPT drops that player and requeues the others with their original priority', () => {

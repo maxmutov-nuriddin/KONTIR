@@ -6,15 +6,37 @@ import { MeshBVH } from 'three-mesh-bvh';
 const seg = new Line3(), box = new Box3(), triPoint = new Vector3(), capPoint = new Vector3();
 const push = new Vector3(), faceNormal = new Vector3(), ray = new Ray(), rayOrigin = new Vector3(), rayDir = new Vector3();
 
+/** Physical surface classes (bullet penetration, impact effects). Index = per-vertex code stored in the collider. */
+export const SURFACES = Object.freeze(['concrete', 'metal', 'wood', 'sand', 'sandbag', 'glass', 'cloth', 'foliage']);
+/** Material / mesh name -> surface class. Stone, brick, plaster and asphalt all behave as masonry ('concrete'). */
+export function surfaceOf(name = '') {
+  const n = String(name).toLowerCase();
+  if (/sandbag/.test(n)) return 'sandbag';
+  if (/wood|crate|plank|door/.test(n)) return 'wood';
+  if (/container|metal|rust|cladding|steel|iron/.test(n)) return 'metal';
+  if (/glass|window/.test(n)) return 'glass';
+  if (/cloth|canvas|awning|fabric/.test(n)) return 'cloth';
+  if (/foliage|leaf|palm|bush/.test(n)) return 'foliage';
+  if (/sand|dirt|ground|mud/.test(n)) return 'sand';
+  return 'concrete';
+}
+/**
+ * How far a bullet's penetration power carries through each surface, relative to a weapon's nominal value: planks and
+ * thin sheet metal are shot through easily, masonry poorly, a sandbag or packed earth almost not at all.
+ */
+export const PENETRATION = Object.freeze({ concrete: 0.55, metal: 0.85, wood: 2.2, sand: 0.3, sandbag: 0.25, glass: 3, cloth: 4, foliage: 4 });
+
 export class MeshCollider {
   /** @param {{positions:Float32Array, indices:Uint32Array}[]} meshes world-space triangles */
   constructor(meshes) {
     let vertexCount = 0, indexCount = 0;
     for (const m of meshes) { vertexCount += m.positions.length / 3; indexCount += m.indices.length; }
-    const positions = new Float32Array(vertexCount * 3), indices = new Uint32Array(indexCount);
+    const positions = new Float32Array(vertexCount * 3), indices = new Uint32Array(indexCount), surface = new Uint8Array(vertexCount);
     let vo = 0, io = 0;
     for (const m of meshes) {
       positions.set(m.positions, vo * 3);
+      // per-vertex surface code: the BVH reorders triangles, but never vertices
+      surface.fill(Math.max(0, SURFACES.indexOf(surfaceOf(m.material || m.name))), vo, vo + m.positions.length / 3);
       for (let i = 0; i < m.indices.length; i++) indices[io + i] = m.indices[i] + vo;
       vo += m.positions.length / 3; io += m.indices.length;
     }
@@ -25,6 +47,12 @@ export class MeshCollider {
     this.geometry.computeBoundingBox();
     this.bounds = this.geometry.boundingBox;
     this.triangleCount = indices.length / 3;
+    this.surface = surface;
+  }
+  /** Surface class of the triangle `faceIndex` (as reported by a BVH hit). */
+  surfaceAt(faceIndex) {
+    const idx = this.geometry.index;
+    return SURFACES[this.surface[idx.getX(faceIndex * 3)]] || 'concrete';
   }
 
   /** Closest hit along a ray, or null. Returned normal always faces the ray origin. */
@@ -37,7 +65,7 @@ export class MeshCollider {
     if (!hit) return null;
     const n = hit.face.normal;
     const flip = n.x * dx + n.y * dy + n.z * dz > 0 ? -1 : 1;
-    return { distance: hit.distance, x: hit.point.x, y: hit.point.y, z: hit.point.z, nx: n.x * flip, ny: n.y * flip, nz: n.z * flip };
+    return { distance: hit.distance, x: hit.point.x, y: hit.point.y, z: hit.point.z, nx: n.x * flip, ny: n.y * flip, nz: n.z * flip, surface: this.surfaceAt(hit.faceIndex) };
   }
 
   /**
