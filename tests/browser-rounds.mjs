@@ -25,7 +25,7 @@ try {
   });
   await page.goto(`http://127.0.0.1:${server.port}`, { waitUntil: 'domcontentloaded' });
   await page.locator('#loader').waitFor({ state: 'detached', timeout: 120000 });
-  await page.click('#play-nav'); await page.click('[data-mode="practice"]'); await page.click('#practice');
+  await page.click('#play-nav'); await page.click('[data-mode="practice"]'); await page.click('#go');
   await page.waitForFunction(() => window.__KONTIR__?.playing, null, { timeout: 120000 });
   const id = await page.evaluate(() => window.__KONTIR__.id);
   const room = [...server.rooms.values()].find(r => r.players.has(id)), human = room.players.get(id);

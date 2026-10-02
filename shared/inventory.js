@@ -25,7 +25,10 @@ export class Inventory {
     this.time = 0; this.drawUntil = 0; this.nextFire = 0; this.reloadUntil = 0; this.reloading = false;
     this.pin = 0; this.pinStrength = 1; this.lastFire = false; this.lastFire2 = false; this.lastReload = false; this.lastDrop = false;
     this.shots = 0; this.lastShot = -1e9; this.burst = 0; this.drawTicks = 1; this.reloadTicks = 1;
+    this.silencerOff ||= {};                         // weapon id -> true when the player took the silencer off (kept between rounds)
   }
+  /** Silenced right now? (USP-S / M4A1-S unless the silencer was removed). */
+  isSilenced(id) { const w = WEAPONS[id]; return !!w?.suppressed && !(w.detachable && this.silencerOff[id]); }
 
   // ---- queries -----------------------------------------------------------------------------------------
   has(slot) {
@@ -55,6 +58,8 @@ export class Inventory {
 
   // ---- mutations ---------------------------------------------------------------------------------------
   /** Adds a weapon. Returns the id it displaced (primary / secondary), or null. */
+  /** New round: every carried gun starts with a full magazine and full reserve. */
+  refillAmmo() { for (const id of Object.keys(this.ammo)) { const w = WEAPONS[id]; if (w?.kind === 'gun' && Object.values(this.slots).includes(id)) this.ammo[id] = { mag: w.mag, reserve: w.reserve }; } }
   give(id, { select = false, ammo = null } = {}) {
     const w = WEAPONS[id];
     if (!w) return null;
@@ -163,6 +168,10 @@ export class Inventory {
       if (wantsReload && ready && !this.reloading && a.mag < w.mag && a.reserve > 0) {
         this.reloading = true; this.reloadTicks = ticks(w.reload); this.reloadUntil = this.time + this.reloadTicks; this.shots = 0; this.burst = 0; this.zoom = 0;
         events.push({ type: 'reloadStart', weapon: w.id });
+      } else if (w.detachable && fire2Edge && ready && !this.reloading) {
+        // RMB on a USP-S / M4A1-S screws the silencer off / on (the weapon is busy meanwhile)
+        this.silencerOff[w.id] = !this.silencerOff[w.id]; this.drawTicks = ticks(w.silencerTime); this.drawUntil = this.time + this.drawTicks;
+        events.push({ type: 'silencer', weapon: w.id, on: !this.silencerOff[w.id] });
       } else if (w.scope && fire2Edge && ready && !this.reloading) {
         this.zoom = (this.zoom + 1) % (w.scope.length + 1);
         events.push({ type: 'zoom', weapon: w.id, level: this.zoom });
@@ -171,7 +180,7 @@ export class Inventory {
           if (this.time - this.lastShot > ticks(w.recoilDelay + 0.05)) this.burst = 0;
           const punch = samplePattern(w, this.shots);
           a.mag--;
-          events.push({ type: 'shot', weapon: w.id, index: Math.floor(this.shots), punch, burst: this.burst, zoom: this.zoom });
+          events.push({ type: 'shot', weapon: w.id, index: Math.floor(this.shots), punch, burst: this.burst, zoom: this.zoom, silenced: this.isSilenced(w.id) });
           this.shots = Math.min(w.recoilTable.length - 1, this.shots + 1); this.burst++;
           this.lastShot = this.time; this.nextFire = this.time + ticks(w.interval);
           if (w.unzoomOnShot) this.zoom = 0;
@@ -215,7 +224,7 @@ export class Inventory {
       team: this.team, slots: { ...this.slots }, ammo: JSON.parse(JSON.stringify(this.ammo)), grenades: { ...this.grenades }, util: this.util,
       current: this.current, previous: this.previous, time: this.time, drawUntil: this.drawUntil, drawTicks: this.drawTicks || 1, nextFire: this.nextFire,
       reloadUntil: this.reloadUntil, reloadTicks: this.reloadTicks || 1, reloading: this.reloading, pin: this.pin, pinStrength: this.pinStrength,
-      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom,
+      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom, silencerOff: { ...(this.silencerOff || {}) },
     };
   }
   load(json) { const preferred = this.preferred; Object.assign(this, JSON.parse(JSON.stringify(json))); if (preferred) this.preferred = preferred; return this; }

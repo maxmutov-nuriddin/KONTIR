@@ -57,3 +57,55 @@ npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt --texture-com
 
 The game's loader already supports meshopt and Draco. Large binaries are best stored with Git LFS
 (`git lfs track "client/public/models/**/*.glb"`).
+
+## Blender pipeline (`tools/blender/`)
+
+The shipped weapon and prop GLBs are generated, not hand-exported. Requires Blender 4.2+ on `PATH` (`brew install --cask blender`).
+
+```sh
+npx vite                                   # dev server on :5190 (export-rigs.mjs builds rigs inside a real page)
+node tools/blender/export-rigs.mjs         # game's procedural weapon rigs -> tools/blender/rigs/<id>.glb
+tools/blender/build.sh weapons_bake [id …] # PBR materials (edge wear, cavity dirt, scratches, wood grain) baked to
+                                           # albedo / ORM / normal maps -> client/public/models/weapons/<id>.glb
+tools/blender/build.sh props [key …]       # crate, barrels, container, pillar, well -> client/public/models/props/
+tools/blender/compress.sh client/public/models/{weapons,props}/*.glb   # 1024 px WebP textures + meshopt (~4x smaller)
+```
+
+* Weapons keep the procedural rigs' exact geometry and frame, so the built-in hand poses still fit; `mag` / `bolt` /
+  `slide` / `pump` / `cylinder` stay separate nodes for the reload / fire animations.
+* Baked materials are named `<id>_receiver`, `<id>_furniture`, `<id>_metal` (and `<id>_<part>_…`): the first two take
+  inventory skins, bare metal does not.
+* A prop material whose name contains `tint` is baked near-white and coloured per instance by the game (containers).
+* `KONTIR_FAST=1 tools/blender/build.sh …` bakes at quarter resolution for quick previews. Baking uses the GPU
+  (Metal / OptiX / CUDA) when Cycles finds one; a full weapon run takes about two hours on an M2.
+* Never run `gltf-transform optimize` on these files: it flattens the hierarchy and deletes the part nodes.
+
+### Characters (`tools/blender/character.py`)
+
+Realistic operators built with MPFB (MakeHuman for Blender; generated humans are CC0) and CMU motion capture.
+
+```sh
+# one-off setup: MPFB extension + MakeHuman system assets (CC0)
+blender -c extension install-file -r user_default -e add-on-mpfb-v2.0.17.zip      # from extensions.blender.org
+unzip makehuman_system_assets_cc0.zip -d "$(blender -b --python-expr 'from bl_ext.user_default.mpfb.services import LocationService as L; print(L.get_user_data())' | tail -1)"
+# build
+tools/blender/build.sh character ct --export
+tools/blender/build.sh character t --export
+tools/blender/compress.sh client/public/models/characters/*.glb
+```
+
+* Body: male, muscular, `cmu_mb` rig (bone names match the game's regexes: `RightHand`, `Spine1`, `Head`).
+* Uniform = MakeHuman shirt/trousers re-painted with a procedural camo (`tools/blender/camo.py`: Multicam for CT, Arid
+  for T; the garment's own folds / seams are kept). Tactical vest and combat boots are MakeHuman community assets
+  (`tools/blender/fetch-assets.sh`, not committed), re-coloured the same way. Gloves, knee pads, leg straps and the
+  drop-leg holster are built on the body / trousers so they fit and deform with them. CT: high-cut helmet (rails, NVG
+  shroud), headset with boom mic, shooting glasses; T: balaclava. Skin under the clothes is pulled inwards (no holes).
+* Clip `lowready` (lobby showcase, `setHoldPose(actor, 'low')`): same hands-on-weapon grip as the gameplay hold, weapon
+  pitched down and across the body.
+* Credits: *Tactical Vest male* by **Mindfront** — CC-BY (Creative Commons Attribution), makehumancommunity.org/clothes/tactical_vest_male.html;
+  *Combat Boots* (CC0) and *Hand Gloves* (CC0) — makehumancommunity.org.
+* Clips (`idle`, `walk`, `run`, `squat`, `sneak`, `jump`, `death`) are CMU takes from `tools/blender/bvh/`
+  (cgspeed BVH release; CMU places no restrictions on use), retargeted in world space by `tools/blender/anim.py`.
+  The arms are held on a rifle by IK and stay level when the actor leans; loops are cut to one gait period.
+* `weapon_socket` sits on the right hand; `tools/blender/socketcheck.js` measures where a held weapon points in
+  three.js (run through the Vite dev server) — the muzzle must come out as +Z, up as +Y.

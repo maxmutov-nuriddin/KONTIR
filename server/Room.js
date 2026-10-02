@@ -25,7 +25,7 @@ export class Room {
     this.isPublic = !!options.isPublic; this.practice = !!options.practice;
     this.botDifficulty = ['easy', 'medium', 'hard', 'expert'].includes(options.botDifficulty) ? options.botDifficulty : 'medium';
     this.noises = [];   // recent gunfire / footsteps bots can hear: { x, z, tick, team, range }
-    this.timing = { warmup: RULES.warmupSeconds, freeze: RULES.freezeSeconds, round: RULES.roundSeconds, post: RULES.postRoundSeconds, ...(options.timing || {}) };
+    this.timing = { warmup: RULES.warmupSeconds, freeze: RULES.freezeSeconds, round: RULES.roundSeconds, post: RULES.postRoundSeconds, buyAfterLive: RULES.buyAfterLiveSeconds, ...(options.timing || {}) };
     for (const value of Object.values(this.timing)) if (!Number.isFinite(value) || value < 0 || value > 3600) throw new Error('Invalid phase timing');
     this.players = new Map(); this.host = null;
     this.tick = 0; this.epoch = 0; this.round = 0; this.phase = 'warmup'; this.phaseEnd = this.tick + secondsToTick(this.timing.warmup);
@@ -213,7 +213,8 @@ export class Room {
     this.lag.reset(); this.grenades = []; this.smokes = []; this.fires = []; this.decoys = []; this.drops = [];
     for (const p of this.players.values()) {
       const keep = !fresh && !halftime && !(otRound >= 1 && (otRound - 1) % 3 === 0) && p.carry && p.alive;
-      if (keep) { p.inv.resetTimers(); } else this.newLoadout(p);
+      if (keep) { p.inv.resetTimers(); p.inv.refillAmmo(); } else this.newLoadout(p);   // survivors keep their guns with full ammo
+      p.bought = [];                                     // this round's purchases (refundable during the buy window)
       p.carry = null; p.alive = false; this.respawn(p);
       p.inv.team = p.team;
     }
@@ -228,6 +229,7 @@ export class Room {
   }
   beginLive() {
     this.phase = 'live'; this.phaseEnd = this.tick + secondsToTick(this.timing.round);
+    this.buyUntil = this.tick + secondsToTick(this.timing.buyAfterLive);
     this.emit('live', {});
   }
   endRound(winner, reason) {
@@ -273,9 +275,12 @@ export class Room {
   }
 
   // ------------------------------------------------------------------------------------------- economy
+  /** Buying is open in warmup, during the freeze and for `buyAfterLive` seconds after the round goes live. */
+  canBuy() { return this.phase === 'buy' || this.phase === 'warmup' || (this.phase === 'live' && this.tick < (this.buyUntil ?? 0)); }
+  buyLeft() { return this.phase === 'live' ? Math.max(0, (this.buyUntil ?? 0) - this.tick) * DT : 0; }
   buy(id, item) {
     const p = this.players.get(id);
-    if (!p || !p.alive || !(this.phase === 'buy' || this.phase === 'warmup')) return { error: 'Xarid faqat buy yoki warmup vaqtida mumkin.' };
+    if (!p || !p.alive || !this.canBuy()) return { error: 'Xarid vaqti tugagan.' };
     const def = Object.hasOwn(BUY_ITEMS, item) ? BUY_ITEMS[item] : null;
     if (!def) return { error: 'Noma’lum jihoz.' };
     if (def.team && def.team !== p.team) return { error: 'Bu jihoz sizning jamoangiz uchun emas.' };
@@ -293,6 +298,19 @@ export class Room {
       p.inv.give(item, { select: true });
     }
     if (!free) p.money -= def.price;
+    if (!free && WEAPONS[item]) (p.bought ||= []).push(item);
+    return { ok: true, money: p.money };
+  }
+  /** Refunds a weapon bought this round while the buy menu is still open (never the knife / default pistol). */
+  sell(id, item) {
+    const p = this.players.get(id);
+    if (!p || !p.alive || !this.canBuy()) return { error: 'Xarid vaqti tugagan.' };
+    const def = Object.hasOwn(BUY_ITEMS, item) ? BUY_ITEMS[item] : null;
+    if (!def || !WEAPONS[item] || !(p.bought || []).includes(item)) return { error: 'Faqat shu raundda sotib olingan qurolni qaytarish mumkin.' };
+    if (WEAPONS[item].kind === 'grenade') { if (!p.inv.grenades[item]) return { error: 'Granata yo‘q.' }; p.inv.grenades[item]--; }
+    else { if (p.inv.weaponId(WEAPONS[item].slot) !== item) return { error: 'Qurol qo‘lingizda emas.' }; p.inv.remove(item); }
+    p.bought.splice(p.bought.indexOf(item), 1);
+    if (this.phase !== 'warmup') p.money = Math.min(RULES.maxMoney, p.money + def.price);
     return { ok: true, money: p.money };
   }
 
@@ -414,7 +432,8 @@ export class Room {
 
   fireShot(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], c = p.char, origin = this.eye(p);
-    const spread = inaccuracy(w, { speed: horizontalSpeed(c), grounded: c.grounded, crouch: c.crouch, burst: ev.burst, zoom: ev.zoom || 0 });
+    // a silenced rifle / pistol without its can: louder, visible flash, a little less accurate (as in CS2)
+    const spread = inaccuracy(w, { speed: horizontalSpeed(c), grounded: c.grounded, crouch: c.crouch, burst: ev.burst, zoom: ev.zoom || 0 }) * (w.detachable && !ev.silenced ? 1.35 : 1);
     const random = makeRandom((this.tick * 2654435761) ^ (p.index * 40503) ^ ((p.inv.lastShot + ev.index) * 9973));
     const viewTick = this.viewTickFor(p, cmd), pellets = w.pellets || 1, hits = new Map();
     let first = null;
@@ -468,8 +487,8 @@ export class Room {
       info = info || rec;
       this.emit('hit', { attacker: p.id, target: h.target.id, part: h.part, damage: h.damage, killed: h.killed, from: { x: origin.x, z: origin.z } });
     }
-    this.emit('shot', { shooter: p.id, weapon: w.id, from: origin, to: first.to, hit: info, wall: first.wall, pen: first.pen || null });
-    this.noise(p, w.suppressed ? 14 : 45);
+    this.emit('shot', { shooter: p.id, weapon: w.id, silenced: !!ev.silenced, from: origin, to: first.to, hit: info, wall: first.wall, pen: first.pen || null });
+    this.noise(p, ev.silenced ? 14 : 45);
   }
   melee(p, ev, cmd) {
     const w = WEAPONS[ev.weapon], origin = this.eye(p), c = p.char;
@@ -708,7 +727,7 @@ export class Room {
       else if (e.type === 'melee') this.melee(p, e, cmd);
       else if (e.type === 'throw') this.throwGrenade(p, e);
       else if (e.type === 'drop') { if (e.weapon === 'c4') { if (this.bomb.carrier === p.id) this.dropBomb(p, 3.5); } else this.spawnDrop(p, e.weapon, e.ammo); }
-      else if (e.type === 'reloadStart' || e.type === 'select' || e.type === 'quick' || e.type === 'dryfire' || e.type === 'reloaded') this.emit('weaponSound', { who: p.id, kind: e.type, weapon: e.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
+      else if (e.type === 'reloadStart' || e.type === 'select' || e.type === 'quick' || e.type === 'dryfire' || e.type === 'reloaded' || e.type === 'silencer') this.emit('weaponSound', { who: p.id, kind: e.type, weapon: e.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
     }
     if (cmd.interact && !p.lastInteract && !p.action) { const d = this.aimedDrop(p); if (d) this.pickUp(p, d); }
     p.lastInteract = !!cmd.interact;
@@ -785,7 +804,7 @@ export class Room {
       return true;
     });
     return {
-      code: this.code, mapId: this.map.id, tick: this.tick, epoch: this.epoch, round: this.round, phase: this.phase, remaining, host: this.host,
+      code: this.code, mapId: this.map.id, tick: this.tick, epoch: this.epoch, round: this.round, phase: this.phase, remaining, buyOpen: this.canBuy(), buyLeft: +this.buyLeft().toFixed(1), bought: viewer?.bought || [], host: this.host,
       scores: this.scores, side: this.side, half: this.round > RULES.halfRounds ? 2 : 1, result: this.result, practice: this.practice,
       bomb: { state: this.bomb.state, carrier: this.bomb.carrier, x: this.bomb.x, y: this.bomb.y, z: this.bomb.z, site: this.bomb.site, remaining: this.bomb.state === 'planted' ? Math.max(0, (this.bomb.explodeTick - this.tick) / TICK_RATE) : 0 },
       grenades: this.grenades.map(g => ({ id: g.id, type: g.type, x: +g.x.toFixed(2), y: +g.y.toFixed(2), z: +g.z.toFixed(2) })),

@@ -34,7 +34,7 @@ export function loadProfile() {
   }
   const base = defaultProfile();
   for (const k of Object.keys(base)) if (p[k] === undefined) p[k] = base[k];
-  p.loadout = { ...base.loadout, ...(p.loadout || {}) }; p.demo = true; p.finishes = {}; p.owned = ['standard'];
+  p.loadout = { ...base.loadout, ...(p.loadout || {}) }; p.demo = true; p.items = []; p.equipped = {}; p.finishes = {}; p.wears = {}; delete p.owned;
   return p;
 }
 /** Replaces the profile object's contents in place (other modules keep their reference). */

@@ -1,93 +1,61 @@
 import { GridMap, finalizeMarkers } from './builder.mjs';
+import { tracer } from './trace.mjs';
 
 /**
- * CHANGTEPA — a classic "dust"-style bomb-defusal layout (north is up, T spawn south, CT spawn north):
- *   A site (NE, raised)  <- A ramp <- LONG A (east lane, long doors, outside long)
- *                        <- CATWALK / short (stairs up from mid)
- *   MID (centre lane, xbox crate, mid doors -> CT mid) ; CT mid -> B doors -> B site
- *   B site (NW, back platform, car) <- tunnel exit <- LOWER TUNNELS (roofed, link to mid) <- stairs <- UPPER TUNNELS <- T spawn
- * Elevation: level 1 (1.2 m) for T spawn, top mid, outside long, upper tunnels, catwalk, CT spawn, A site, B platform.
+ * CHANGTEPA — the classic "Dust II" layout, traced 1:1 from the 17 x 17 callout overview (1080 px, 30 px = one 3 m cell).
+ * T spawn south, CT spawn north-east. A (north-east, raised) via LONG (outside long -> long doors -> long corner -> A ramp),
+ * SHORT (mid -> stairs -> catwalk -> A) ; B (north-west) via OUTSIDE / UPPER TUNNELS, MID DOORS -> CT MID -> B DOORS.
  */
 export function buildChangtepa() {
-  const m = new GridMap({ id: 'changtepa', cols: 40, rows: 46, seed: 1234, wallMaterials: ['sand_wall', 'sand_wall', 'stone_wall', 'plaster_white'],
-    groundMaterial: 'sand_ground', raisedMaterial: 'sand_raised', stairMaterial: 'stone_base' });
-  m.fill(0, 0, 39, 45, '#');
-  const open = (c0, r0, c1, r1, lvl = 0, ch = '.') => { m.fill(c0, r0, c1, r1, ch); m.setLevel(c0, r0, c1, r1, lvl); };
-
-  // ------------------------------------------------------------------ north: B site, CT mid, CT spawn, short, A site
-  open(1, 1, 12, 13);                       // B site bowl
-  open(1, 1, 4, 4, 1);                      // B back platform (raised)
-  m.fill(5, 2, 5, 3, 'W');                  // stairs up to the platform (rise toward west)
-  open(14, 1, 17, 12);                      // CT mid / B approach
-  open(18, 9, 21, 12);                      // CT mid, below CT spawn
-  open(18, 1, 27, 7, 1);                    // CT spawn (raised)
-  m.fill(19, 8, 21, 8, 'N'); m.setLevel(19, 8, 21, 8, 0); // stairs CT mid -> CT spawn
-  open(23, 8, 27, 18, 1);                   // short A / catwalk
-  open(28, 1, 38, 12, 1);                   // A site plateau
-  // B doors (arched gaps in the wall between B and CT mid) and B window
-  m.fill(13, 8, 13, 10, 'a'); m.setLevel(13, 8, 13, 10, 0);
-  m.fill(13, 4, 13, 5, 'H');
-  // tunnel exit into B
-  m.fill(4, 14, 6, 14, 'a');
-
-  // ------------------------------------------------------------------ mid
-  open(16, 14, 21, 32);                     // mid lane
-  m.fill(17, 13, 20, 13, 'a');              // mid doors (arched double door)
-  m.fill(22, 16, 22, 17, 'E');              // stairs mid -> catwalk (rise toward east)
-  open(16, 34, 21, 37, 1);                  // top mid (raised, T side)
-  m.fill(16, 33, 21, 33, 'v');              // ramp mid -> top mid (rises toward south)
-
-  // ------------------------------------------------------------------ tunnels (west)
-  open(3, 15, 7, 24, 0, 'R');               // lower tunnels (roofed)
-  open(3, 15, 7, 15);                       // open light-well just inside the exit
-  open(8, 21, 15, 23, 0, 'R');              // lower tunnels <-> mid connector
-  m.fill(3, 25, 7, 25, 'S');                // stairs down from upper tunnels (rise toward south)
-  open(3, 26, 7, 37, 1, 'R');               // upper tunnels (roofed)
-  open(3, 26, 7, 27, 1);                    // skylight
-  open(3, 38, 10, 41, 1);                   // tunnel mouth -> T spawn
-
-  // ------------------------------------------------------------------ long A (east)
-  open(30, 14, 38, 32);                     // long corridor
-  m.fill(31, 13, 35, 13, '^');              // A ramp (rises north onto the A plateau)
-  m.fill(32, 33, 34, 33, 'a');              // long doors
-  m.fill(32, 34, 34, 34, 'v');              // ramp from outside long down to the doors
-  open(29, 35, 38, 41, 1);                  // outside long (raised)
-
-  // ------------------------------------------------------------------ T spawn
-  open(11, 38, 28, 44, 1);
-
-  // paths (painted before props so props sit on top)
-  m.fill(16, 34, 21, 37, ','); m.fill(11, 44, 28, 44, ','); m.fill(29, 38, 38, 39, ',');
-
-  // ------------------------------------------------------------------ cover, props, sites
-  // A site: default box stack, goose boxes, car, low walls toward CT
-  m.fill(30, 3, 35, 8, 'A');
-  m.set(31, 5, 'C').set(34, 8, 'c').set(37, 2, 'c').set(38, 3, 'c').set(29, 10, 'H').set(30, 10, 'H').set(36, 10, 'k').set(33, 11, 'b');
-  m.set(28, 4, 'H').set(28, 5, 'H');
-  // B site: car, boxes, barrels
-  m.fill(5, 5, 10, 10, 'B');
-  m.set(9, 3, 'k').set(7, 7, 'C').set(4, 9, 'c').set(10, 11, 'c').set(2, 11, 'b').set(11, 6, 'c').set(1, 7, 'c');
-  // CT side
-  m.set(15, 3, 'c').set(16, 11, 'b').set(24, 3, 'T').set(20, 11, 'c');
-  // catwalk: boxes at the top of short
-  m.set(24, 11, 'c').set(26, 14, 'H').set(27, 14, 'H');
-  // mid: xbox, well, crates
-  m.set(18, 24, 'C').set(20, 15, 'c').set(17, 29, 'w').set(21, 20, 'b').set(16, 27, 'c');
-  // lower tunnels
-  m.set(5, 18, 'c').set(12, 22, 'c');
-  // long: corner box, blue container stack, barrels, low wall
-  m.fill(30, 20, 31, 32, '#');             // buildings narrow the south half of long -> 'long corner'
-  m.set(37, 16, 'c').set(33, 26, 'C').set(37, 30, 'b').set(34, 20, 'H').set(35, 20, 'H').set(38, 24, 'c').set(30, 18, 'c');
-  // outside long / T spawn
-  m.set(36, 37, 'k').set(30, 40, 'c').set(12, 39, 'T').set(27, 39, 'T').set(38, 41, 'T').set(9, 40, 'c');
-  m.fill(14, 40, 25, 43, 't');
-  for (let c = 14; c <= 25; c++) if (c % 3 === 0) m.set(c, 40, '.');
-  // CT spawn points
-  m.fill(19, 2, 26, 5, 'x');
-  m.set(23, 3, 'T');
-
+  const m = new GridMap({ id: 'changtepa', cols: 36, rows: 36, seed: 2002, wallMaterials: ['sand_wall', 'plaster_ochre', 'sand_wall', 'stone_wall'],
+    groundMaterial: 'sand_ground', raisedMaterial: 'sand_raised', stairMaterial: 'stone_base', spawnYaw: { T: Math.PI, CT: 0 } });
+  m.fill(0, 0, 35, 35, '#');
+  const T = tracer(m, 30);
+  // ---- T spawn and the T-side exits
+  T.floor(60, 930, 640, 1050); T.floor(60, 810, 360, 1050);
+  T.floor(95, 630, 295, 820);                                    // outside tunnels
+  T.floor(175, 520, 225, 640);                                   // tunnel neck
+  T.floor(65, 430, 345, 520, 0, 'R');                            // upper tunnels (roofed)
+  T.floor(300, 400, 460, 460, 0, 'R');                           // lower tunnels (roofed) -> mid doors
+  T.floor(95, 330, 145, 440);                                    // tunnels -> B ("dog" / fence)
+  // ---- mid
+  T.floor(455, 330, 535, 400);                                   // mid doors
+  T.floor(455, 380, 545, 905);                                   // mid lane (xbox, cat wall) -> suicide
+  T.floor(430, 600, 760, 705);                                   // top mid / green / palm
+  T.floor(470, 705, 505, 935);                                   // suicide to T spawn
+  T.floor(625, 700, 780, 885);                                   // outside long
+  // ---- long
+  T.floor(720, 580, 780, 720);                                   // long doors
+  T.floor(780, 580, 900, 735);                                   // long doors yard
+  T.floor(900, 575, 980, 740);                                   // pit
+  T.floor(710, 470, 1030, 585);                                  // long corner + blue
+  T.floor(890, 300, 1030, 480);                                  // long
+  T.floor(990, 230, 1030, 340);                                  // car
+  // ---- A (raised one level), CT spawn (raised), short / catwalk (raised)
+  T.floor(655, 95, 900, 200, 1); T.floor(820, 135, 990, 300, 1); // goose / site / ramp top
+  T.paint(900, 300, 990, 330, '^', 0);                           // long -> A ramp (rises north)
+  T.floor(605, 155, 720, 285, 1);                                // CT spawn
+  T.floor(660, 200, 720, 400, 1);                                // stairs side down to short
+  T.floor(545, 395, 720, 460, 1);                                // short / catwalk
+  T.paint(515, 395, 545, 460, 'E', 0);                           // mid -> catwalk stairs (rise east)
+  // ---- CT mid and B
+  T.floor(270, 150, 520, 280);                                   // CT mid
+  T.paint(545, 210, 575, 280, 'E', 0); T.floor(520, 210, 545, 280); // CT mid -> CT spawn ramp
+  T.floor(265, 150, 300, 260);                                   // B doors
+  T.floor(65, 150, 265, 340);                                    // B site
+  T.floor(60, 20, 270, 150);                                     // back plat / back site
+  T.floor(180, 300, 265, 370);                                   // car / closet
+  // ---- sites, cover, props
+  T.paint(830, 140, 900, 210, 'A'); T.paint(170, 70, 270, 180, 'B');
+  T.at(845, 160, 'C'); T.at(700, 110, 'c'); T.at(870, 105, 'b'); T.at(1000, 270, 'k'); T.at(780, 500, 'C');
+  T.at(205, 110, 'c'); T.at(150, 180, 'C'); T.at(95, 120, 'c'); T.at(210, 330, 'k'); T.at(70, 250, 'c');
+  T.at(490, 480, 'C'); T.at(445, 610, 'c');   // xbox in mid, clear of the catwalk stairs T.at(540, 650, 'T'); T.at(760, 610, 'c'); T.at(940, 600, 'b');
+  T.at(270, 790, 'c'); T.at(150, 990, 'C'); T.at(560, 960, 'k'); T.at(980, 540, 'H');
+  // ---- spawns
+  T.paint(330, 960, 520, 1040, 't'); for (const [x, y] of [[360, 990], [420, 990], [480, 990]]) T.at(x, y, '.');
+  T.paint(615, 165, 710, 270, 'x'); for (const [x, y] of [[640, 220], [690, 220]]) T.at(x, y, '.');
   const out = m.build();
-  m.poleLine(-50, 60, 50, 60, 14); m.poleLine(-6, -30, -6, 20, 12); m.rubble(220);
+  m.poleLine(-60, 62, 60, 62, 14); m.rubble(220);
   const dressed = m.output(); out.meshes = dressed.meshes; out.materials = dressed.materials;
   out.markers = [...finalizeMarkers(m, out)];
   return { map: m, ...out };

@@ -57,7 +57,7 @@ try {
   });
   assert.deepEqual(errors, [], 'quality switches compile and render without shader errors');
   await page.click('#play-nav'); await page.click('[data-mode="practice"]');
-  await page.click('#practice');
+  await page.click('#go');
   await page.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
   assert.equal((await k(page, () => window.__KONTIR__.state.players.length)), 10, 'practice fills 5v5 with bots');
   if (!(await k(page, () => window.__KONTIR__.controller.locked))) await page.mouse.click(640, 300);

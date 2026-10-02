@@ -269,8 +269,43 @@ export function textureSet(recipe, { size = 256, anisotropy = 8, normalStrength 
   return set;
 }
 
-/** Applies a procedural PBR set to a MeshStandardMaterial (tint colour / factors from the GLB are kept). */
+// Scanned texture sets (client/public/textures, fetched by tools/fetch-textures.mjs): recipe -> { map, normalMap, ormMap, tint }.
+// UVs are world-scaled (1 uv = `tile` metres, 4 m by default), so each set repeats to its real physical size.
+const photo = new Map();
+const UV_METRES = 4;
+/** Loads the scanned sets listed in textures/manifest.json; call before building map materials. Missing files are skipped. */
+export async function loadPhotoTextures(base = './textures/', anisotropy = 8) {
+  let manifest;
+  try { const r = await fetch(base + 'manifest.json'); if (!r.ok) return 0; manifest = await r.json(); } catch { return 0; }
+  const loader = new THREE.TextureLoader();
+  await Promise.all(Object.entries(manifest.sets || {}).map(async ([recipe, info]) => {
+    try {
+      const [map, normalMap, ormMap] = await Promise.all(['diff', 'nor', 'arm'].map(k => loader.loadAsync(`${base}${recipe}/${k}.jpg`)));
+      for (const t of [map, normalMap, ormMap]) {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = anisotropy; t.userData.shared = true;
+        t.repeat.set(UV_METRES / info.size[0], UV_METRES / info.size[1]);
+      }
+      map.colorSpace = THREE.SRGBColorSpace;
+      photo.set(recipe, { map, normalMap, ormMap, tint: !!info.tint });
+    } catch (e) { console.warn(`texture set ${recipe}:`, e.message); }
+  }));
+  return photo.size;
+}
+
+/** Applies a PBR set (scanned when available, otherwise procedural) to a MeshStandardMaterial. */
 export function applyPBR(material, recipe, opts = {}) {
+  const scan = opts.procedural ? null : photo.get(recipe);
+  if (scan) {
+    material.map = scan.map; material.normalMap = scan.normalMap; material.roughnessMap = scan.ormMap;
+    material.metalnessMap = recipe === 'metal' || recipe === 'rust' || recipe === 'container' || recipe === 'cladding' ? scan.ormMap : null;
+    if (material.metalnessMap) material.metalness = 1;
+    material.roughness = 1;                                   // the ARM map carries the roughness
+    if (!scan.tint) material.color.set(0xffffff);             // scanned albedo already has the colour
+    material.normalScale = new THREE.Vector2(1, 1);
+    if (recipe === 'sand' || recipe === 'asphalt') material.envMapIntensity = 0.6;
+    material.needsUpdate = true;
+    return material;
+  }
   const set = textureSet(recipe, opts);
   material.map = set.map; material.normalMap = set.normalMap; material.roughnessMap = set.ormMap;
   material.metalnessMap = set.metalTexture ? set.ormMap : null;

@@ -18,7 +18,7 @@ import { models } from './models.js';
 import { textureSet } from './materials.js';
 
 // ---------------------------------------------------------------------------------------------- skinned (real model) path
-const CLIPS = { idle: /idle|stand/i, walk: /walk/i, run: /run|jog|sprint/i, crouch: /crouch.*idle|crouch(?!.*walk)|squat/i, crouch_walk: /crouch.*walk|sneak/i, jump: /jump/i, death: /death|die|dying/i };
+const CLIPS = { lowready: /low.?ready/i, idle: /idle|stand/i, walk: /walk/i, run: /run|jog|sprint/i, crouch: /crouch.*idle|crouch(?!.*walk)|squat/i, crouch_walk: /crouch.*walk|sneak/i, jump: /jump/i, death: /death|die|dying/i };
 function buildSkinned(team, gltf) {
   const root = new THREE.Group(), body = cloneSkinned(gltf.scene);
   body.rotation.y = Math.PI;                                              // assets face +Z; operators face -Z
@@ -40,7 +40,9 @@ function buildSkinned(team, gltf) {
 function animateSkinned(actor, { speed, yaw, pitch, crouch, alive, dt }) {
   const u = actor.userData, a = u.actions;
   const state = !alive ? 'death' : crouch > 0.5 ? (speed > 0.4 ? 'crouch_walk' : 'crouch') : speed > 3.6 ? 'run' : speed > 0.4 ? 'walk' : 'idle';
-  const next = a[state] || (state === 'crouch_walk' ? a.crouch || a.walk : state === 'run' ? a.walk : null) || a.idle;
+  // lobby showcase (setHoldPose 'low'): stand at low ready when the model has that clip
+  const want = state === 'idle' && u.pose === 'low' && a.lowready ? 'lowready' : state;
+  const next = a[want] || (state === 'crouch_walk' ? a.crouch || a.walk : state === 'run' ? a.walk : null) || a.idle;
   if (next && next !== u.current) { next.reset().fadeIn(0.18).play(); u.current?.fadeOut(0.18); u.current = next; }
   if (next && (state === 'walk' || state === 'run')) next.timeScale = Math.max(0.6, Math.min(1.6, speed / (state === 'run' ? 5.5 : 2.2)));
   u.mixer.update(dt);
@@ -417,7 +419,7 @@ export function setOperatorDetail(actor, distance, lodDistance = 16) {
 
 // weapon placement in spine space per hold style, and whether the off-hand supports the weapon
 const HOLD = {
-  rifle: { p: [0.1, 0.32, -0.12], r: [0, 0, 0], s: 0.92 },
+  rifle: { p: [0.13, 0.34, -0.33], r: [0, 0, 0], s: 0.92 },   // grip in front of the chest, butt in the right shoulder pocket (not through the torso)
   pistol: { p: [0.06, 0.36, -0.3], r: [0, 0, 0], s: 1 },
   knife: { p: [0.14, 0.28, -0.26], r: [-0.2, 0.3, 0.2], s: 1 },
   grenade: { p: [0.13, 0.3, -0.22], r: [0.1, 0, 0], s: 1 },
@@ -427,7 +429,7 @@ const holdStyle = id => (['glock', 'usp', 'deagle', 'p250', 'fiveseven', 'tec9',
 
 // alternative holds (lobby showcase): 'low' = low-ready, muzzle down and across the body
 const POSES = {
-  low: { rifle: { p: [0.09, 0.25, -0.16], r: [-0.42, 0.62, 0.32] }, pistol: { p: [0.03, 0.2, -0.24], r: [-0.95, 0.15, 0] } },
+  low: { rifle: { p: [0.1, 0.22, -0.34], r: [-0.42, 0.62, 0.32] }, pistol: { p: [0.03, 0.2, -0.3], r: [-0.95, 0.15, 0] } },
 };
 /** Switches the held weapon between the gameplay hold (null) and a named pose; arms follow through IK. */
 export function setHoldPose(actor, pose = null) {

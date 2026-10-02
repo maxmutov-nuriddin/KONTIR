@@ -34,17 +34,33 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 // render/pixelRatio of the canvas, then sharpened by RCAS). msaa on the upscaler path is runtime-switchable.
 // operatorLod: distance (m) at which operators switch to their low-poly LOD.
 export const QUALITY = {
-  ultra: { pixelRatio: 1.25, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170, macro: true, motes: true, operatorLod: 30 },
-  high: { pixelRatio: 1.25, render: 1.0, sharpen: 0.25, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 2, maxFar: 120, macro: true, motes: true, operatorLod: 22 },
+  ultra: { pixelRatio: 2, shadows: true, mapSize: 2048, post: true, msaa: 4, cascades: 3, maxFar: 170, macro: true, motes: true, operatorLod: 30 },
+  high: { pixelRatio: 2, render: 1.75, sharpen: 0.25, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 2, maxFar: 120, macro: true, motes: true, operatorLod: 22 },
   // TINIQ: eski/oddiy PC uchun eng toza tasvir — to‘liq ruxsat, 4x MSAA, RCAS keskinlashtirish, bitta yengil soya
   // kaskadi (har 2-kadrda). FPS tushsa ichki ruxsat 60 % gacha pasayadi, lekin RCAS tufayli tasvir xiralashmaydi.
-  crisp: { pixelRatio: 1.5, render: 1.0, sharpen: 0.55, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 42, shadowEvery: 2, macro: true, motes: false, operatorLod: 16 },
-  // O'RTA (100+ FPS): to‘liq 1080p ruxsat, soyasiz yengil render, to‘g‘ridan-to‘g‘ri canvasga
-  medium: { pixelRatio: 1.0, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 70, macro: false, motes: false, operatorLod: 14 },
+  crisp: { pixelRatio: 2, render: 1.5, sharpen: 0.45, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 42, shadowEvery: 2, macro: true, motes: false, operatorLod: 16 },
+  // O'RTA (MacBook / Iris): UI va canvas Retina 2x, sahna 1x da 2x MSAA + RCAS keskinlashtirish — tiniq va fansiz MacBook Air'da ham sovuq
+  medium: { pixelRatio: 2, render: 1.0, sharpen: 0.45, shadows: false, mapSize: 512, post: false, msaa: 2, cascades: 0, maxFar: 70, macro: false, motes: false, operatorLod: 14 },
   // TEZKOR: sahna 75 % ruxsatda, RCAS bilan tiniq qilib kattalashtiriladi — eng zaif noutbuklar uchun
-  low: { pixelRatio: 1.0, render: 0.75, sharpen: 0.45, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false, operatorLod: 10 },
+  low: { pixelRatio: 1.0, render: 0.75, sharpen: 0.5, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false, operatorLod: 10 },
 };
 export const QUALITY_ORDER = ['low', 'medium', 'crisp', 'high', 'ultra'];
+
+/** First-run quality from the GPU / CPU: old Celeron / Pentium / Intel HD laptops get TEZKOR, Apple Silicon and Intel
+ *  Iris get O'RTA, discrete NVIDIA / AMD cards get TINIQ. The player can still change it in Settings. */
+export function detectQuality(renderer, details = false) {
+  let gpu = '';
+  try { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)); } catch { /* hidden */ }
+  const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+  const phone = matchMedia('(pointer: coarse)').matches || /android|iphone|ipad|mobile/i.test(navigator.userAgent);
+  const weak = /swiftshader|llvmpipe|software|celeron|pentium|atom|gma|intel\(r\)? (hd|uhd) graphics|mali|adreno \(?tm\)? ?[1-5]\d\d|powervr/i.test(gpu) || cores <= 2 || mem <= 2;
+  const discrete = /nvidia|geforce|quadro|radeon (rx|pro|r[5-9]) /i.test(gpu) && cores >= 6;
+  const quality = weak || (phone && cores <= 4) ? 'low' : discrete && mem >= 8 ? (cores >= 8 ? 'high' : 'crisp') : 'medium';
+  const fps = phone || weak ? 30 : 60;                         // phones / weak laptops: cooler and steadier at 30
+  if (!details) return quality;
+  const name = gpu.replace(/^ANGLE \(|\)$/g, '').replace(/,? (Direct3D|vs_|ps_|Unspecified Version).*/i, '').slice(0, 60) || 'noma’lum GPU';
+  return { quality, fps, note: `${name} · ${cores} yadro${navigator.deviceMemory ? ` · ${mem} GB` : ''}${phone ? ' · telefon/planshet' : ''} → ${{ low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' }[quality]}, ${fps} FPS` };
+}
 
 // World-space macro variation: breaks texture tiling with large-scale tone patches and adds wall-base grime + vertical sun-bleach streaks.
 const MACRO_GLSL = /* glsl */`
@@ -79,6 +95,8 @@ const tmpColor = new THREE.Color();
 const SHOWCASE_DIST = 5.2, SHOWCASE_SPAN = 2.78;   // lobby camera distance (m) and framed height (m)
 const tmpSize = new THREE.Vector2(), LOD_TAN = Math.tan(THREE.MathUtils.degToRad(37));
 const tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpM = new THREE.Matrix4();
+// container paint colours (same family as tools/maps/builder.mjs), applied per instance to `tint` prop materials
+const PROP_TINTS = [0xb04634, 0x356b96, 0x497858, 0xd6a630, 0x8c969a].map(c => new THREE.Color(c));
 
 export class WorldEngine {
   constructor(canvas, { quality = 'medium' } = {}) {
@@ -359,6 +377,11 @@ export class WorldEngine {
         if (!o.isMesh) return;
         const inst = new THREE.InstancedMesh(o.geometry, o.material, matrices.length), local = o.matrixWorld;
         matrices.forEach((m, i) => inst.setMatrixAt(i, tmpM.multiplyMatrices(m, local)));
+        // `tint` materials are baked near-white; each copy takes a colour from the palette (shipping containers)
+        if ([].concat(o.material).some(mat => /tint/i.test(mat.name || ''))) {
+          matrices.forEach((m, i) => { const h = Math.abs(Math.round(m.elements[12] * 7 + m.elements[13] * 3 + m.elements[14] * 13)); inst.setColorAt(i, PROP_TINTS[h % PROP_TINTS.length]); });
+          inst.instanceColor.needsUpdate = true;
+        }
         inst.instanceMatrix.needsUpdate = true; inst.castShadow = true; inst.receiveShadow = true; inst.computeBoundingSphere();
         for (const mat of [].concat(o.material)) if (!this.materials.has(mat)) { this.materials.add(mat); this.prepareMaterial(mat); }
         group.add(inst);

@@ -4,6 +4,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Accounts } from '../server/Accounts.js';
+import { skinPrice, AD_REWARD, AD_COOLDOWN_MS, AD_DAILY_MAX } from '../shared/economy.js';
 
 const fresh = async () => new Accounts(join(await mkdtemp(join(tmpdir(), 'kontir-acc-')), 'accounts.json')).load();
 
@@ -27,18 +28,47 @@ test('register / login / resume with unique case-insensitive usernames', async (
   assert.equal(b.resume(r.token).profile.name, 'Lochin_7', 'sessions survive a restart');
 });
 
-test('server owns coins and skins; clients only equip owned finishes', async () => {
-  const a = await fresh();
-  await a.register('Qoplon', 'secret1');
-  const key = 'qoplon';
-  assert.throws(() => a.buy(key, 'gold'), /coins/);
-  const p = a.buy(key, 'desert'); assert.ok(p.owned.includes('desert')); assert.equal(p.coins, 250);
-  assert.throws(() => a.buy(key, 'desert'), /owned/);
-  const u = a.update(key, { loadout: { t: 'p250', ct: 'deagle' }, finishes: { ak47: 'desert', awp: 'gold' } });
+test('skin market: server-priced items, equip only owned, wear grows with use, sell loses value', async () => {
+  let now = Date.UTC(2026, 9, 2, 12);
+  const a = new Accounts(join(await mkdtemp(join(tmpdir(), 'kontir-acc-')), 'accounts.json'), { now: () => now }); await a.load();
+  await a.register('Qoplon', 'secret1'); const key = 'qoplon';
+  assert.throws(() => a.buy(key, { weapon: 'knife', finish: 'fade', tier: 'fn' }), /coins/, 'a ★ knife costs far more than the starting coins');
+  assert.throws(() => a.buy(key, { weapon: 'gloves', finish: 'gold', tier: 'fn' }), /item/, 'gold paint does not exist for gloves');
+  const cheap = skinPrice('p250', 'desert', 0.15, a.market, now);
+  const { profile, item } = a.buy(key, { weapon: 'p250', finish: 'desert', tier: 'ft' });
+  assert.equal(profile.coins, 500 - cheap); assert.ok(item.wear >= 0.15 && item.wear < 0.38, 'float rolled inside Field-Tested');
+  assert.ok(skinPrice('p250', 'desert', 0.15, a.market, now) > cheap, 'buying raises the market price');
+  const u = a.update(key, { loadout: { t: 'p250', ct: 'deagle' }, equipped: { p250: item.id, ak47: item.id, awp: 'nope' } });
   assert.equal(u.loadout.t, 'p250'); assert.equal(u.loadout.ct, 'usp');
-  assert.deepEqual(u.finishes, { ak47: 'desert' });
-  const { gains, profile } = a.award(key, { won: true, kills: 20, deaths: 10, rounds: 20 });
-  assert.equal(profile.matches, 1); assert.equal(profile.wins, 1); assert.ok(gains.xp > 0 && gains.coins > 0);
+  assert.deepEqual(u.equipped, { p250: item.id }, 'an item can only be equipped on its own weapon'); assert.equal(u.finishes.p250, 'desert');
+  const w0 = item.wear; const { gains } = a.award(key, { won: true, kills: 20, deaths: 10, rounds: 20 });
+  assert.ok(gains.coins > 0); assert.ok(a.users.qoplon.items[0].wear > w0, 'equipped skin wears down after a match');
+  now += 24 * 3.6e6;                                          // market demand relaxes back toward x1
+  const before = a.users.qoplon.coins, { coins } = a.sell(key, item.id);
+  assert.ok(coins > 0 && coins < cheap, 'selling returns less than was paid'); assert.equal(a.users.qoplon.coins, before + coins);
+  assert.equal(a.users.qoplon.items.length, 0); assert.deepEqual(a.users.qoplon.equipped, {});
+});
+
+test('rewarded ads: server-fixed amount, cooldown, daily cap, double reward once per match', async () => {
+  let now = Date.UTC(2026, 9, 2, 8);
+  const a = new Accounts(join(await mkdtemp(join(tmpdir(), 'kontir-acc-')), 'accounts.json'), { now: () => now }); await a.load();
+  await a.register('Burgut', 'secret1'); const key = 'burgut';
+  assert.equal(a.reward(key, 'free').coins, AD_REWARD);
+  assert.throws(() => a.reward(key, 'free'), /cooldown/);
+  for (let i = 1; i < AD_DAILY_MAX; i++) { now += AD_COOLDOWN_MS; a.reward(key, 'free'); }
+  now += AD_COOLDOWN_MS; assert.throws(() => a.reward(key, 'free'), /daily/);
+  assert.throws(() => a.reward(key, 'double'), /nodouble/, 'no match played yet');
+  const { gains } = a.award(key, { won: true, kills: 3 });
+  assert.equal(a.reward(key, 'double').coins, gains.coins); assert.throws(() => a.reward(key, 'double'), /nodouble/, 'only once');
+  now += 24 * 3.6e6; assert.equal(a.reward(key, 'free').coins, AD_REWARD, 'cap resets the next day');
+});
+
+test('old accounts: owned finish patterns become items', async () => {
+  const a = await fresh(); await a.register('Eski', 'secret1');
+  Object.assign(a.users.eski, { owned: ['standard', 'tiger', 'gold'], finishes: { deagle: 'tiger' } }); delete a.users.eski.items;
+  const p = a.public(a.users.eski);
+  assert.deepEqual(p.items.map(i => [i.weapon, i.finish]).sort(), [['ak47', 'gold'], ['deagle', 'tiger']]);
+  assert.equal(p.finishes.deagle, 'tiger'); assert.equal(p.owned, undefined);
 });
 
 test('friends: search, request, accept, messages only between friends, unfriend', async () => {

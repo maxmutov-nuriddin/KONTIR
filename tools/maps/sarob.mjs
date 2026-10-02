@@ -1,82 +1,61 @@
 import { GridMap, finalizeMarkers } from './builder.mjs';
+import { tracer } from './trace.mjs';
 
 /**
- * SAROB ("mirage") — a classic market-town bomb-defusal layout, T spawn east, CT spawn west:
- *   A site (south): reached from T via PALACE (roofed, upper floor) or A RAMP / tetris; CT side has JUNGLE + CONNECTOR, stairs, CT ramp.
- *   MID (east-west street): top mid (T), SNIPER WINDOW (raised room, CT side), SHORT/catwalk north to B, CONNECTOR south to A.
- *   B site (north-west): B APARTMENTS (roofed upper corridor from T spawn), short, MARKET (roofed) to CT spawn.
+ * SAROB — the classic "Mirage" layout, traced 1:1 from the callout overview (1075 x 715 px, 30 px = one 3 m cell).
+ * T spawn east. A (south) via PALACE (raised, roofed) / T RAMP + tetris / CONNECTOR -> stairs; MID with catwalk,
+ * top of mid, window / sniper's nest, underpass; B (north-west) via APARTMENTS (raised, roofed) / B SHORT / MARKET.
  */
 export function buildSarob() {
-  const m = new GridMap({ id: 'sarob', cols: 44, rows: 40, seed: 777, wallMaterials: ['plaster_ochre', 'stone_wall', 'plaster_white', 'plaster_rose', 'sand_wall'],
-    groundMaterial: 'stone_floor', raisedMaterial: 'stone_floor', stairMaterial: 'stone_wall', spawnYaw: { T: Math.PI / 2, CT: -Math.PI / 2 } });
-  m.fill(0, 0, 43, 39, '#');
-  const open = (c0, r0, c1, r1, lvl = 0, ch = '.') => { m.fill(c0, r0, c1, r1, ch); m.setLevel(c0, r0, c1, r1, lvl); };
-
-  // ------------------------------------------------------------------ T spawn (east, raised) and its exits
-  open(37, 6, 42, 30, 1);                    // T spawn yard
-  open(34, 2, 36, 7, 1);                     // alley to B apartments
-  open(28, 16, 36, 19, 1);                   // top mid
-  open(29, 21, 36, 27, 1);                   // T ramp / tetris
-  open(36, 27, 36, 30, 1);                   // T -> palace yard
-  // ------------------------------------------------------------------ mid
-  open(13, 16, 27, 19);                      // mid street
-  m.fill(27, 16, 27, 19, '>');               // ramp mid -> top mid (rises east)
-  open(9, 16, 11, 19, 1);                    // sniper window room (raised)
-  m.fill(12, 15, 12, 20, '#'); m.fill(12, 17, 12, 18, 'H'); m.setLevel(12, 17, 12, 18, 1); // the window
-  // ------------------------------------------------------------------ short (catwalk) to B
-  m.fill(16, 15, 17, 15, 'N');               // stairs mid -> short
-  open(16, 7, 17, 14, 1);                    // short
-  open(14, 7, 15, 8, 1);                     // short balcony
-  m.fill(13, 7, 13, 8, 'E');                 // stairs balcony -> B (rise toward east)
-  // ------------------------------------------------------------------ B site + apartments + market
-  open(2, 1, 12, 9);                         // B site
-  open(14, 2, 19, 5, 1);                     // apartments balcony (exit)
-  m.fill(13, 2, 13, 3, 'E');                 // apartments stairs down into B
-  open(20, 2, 33, 5, 1, 'R');                // B apartments (roofed upper corridor)
-  open(26, 2, 27, 5, 1);                     // courtyard light-well in the apartments
-  open(3, 10, 7, 15, 0, 'R');                // market (roofed) B <-> CT
-  open(3, 10, 7, 10);                        // market doorway yard
-  // ------------------------------------------------------------------ CT spawn (west) and CT links
-  open(2, 16, 7, 34);                        // CT spawn / CT lane
-  open(2, 20, 11, 21);                       // CT -> window stairs / mid side
-  open(8, 22, 13, 34);                       // CT to A ("CT" / ticket booth)
-  m.fill(9, 20, 10, 20, 'N');                // stairs from CT up into the window room
-  m.fill(10, 23, 12, 27, '#');               // CT house between CT and jungle (ticket side)
-  m.fill(13, 33, 14, 34, '2');               // low wall at CT entrance to A
-  // ------------------------------------------------------------------ connector, jungle, A site, palace
-  open(19, 20, 21, 26, 0, 'R');              // connector (roofed) mid -> jungle
-  open(14, 22, 18, 26);                      // jungle
-  open(14, 27, 28, 37);                      // A site
-  m.fill(28, 22, 28, 27, '>');               // A ramp: tetris (raised) down to the site (rises east)
-  open(30, 30, 35, 34, 1, 'R');              // palace (roofed upper rooms)
-  open(30, 30, 31, 31, 1);                   // palace courtyard
-  open(36, 31, 36, 34, 1);                   // palace entrance from T
-  m.fill(29, 32, 29, 33, 'E');               // palace stairs down onto A (rise toward east)
-
-  // ------------------------------------------------------------------ paths (painted before props)
-  m.fill(13, 17, 26, 18, ','); m.fill(37, 16, 42, 18, ',');
-
-  // ------------------------------------------------------------------ sites, cover and props
-  m.fill(18, 29, 25, 35, 'A');
-  m.set(20, 31, 'C')                          // firebox
-    .set(23, 33, 'c').set(24, 33, 'c').set(23, 34, 'c')                 // triple
-    .set(17, 28, 'H').set(18, 28, 'H')                                  // sandwich
-    .set(26, 29, 'c').set(27, 36, 'b').set(15, 35, 'c').set(21, 36, 'k') // ticket-side car
-    .set(14, 30, 'H').set(14, 31, 'H');                                  // stairs cover toward CT
-  m.set(31, 24, 'C').set(33, 22, 'c').set(34, 26, 'c').set(30, 26, 'c'); // tetris
-  m.fill(4, 3, 9, 7, 'B');
-  m.set(3, 8, 'k').set(3, 2, 'c').set(10, 3, 'C').set(8, 8, 'b').set(11, 7, 'H').set(11, 8, 'H').set(2, 7, 'c'); // van, bench, boxes
-  m.set(22, 17, 'w').set(15, 19, 'c').set(25, 16, 'c').set(32, 18, 'C').set(30, 16, 'b');                     // mid: fountain, boxes
-  m.set(4, 18, 'T').set(9, 23, 'c').set(11, 30, 'H').set(5, 33, 'b').set(15, 24, 'T').set(17, 23, 'c');
-  m.set(38, 8, 'k').set(41, 25, 'T').set(38, 28, 'c').set(40, 12, 'c').set(35, 3, 'c').set(21, 3, 'c');
-  // spawns
-  m.fill(39, 13, 41, 23, 't');
-  for (let r = 13; r <= 23; r += 2) m.set(40, r, '.');
-  m.fill(3, 24, 6, 31, 'x');
-  for (let r = 24; r <= 31; r += 2) m.set(5, r, '.');
-
+  const m = new GridMap({ id: 'sarob', cols: 36, rows: 24, seed: 777, wallMaterials: ['plaster_ochre', 'stone_wall', 'plaster_white', 'plaster_rose', 'sand_wall'],
+    groundMaterial: 'stone_floor', raisedMaterial: 'stone_floor', stairMaterial: 'stone_wall', spawnYaw: { T: -Math.PI / 2, CT: Math.PI / 2 } });
+  m.fill(0, 0, 35, 23, '#');
+  const T = tracer(m, 30);
+  // ---- T spawn, side alley, apartments
+  T.floor(955, 150, 1030, 270);                                  // T spawn
+  T.floor(965, 50, 1035, 660);                                   // T corridor (side alley <-> palace alley)
+  T.floor(720, 50, 965, 200);                                    // side alley / cart
+  T.floor(700, 140, 830, 300);                                   // top of mid
+  T.floor(570, 15, 850, 60, 1, 'R'); T.floor(440, 55, 650, 110, 1, 'R'); T.floor(180, 15, 450, 60, 1, 'R'); // house TV / back alley / apartments
+  T.floor(380, 60, 470, 130, 0, 'R'); T.paint(440, 70, 470, 110, 'E', 0); // kitchen (ground) + stairs up into back alley
+  T.floor(880, 15, 960, 50); T.paint(850, 15, 880, 45, '<', 0);  // apps ramp: side alley -> house TV (rises west)
+  // ---- B
+  T.floor(35, 75, 300, 225);                                     // B site
+  T.paint(180, 60, 240, 90, 'N', 0);                             // B -> B plat / apartments stairs (rise north)
+  T.floor(300, 70, 360, 190);                                    // arches
+  T.floor(420, 110, 525, 230);                                   // B short
+  T.floor(100, 200, 310, 335, 0, 'R');                           // shop / market (roofed)
+  T.floor(90, 225, 150, 265); T.floor(100, 300, 165, 335);       // door / sneaky
+  // ---- mid
+  T.floor(425, 230, 830, 385);                                   // middle (catwalk side + chair)
+  T.floor(390, 190, 440, 300, 0, 'R');                           // underpass (roofed) to B short
+  T.floor(370, 280, 430, 345, 1, 'R'); T.paint(430, 300, 445, 345, 'W', 0); // sniper's nest (raised room) + step down to mid
+  T.floor(830, 280, 1000, 400);                                  // top mid -> palace alley
+  T.floor(820, 360, 965, 500);                                   // palace alley
+  // ---- connector, jungle, CT
+  T.floor(480, 380, 560, 470, 0, 'R');                           // connector (roofed)
+  T.floor(340, 400, 480, 490);                                   // jungle
+  T.floor(260, 330, 360, 640);                                   // CT corridor
+  T.floor(190, 490, 330, 610);                                   // CT spawn
+  T.floor(330, 600, 500, 700);                                   // CT / ticket / trash
+  // ---- A, T ramp, palace
+  T.floor(480, 470, 700, 690);                                   // A site
+  T.floor(690, 470, 860, 530);                                   // T ramp / tetris
+  T.floor(860, 450, 905, 530);                                   // T roof
+  T.floor(720, 530, 960, 680, 1, 'R');                           // palace interior (raised, roofed)
+  T.floor(905, 480, 965, 530, 1);                                // palace entrance from T corridor
+  T.paint(690, 540, 720, 620, 'E', 0);                           // scaffolding: A -> palace (rise east)
+  T.paint(965, 480, 995, 530, 'W', 0);                           // T corridor -> palace entrance (rise west)
+  // ---- sites, cover, props
+  T.paint(530, 560, 640, 650, 'A'); T.paint(130, 100, 250, 190, 'B');
+  T.at(560, 580, 'c'); T.at(630, 640, 'C'); T.at(610, 480, 'H'); T.at(650, 500, 'c'); T.at(500, 620, 'k');
+  T.at(170, 130, 'C'); T.at(80, 120, 'c'); T.at(250, 200, 'c'); T.at(330, 120, 'p');
+  T.at(760, 320, 'C'); T.at(600, 340, 'c'); T.at(780, 120, 'k'); T.at(880, 420, 'c'); T.at(300, 560, 'T');
+  // ---- spawns
+  T.paint(965, 160, 1025, 260, 't'); T.at(995, 210, '.');
+  T.paint(200, 500, 320, 600, 'x'); T.at(260, 550, '.');
   const out = m.build();
-  m.poleLine(-70, 66, 70, 66, 14); m.poleLine(30, -56, 30, -10, 12); m.rubble(200);
+  m.poleLine(-60, 42, 60, 42, 14); m.rubble(180);
   const dressed = m.output(); out.meshes = dressed.meshes; out.materials = dressed.materials;
   out.markers = [...finalizeMarkers(m, out)];
   return { map: m, ...out };

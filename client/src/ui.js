@@ -1,8 +1,19 @@
 import { gsap } from 'gsap';
 import { WEAPONS, BUY_ITEMS, weaponMass, speedMul } from '../../shared/weapons.js';
 import { RULES } from '../../shared/constants.js';
+import { weaponIcon, iconSrc } from './icons.js';
 
 const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
+/** Viewmodel presets (cl_righthand / viewmodel_offset style): offsets in steps of 1 cm, fov in degrees. */
+export const VM_PRESETS = { classic: { name: 'KLASSIK', x: 0, y: 0, z: 0, fov: 58 }, desktop: { name: 'KENG', x: 1, y: -1, z: -1, fov: 64 }, couch: { name: 'YAQIN', x: -1, y: 1, z: 1, fov: 54 }, min: { name: 'MINIMAL', x: 2.5, y: -2.5, z: -2, fov: 68 } };
+// buy-menu pictures: 3D renders for weapons / grenades (icons.js), simple line art for gear
+const GRENADE_IDS = ['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'];
+const svg = d => `<svg viewBox="0 0 64 32" fill="none" stroke="#cfd8d2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">${d}</svg>`;
+const GEAR_ICONS = {
+  kevlar: svg('<path d="M22 4 L32 7 L42 4 L46 10 L44 28 L20 28 L18 10 Z"/><path d="M26 12 H38 M26 18 H38"/>'),
+  helmet: svg('<path d="M16 22 C16 10 24 5 32 5 C40 5 48 10 48 22 Z"/><path d="M14 22 H50 M22 22 V27 M42 22 V27"/><path d="M30 5 V10 H34 V5"/>'),
+  defuser: svg('<rect x="18" y="8" width="28" height="16" rx="3"/><path d="M46 13 H54 M46 19 H54 M24 14 H34 M24 18 H30"/>'),
+};
 export const clock = s => `${Math.floor(Math.max(0, s) / 60)}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, '0')}`;
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -28,7 +39,7 @@ export class UI {
         <header class="topbar">
           <div class="tb-left"><button id="nav-home" class="tb-icon" title="Bosh sahifa" aria-label="Bosh sahifa">⌂</button><button id="settings" class="tb-icon" title="Sozlamalar" aria-label="Sozlamalar">⚙</button><button id="fullscreen" class="tb-icon" title="To‘liq ekran" aria-label="To‘liq ekran">⛶</button></div>
           <nav class="tb-nav"><button data-view="inventory">INVENTAR</button><button data-view="loadout">LOADOUT</button><button data-view="play" id="play-nav" class="tb-play">O‘YNASH</button><button data-view="store">DO‘KON</button><button data-view="news">YANGILIKLAR</button></nav>
-          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><button id="btn-free-coins" class="tb-bonus-btn" title="Reklama ko‘rib bepul tanga olish">🎬 +150 ◈</button><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
+          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><button id="btn-free-coins" class="tb-bonus-btn" title="Reklama ko‘rib bepul tanga olish (kuniga cheklangan)">🎬 +50 ◈</button><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
         </header>
         <aside class="rail">
           <div class="rail-me"><div class="avatar" id="rail-avatar">O</div><span class="rail-level" id="rail-level">1</span></div>
@@ -59,7 +70,7 @@ export class UI {
               <div class="bot-row"><span>CT</span><div class="seg" id="bots-ct">${[0, 1, 2, 3, 4, 5].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div></div>
               <div class="bot-row"><span>QIYINLIK</span><div class="seg" id="bots-diff">${['easy', 'medium', 'hard', 'expert'].map(d => `<button data-d="${d}">${{ easy: 'OSON', medium: 'O‘RTA', hard: 'QIYIN', expert: 'EKSPERT' }[d]}</button>`).join('')}</div></div></div>
             <div class="side-block"><small>TOMON AFZALLIGI (botlar / xona)</small><button id="team">TERRORIST ⇄</button></div>
-            <div class="side-block quick-row"><button id="practice" class="secondary">MASHQ ${arrow}</button><button id="quick" class="secondary">TEZKOR ${arrow}</button><button id="online" class="secondary">KOD ${arrow}</button></div>
+            <div class="side-block quick-row" hidden><button id="practice" class="secondary">MASHQ ${arrow}</button><button id="quick" class="secondary">TEZKOR ${arrow}</button><button id="online" class="secondary">KOD ${arrow}</button></div>
             <div id="search-status" class="hidden"><div><small id="search-mode">COMPETITIVE</small><strong id="search-time">0:00</strong><span id="search-info">Qidirilmoqda…</span></div><button id="search-cancel" aria-label="Bekor qilish">×</button></div>
             <button id="go" class="go">IZLASH</button>
           </aside>
@@ -119,7 +130,7 @@ export class UI {
     $('#map-options').innerHTML = maps.map(m => `<button data-map="${esc(m.id)}" class="map-card ${m.id === selected ? 'selected' : ''} ${pool.has(m.id) ? 'pooled' : ''}"><canvas width="160" height="100" data-thumb="${esc(m.id)}"></canvas><i class="check"></i><div><strong>${esc(m.name)}</strong><small>${esc(m.subtitle || '')}</small></div></button>`).join('');
     document.querySelectorAll('[data-map]').forEach(b => b.onclick = () => {
       const mid = b.dataset.map;
-      if (this.mode === 'competitive' || this.mode === 'casual') { if (this.pool.has(mid) && this.pool.size > 1) this.pool.delete(mid); else this.pool.add(mid); b.classList.toggle('pooled', this.pool.has(mid)); this.onPool?.(this.pool); }
+      if (this.pool.has(mid) && this.pool.size > 1) this.pool.delete(mid); else this.pool.add(mid); b.classList.toggle('pooled', this.pool.has(mid)); this.onPool?.(this.pool);
       document.querySelectorAll('[data-map]').forEach(x => x.classList.toggle('selected', x === b)); this.selectedMap = mid; onSelect(mid);
       this.poolHint();
     });
@@ -127,7 +138,7 @@ export class UI {
     for (const m of maps) this.drawThumb(m.id);
     this.poolHint();
   }
-  poolHint() { if (!this.pool) return; const mm = this.mode === 'competitive' || this.mode === 'casual'; $('#pool-hint').textContent = mm ? `${this.pool.size} ta xarita tanlangan — shulardan biri o‘ynaladi` : 'Bitta xaritani tanlang'; $('#map-all').hidden = !mm; document.querySelector('#map-options').classList.toggle('pool-mode', mm); }
+  poolHint() { if (!this.pool) return; $('#pool-hint').innerHTML = `<b>${this.pool.size}</b> <span>tanlangan — har o‘yinda biri tasodifan beriladi</span>`; $('#map-all').hidden = false; document.querySelector('#map-options').classList.add('pool-mode'); }
   /** Top-down preview drawn from the map's ASCII layout (walls, floor, sites, spawns). */
   async drawThumb(id) {
     const canvas = document.querySelector(`[data-thumb="${CSS.escape(id)}"]`); if (!canvas) return;
@@ -177,7 +188,7 @@ export class UI {
     document.querySelectorAll('.views .view').forEach(v => v.classList.toggle('open', v.id === `view-${this.view}`));
     this.menu.classList.toggle('home', this.view === 'home');
     const v = document.querySelector(`#view-${this.view}`);
-    if (v) gsap.fromTo(v, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.22, ease: 'power2.out' });
+    if (v) gsap.fromTo(v, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.12, ease: 'power2.out' });
   }
   renderProfile(p, { rankOf, levelOf }) {
     const lvl = levelOf(p.xp), into = p.xp % 1000;
@@ -194,30 +205,63 @@ export class UI {
   /** Right rail: squad of practice partners shown like a friends list. */
   renderFriends(names) { $('#rail-friends').innerHTML = names.map((n, i) => `<div class="friend" title="${esc(n)} · bot"><span style="background:hsl(${(i * 67) % 360} 45% 40%)">${esc(n[0])}</span><i></i></div>`).join(''); }
   renderLoadout(p, icon, onPick) {
-    const opt = (side, key, id, label) => `<button class="lo-opt ${p.loadout[key] === id ? 'on' : ''}" data-key="${key}" data-id="${id}"><img alt="" src="${icon(id, p.finishes[id])}"><b>${esc(label)}</b></button>`;
+    const opt = (side, key, id, label) => `<button class="lo-opt ${p.loadout[key] === id ? 'on' : ''}" data-key="${key}" data-id="${id}"><img alt="" data-icon="${id}:${p.finishes?.[id] || 'standard'}" src="${icon(id, p.finishes?.[id])}"><b>${esc(label)}</b></button>`;
     $('#view-loadout').innerHTML = `<div class="page"><div class="page-head"><small>LOADOUT</small><h2>Raund boshidagi qurollaringiz</h2><p>Tanlov har raund boshida (va do‘konda) qo‘llanadi. Skinlar INVENTAR bo‘limida.</p></div>
       <div class="lo-cols"><div class="lo-side ct"><h3>COUNTER-TERRORIST</h3><small>BOSHLANG‘ICH PISTOLET</small><div class="lo-row">${opt('ct', 'ct', 'usp', 'USP-S')}${opt('ct', 'ct', 'p250', 'P250')}</div>
         <small>RIFLE (do‘konda ko‘rinadigani)</small><div class="lo-row">${opt('ct', 'm4', 'm4a4', 'M4A4')}${opt('ct', 'm4', 'm4a1s', 'M4A1-S')}</div></div>
       <div class="lo-side t"><h3>TERRORIST</h3><small>BOSHLANG‘ICH PISTOLET</small><div class="lo-row">${opt('t', 't', 'glock', 'GLOCK-18')}${opt('t', 't', 'p250', 'P250')}</div></div></div></div>`;
     document.querySelectorAll('.lo-opt').forEach(b => b.onclick = () => onPick(b.dataset.key, b.dataset.id));
   }
-  renderInventory(p, weapons, finishes, icon, onEquip) {
-    const sel = this.invSelected && weapons.includes(this.invSelected) ? this.invSelected : weapons[0]; this.invSelected = sel;
-    const W = this.weaponsTable;
-    $('#view-inventory').innerHTML = `<div class="page inv"><div class="page-head"><small>INVENTAR</small><h2>Qurollar va skinlar</h2><p>Sotib olingan skinlarni istalgan qurolga qo‘ying. Yangi skinlar DO‘KONda.</p></div>
-      <div class="inv-body"><div class="inv-grid">${weapons.map(id => `<button class="inv-item ${id === sel ? 'on' : ''}" data-w="${id}"><img alt="" src="${icon(id, p.finishes[id])}"><b>${esc(W[id]?.name || id)}</b><small>${esc(finishes[p.finishes[id] || 'standard'].name)}</small></button>`).join('')}</div>
-      <div class="inv-detail"><img alt="" class="inv-hero" src="${icon(sel, p.finishes[sel])}"><h3>${esc(W[sel]?.name || sel)}</h3><small>SKIN TANLASH</small>
-        <div class="inv-fin">${p.owned.map(f => `<button class="fin ${(p.finishes[sel] || 'standard') === f ? 'on' : ''}" data-f="${f}">${esc(finishes[f]?.name || f)}</button>`).join('')}</div></div></div></div>`;
-    document.querySelectorAll('.inv-item').forEach(b => b.onclick = () => { this.invSelected = b.dataset.w; onEquip(null); });
-    document.querySelectorAll('.fin').forEach(b => b.onclick = () => onEquip(sel, b.dataset.f));
+  /** Inventory: owned skin items (weapon + finish + float). Equip / unequip per weapon, sell back to the market. */
+  renderInventory(p, ctx) {
+    const { icon, finishes, eco, market, now, onEquip, onSell } = ctx, W = this.weaponsTable;
+    const items = [...(p.items || [])].sort((a, b) => eco.skinPrice(b.weapon, b.finish, b.wear, market, now) - eco.skinPrice(a.weapon, a.finish, a.wear, market, now));
+    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const card = it => {
+      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = p.equipped?.[it.weapon] === it.id;
+      const value = eco.skinPrice(it.weapon, it.finish, it.wear, market, now), sell = Math.floor(value * eco.SELL_RATE);
+      return `<div class="skin-card ${on ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}</div>
+        <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}</small>
+        <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div><div class="wear-bar"><i style="left:${(it.wear * 100).toFixed(1)}%"></i></div>
+        <div class="skin-actions"><button data-eq="${it.id}" class="${on ? 'secondary' : 'primary'}">${on ? 'YECHISH' : 'KIYISH'}</button><button data-sell="${it.id}" class="text-button" title="Bozor narxi ◈ ${value}">SOTISH ◈ ${sell}</button></div></div>`;
+    };
+    // every weapon also has its standard (skinless) version, equipped whenever no skin is
+    const stock = card => `<div class="skin-card ${!p.equipped?.[card] ? 'on' : ''}" style="--rar:#6b7a80"><div class="skin-pic">${icon(card, 'standard', 0)}</div>
+        <b>${esc(wname(card))}</b><small class="rar">Standart</small><div class="wear-row"><span>Skinsiz</span><span>—</span></div>
+        <div class="skin-actions">${p.equipped?.[card] ? `<button data-stock="${card}" class="primary">KIYISH</button>` : '<button class="secondary" disabled>KIYILGAN</button>'}</div></div>`;
+    $('#view-inventory').innerHTML = `<div class="page inv"><div class="page-head"><small>INVENTAR</small><h2>Qurollaringiz</h2><p>Kiyilgan skin har o‘yinda biroz eskiradi (float oshadi) va qiymati tushadi. Sotganda bozor narxining ${Math.round(eco.SELL_RATE * 100)}% qaytadi.</p></div>
+      ${items.length ? `<div class="section-label">SKINLAR · ${items.length}</div>` : ''}<div class="skin-grid">${items.map(card).join('')}<div class="grid-break">STANDART QUROLLAR</div>${ctx.weapons.map(stock).join('')}</div></div>`;
+    document.querySelectorAll('[data-stock]').forEach(b => b.onclick = () => onEquip(b.dataset.stock, null));
+    document.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const it = items.find(i => i.id === b.dataset.eq); onEquip(it.weapon, p.equipped?.[it.weapon] === it.id ? null : it.id); });
+    document.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => { if (b.dataset.armed) return onSell(b.dataset.sell); b.dataset.armed = '1'; b.textContent = 'TASDIQLANG?'; setTimeout(() => { delete b.dataset.armed; this.onRefresh?.(); }, 2500); });
   }
-  renderStore(p, finishes, icon, onBuy) {
-    const demo = { standard: 'ak47', desert: 'ak47', forest: 'm4a4', urban: 'ump45', arctic: 'awp', tiger: 'deagle', crimson: 'm4a1s', cobalt: 'glock', emerald: 'usp', fade: 'p90', carbon: 'aug', gold: 'deagle' };
-    $('#view-store').innerHTML = `<div class="page"><div class="page-head"><small>DO‘KON</small><h2>Skinlar</h2><p>Demo tangalar (◈) har bir match uchun beriladi: qatnashish, o‘ldirish va g‘alaba. Haqiqiy pul yo‘q.</p></div>
-      ${p.demo ? '<div class="store-lock"><b>SKIN UCHUN AKKAUNT KERAK</b><span>Skin olish uchun akkaunt kerak. Demo rejimda skinlar yo‘q.</span><button data-auth class="primary">KIRISH</button></div>' : ''}
-      <div class="store-grid">${Object.entries(finishes).filter(([id]) => id !== 'standard').map(([id, f]) => { const own = p.owned.includes(id); return `<div class="store-item ${own ? 'own' : ''}"><img alt="" src="${icon(demo[id] || 'ak47', id)}"><b>${esc(f.name)}</b><button data-buy-fin="${id}" ${p.demo || own || p.coins < f.price ? 'disabled' : ''}>${own ? 'SIZDA BOR' : `◈ ${f.price}`}</button></div>`; }).join('')}</div></div>`;
+  /** Market: pick a category, a skin, then a wear tier (each tier has its own price; demand moves prices). */
+  renderStore(p, ctx) {
+    const { icon, finishes, eco, market, now, onBuy } = ctx, W = this.weaponsTable;
+    const CATS = { popular: ['MASHHUR', ['knife', 'gloves', 'ak47', 'awp', 'm4a4', 'm4a1s', 'deagle', 'usp', 'glock']], knife: ['★ PICHOQ', ['knife']], gloves: ['★ QO‘LQOP', ['gloves']],
+      rifle: ['MILTIQ', ['ak47', 'm4a4', 'm4a1s', 'galil', 'famas', 'aug', 'sg553']], sniper: ['SNAYPER', ['awp', 'ssg08']], pistol: ['PISTOLET', ['deagle', 'usp', 'glock', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8']],
+      smg: ['SMG', ['mp9', 'mac10', 'mp7', 'ump45', 'p90']], heavy: ['OG‘IR', ['nova', 'xm1014', 'mag7', 'sawedoff', 'negev']] };
+    const cat = CATS[this.storeCat] ? this.storeCat : 'popular'; this.storeCat = cat;
+    const offers = CATS[cat][1].flatMap(w => Object.keys(eco.FINISH_RARITY).filter(f => eco.validSkin(w, f)).map(f => ({ w, f })))
+      .sort((a, b) => eco.skinPrice(b.w, b.f, 0, market, now) - eco.skinPrice(a.w, a.f, 0, market, now));
+    const sel = offers.find(o => `${o.w}:${o.f}` === this.storeSel) || offers[0]; this.storeSel = sel && `${sel.w}:${sel.f}`;
+    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const trend = (w, f) => { const m = eco.marketMul(market, eco.marketKey(w, f), now); return m > 1.02 ? `<em class="up">▲ ${Math.round((m - 1) * 100)}%</em>` : m < 0.98 ? `<em class="down">▼ ${Math.round((1 - m) * 100)}%</em>` : ''; };
+    const card = o => { const r = eco.RARITY[eco.rarityOf(o.w, o.f)];
+      return `<button class="skin-card ${o === sel ? 'on' : ''}" data-offer="${o.w}:${o.f}" style="--rar:${r.color}"><div class="skin-pic">${icon(o.w, o.f, 0)}</div><b>${esc(wname(o.w))} | ${esc(finishes[o.f]?.name || o.f)}</b>
+        <small class="rar">${esc(r.name)}</small><span class="from">◈ ${eco.skinPrice(o.w, o.f, 0.45, market, now)} – ${eco.skinPrice(o.w, o.f, 0, market, now)} ${trend(o.w, o.f)}</span></button>`; };
+    const detail = !sel ? '' : (() => { const r = eco.RARITY[eco.rarityOf(sel.w, sel.f)];
+      return `<div class="store-detail" style="--rar:${r.color}"><div class="skin-pic big">${icon(sel.w, sel.f, 0)}</div><h3>${esc(wname(sel.w))} | ${esc(finishes[sel.f]?.name || sel.f)}</h3><small class="rar">${esc(r.name)} ${trend(sel.w, sel.f)}</small>
+        <div class="tiers">${eco.WEAR.map(t => { const price = eco.skinPrice(sel.w, sel.f, t.lo, market, now); return `<button data-tier="${t.id}" ${p.demo || p.coins < price ? 'disabled' : ''}><span>${esc(t.name)} <i>${t.short}</i></span><strong>◈ ${price}</strong></button>`; }).join('')}</div>
+        <p class="note">Float tanlangan daraja ichida tasodifan chiqadi. Ko‘p sotib olingan skinlar qimmatlashadi, sotilganlari arzonlashadi.</p></div>`; })();
+    $('#view-store').innerHTML = `<div class="page store"><div class="page-head"><small>BOZOR</small><h2>Skinlar</h2><p>Balans <b>◈ ${p.coins}</b>. Tangalar o‘yinlar uchun beriladi (qatnashish, o‘ldirish, g‘alaba); reklama — kuniga cheklangan.</p></div>
+      ${p.demo ? '<div class="store-lock"><b>SKIN UCHUN AKKAUNT KERAK</b><span>Demo rejimda skin olib bo‘lmaydi.</span><button data-auth class="primary">KIRISH</button></div>' : ''}
+      <div class="store-cats">${Object.entries(CATS).map(([k, [n]]) => `<button data-cat="${k}" class="${k === cat ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="store-body"><div class="skin-grid">${offers.map(card).join('')}</div>${detail}</div></div>`;
     document.querySelector('#view-store [data-auth]')?.addEventListener('click', () => this.onAuth?.());
-    document.querySelectorAll('[data-buy-fin]').forEach(b => b.onclick = () => onBuy(b.dataset.buyFin));
+    document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { this.storeCat = b.dataset.cat; this.storeSel = null; this.onRefresh?.(); });
+    document.querySelectorAll('[data-offer]').forEach(b => b.onclick = () => { this.storeSel = b.dataset.offer; this.onRefresh?.(); });
+    document.querySelectorAll('[data-tier]').forEach(b => b.onclick = () => onBuy({ weapon: sel.w, finish: sel.f, tier: b.dataset.tier }));
   }
   /** Sign in / register / demo. onSubmit(mode, username, password) resolves to an error message or null. */
   auth({ canClose, onSubmit, onDemo }) {
@@ -277,7 +321,7 @@ export class UI {
       <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
       <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
-      <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>Y / U</kbd><span>Chat: hammaga / faqat jamoaga</span><kbd>Z</kbd><span>Radio buyruqlari (keyin 1–9)</span><kbd>X / G‘ildirak tugmasi</kbd><span>Nishonga olingan joyni jamoaga belgilash (ping)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
+      <kbd>F</kbd><span>Qurolni aylantirib ko‘rish (inspect)</span><kbd>H</kbd><span>Qurolni chap / o‘ng qo‘lga olish</span><kbd>Y / U</kbd><span>Chat: hammaga / faqat jamoaga</span><kbd>Z</kbd><span>Radio buyruqlari (keyin 1–9)</span><kbd>X / G‘ildirak tugmasi</kbd><span>Nishonga olingan joyni jamoaga belgilash (ping)</span><kbd>G</kbd><span>Qo‘ldagi qurolni (yoki C4 ni) tashlash</span><kbd>E</kbd><span>Yerdagi qurolni olish (bir xil slotdagi bilan almashtiradi); bo‘sh slotga ustidan yurib o‘tsangiz o‘zi olinadi</span><kbd>E (ushlab)</kbd><span>Defuse</span><kbd>C4 + LMB</kbd><span>Plant (5-slot, A/B hududida ushlab turing)</span><kbd>TAB</kbd><span>Natijalar</span><kbd>ESC</kbd><span>Sichqonchani bo‘shatish</span></div>`);
   }
   /**
    * Settings with tabs: general (graphics / FPS / volume), mouse (sensitivity, zoom, invert, raw input, wheel, crouch
@@ -285,16 +329,18 @@ export class UI {
    */
   settings(o) {
     const ACTS = [['forward', 'Oldinga'], ['back', 'Orqaga'], ['left', 'Chapga'], ['right', 'O‘ngga'], ['jump', 'Sakrash'], ['crouch', 'Cho‘kish'], ['walk', 'Jimgina yurish'],
-      ['attack', 'Otish'], ['attack2', 'Ikkinchi otish / scope'], ['reload', 'Qayta o‘qlash'], ['use', 'Olish / defuse'], ['quick', 'Oxirgi qurol'], ['drop', 'Qurolni tashlash'], ['inspect', 'Qurol ko‘rigi'],
+      ['attack', 'Otish'], ['attack2', 'Ikkinchi otish / scope / glushitel'], ['reload', 'Qayta o‘qlash'], ['use', 'Olish / defuse'], ['quick', 'Oxirgi qurol'], ['drop', 'Qurolni tashlash'], ['inspect', 'Qurol ko‘rigi'], ['hand', 'Qurolni chap / o‘ng qo‘lga olish'],
       ['slot1', 'Asosiy qurol'], ['slot2', 'Pistolet'], ['slot3', 'Pichoq'], ['slot4', 'Granata'], ['slot5', 'C4'], ['buy', 'Xarid menyusi'], ['scoreboard', 'Natijalar'],
       ['chat', 'Umumiy chat'], ['teamchat', 'Jamoa chati'], ['radio', 'Radio'], ['ping', 'Ping'], ['voice', 'Ovozli gapirish (ushlab turing)']];
     const m = o.mouse, tab = this.settingsTab || 'general';
     this.dialog(`<small class="eyebrow">SYSTEM CONFIGURATION</small><h2>Sozlamalar.</h2>
       <div class="set-tabs">${[['general', 'UMUMIY'], ['mouse', 'SICHQONCHA'], ['keys', 'KLAVIATURA']].map(([k, l]) => `<button data-st="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="set-page" data-page="general">
-        <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'crisp', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}</div></div>
-        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[60, '60'], [120, '120'], [144, '144'], [0, 'MAX (100+)']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'crisp', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}<button id="quality-auto" class="auto" title="Qurilmaga qarab avtomatik tanlash">⚡ AVTO</button></div></div><small id="quality-auto-note" class="setting-note"></small>
+        <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[30, '30'], [60, '60'], [120, '120'], [144, '144'], [0, 'MAX']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
+        <div class="setting"><span>Qurol joylashuvi</span><div class="seg" id="vm-preset">${Object.entries(VM_PRESETS).map(([k, v]) => `<button data-vm="${k}">${v.name}</button>`).join('')}</div></div>
+        ${[['x', 'CHAP ↔ O‘NG', -3, 3], ['y', 'PAST ↔ BALAND', -3, 3], ['z', 'YAQIN ↔ UZOQ', -3, 3], ['fov', 'QUROL FOV', 50, 72]].map(([k, l, a, b]) => `<label for="vm-${k}">${l} <b id="vm-${k}-val">${o.viewmodel[k]}</b></label><input id="vm-${k}" type="range" min="${a}" max="${b}" step="${k === 'fov' ? 1 : 0.5}" value="${o.viewmodel[k]}">`).join('')}
         <p class="note">${QUALITY_NOTE}</p></div>
       <div class="set-page" data-page="mouse">
         <label for="sensitivity">SICHQONCHA SEZGIRLIGI <b id="sens-val">${m.sensitivity.toFixed(2)}</b></label><input id="sensitivity" type="range" min="0.15" max="2" step="0.01" value="${m.sensitivity}">
@@ -304,9 +350,14 @@ export class UI {
         <p class="note">Katakni bosing, keyin tugma yoki sichqoncha tugmasini bosing. Esc — bekor, Backspace — tozalash.</p><button id="binds-reset" class="text-button">Standart holatga qaytarish</button></div>`);
     const show = t => { this.settingsTab = t; document.querySelectorAll('[data-st]').forEach(b => b.classList.toggle('on', b.dataset.st === t)); document.querySelectorAll('.set-page').forEach(p => { p.hidden = p.dataset.page !== t; }); };
     document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => show(b.dataset.st)); show(tab);
+    const auto = document.querySelector('#quality-auto');
+    if (auto && o.onAutoQuality) auto.onclick = () => { const r = o.onAutoQuality(); document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x.dataset.q === r.quality)); document.querySelector('#quality-auto-note').textContent = r.note; };
     document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); o.onQuality(b.dataset.q); });
     document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); o.onFpsLimit(Number(b.dataset.fps)); });
     $('#volume').oninput = e => o.onVolume(Number(e.target.value));
+    const vmSet = vm => { for (const k of ['x', 'y', 'z', 'fov']) { $(`#vm-${k}`).value = vm[k]; $(`#vm-${k}-val`).textContent = vm[k]; } o.onViewmodel?.(vm); };
+    for (const k of ['x', 'y', 'z', 'fov']) $(`#vm-${k}`).oninput = () => vmSet({ x: +$('#vm-x').value, y: +$('#vm-y').value, z: +$('#vm-z').value, fov: +$('#vm-fov').value });
+    document.querySelectorAll('[data-vm]').forEach(b => b.onclick = () => { const { name, ...vm } = VM_PRESETS[b.dataset.vm]; vmSet(vm); });
     $('#sensitivity').oninput = e => { $('#sens-val').textContent = Number(e.target.value).toFixed(2); o.onMouse({ sensitivity: Number(e.target.value) }); };
     $('#zoom-sens').oninput = e => { $('#zoom-val').textContent = Number(e.target.value).toFixed(2); o.onMouse({ zoomSensitivity: Number(e.target.value) }); };
     document.querySelectorAll('[data-mo]').forEach(c => c.onchange = () => o.onMouse({ [c.dataset.mo]: c.checked }));
@@ -342,7 +393,7 @@ export class UI {
       <button id="start-match" class="primary full"><span>MATCHNI BOSHLASH </span>${arrow}</button><button id="leave-lobby" class="text-button">Xonadan chiqish</button>`, true);
     fill(); $('#start-match').onclick = start; $('#leave-lobby').onclick = leave;
   }
-  buy(state, me, onBuy) {
+  buy(state, me, onBuy, onSell) {
     const owned = id => me.inv && (Object.values(me.inv.slots).includes(id) || (me.inv.grenades[id] || 0) > 0);
     const columns = [['PISTOLS'], ['SMGS', 'HEAVY'], ['RIFLES'], ['GRENADES'], ['GEAR']];
     const card = ([id, def]) => {
@@ -353,11 +404,15 @@ export class UI {
       const poor = me.money < def.price && state.phase !== 'warmup';
       const own = id === 'kevlar' ? me.armor >= 100 : id === 'helmet' ? me.armor >= 100 && me.helmet : id === 'defuser' ? me.kit : owned(id);
       const label = own ? '<span class="badge-own">BOR</span>' : (state.phase === 'warmup' ? 'FREE' : `$${def.price}`);
-      return `<button data-buy="${id}" ${own ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><span><b>${name}</b><small>${statLine(id)}</small></span><strong>${label}</strong></button>`;
+      const pic = GEAR_ICONS[id] || (WEAPONS[id] || GRENADE_IDS.includes(id) ? `<img alt="" data-icon="${id}:standard" src="${iconSrc(id)}">` : '');
+      const refundable = (state.bought || []).includes(id);
+      return `<div class="buy-cell"><button data-buy="${id}" ${own ? 'disabled' : ''} class="${poor ? 'poor' : ''} ${own ? 'own' : ''}"><i class="buy-pic">${pic}</i><span><b>${name}</b><small>${statLine(id)}</small></span><strong>${label}</strong></button>${refundable ? `<button class="buy-sell" data-sellback="${id}" title="Pulni qaytarish">SOTISH +$${def.price}</button>` : ''}</div>`;
     };
-    this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION · ${clock(state.remaining)}</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${me.money}</strong></div>
+    const left = state.phase === 'live' ? `XARID: ${Math.ceil(state.buyLeft || 0)} s` : clock(state.remaining);
+    this.dialog(`<small class="eyebrow">EQUIPMENT REQUISITION · ${left}</small><h2>Jihozingizni tanlang.</h2><div class="balance">BALANS <strong>$${me.money}</strong></div>
       <div class="buy-cols">${columns.map(col => `<div>${col.map(g => `<h4>${GROUP_NAMES[g]}</h4>${Object.entries(BUY_ITEMS).filter(([, d]) => d.group === g).map(card).join('')}`).join('')}</div>`).join('')}</div><p class="note">Xaridni server tasdiqlaydi. Tanlangan qurol to‘g‘ridan-to‘g‘ri qo‘lga olinadi.</p>`);
     document.querySelectorAll('[data-buy]:not([disabled])').forEach(b => b.onclick = () => onBuy(b.dataset.buy));
+    document.querySelectorAll('[data-sellback]').forEach(b => b.onclick = () => onSell?.(b.dataset.sellback));
   }
   results(state, onExit, gains = null, onDoubleReward = null) {
     const rows = t => state.players.filter(p => p.team === t).sort((a, b) => b.kills - a.kills).map(p => `<div><span>${esc(p.name)}</span><b>${p.kills} / ${p.assists} / ${p.deaths}</b></div>`).join('');
@@ -477,7 +532,7 @@ export class UI {
     m.hidden = false; m.innerHTML = `<small>RADIO · 1-${lines.length}</small>${lines.map((l, i) => `<div><kbd>${i + 1}</kbd> ${esc(l)}</div>`).join('')}<div><kbd>Z</kbd> yopish</div>`;
   }
 
-  drawRadar(state, me, radarMap, yaw, sites = []) {
+  drawRadar(state, me, radarMap, yaw, sites = [], posOf = null) {
     const c = this.radar, W = 220, R = 46, scale = W / 2 / R;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, W, W); c.fillStyle = '#0d1516e6'; c.fillRect(0, 0, W, W);
     c.save(); c.translate(W / 2, W / 2); c.rotate(yaw); // player forward (-z) points up
@@ -488,8 +543,9 @@ export class UI {
     const b = state.bomb; if (b.state === 'planted' || b.state === 'dropped') { const [x, z] = w2c(b.x, b.z); c.fillStyle = b.state === 'planted' ? '#ff3b2a' : '#e9b64f'; c.fillRect(x - 3, z - 3, 6, 6); }
     for (const p of state.players) {
       if (!p.alive || p.id === me.id || !p.char) continue; if (p.team !== me.team && p.hidden) continue;   // enemies appear on radar only while spotted
-      const [x, z] = w2c(p.char.x, p.char.z); c.fillStyle = p.team === 'TERRORIST' ? '#e0b45a' : '#6fb2e8'; c.beginPath(); c.arc(x, z, 3.4, 0, 7); c.fill();
-      c.strokeStyle = c.fillStyle; c.beginPath(); c.moveTo(x, z); c.lineTo(x - Math.sin(p.char.yaw) * 8, z - Math.cos(p.char.yaw) * 8); c.stroke();
+      const a = posOf?.(p.id), px = a ? a.position.x : p.char.x, pz = a ? a.position.z : p.char.z, py = a ? a.rotation.y : p.char.yaw;   // interpolated 3D actor = smooth dots
+      const [x, z] = w2c(px, pz); c.fillStyle = p.team === 'TERRORIST' ? '#e0b45a' : '#6fb2e8'; c.beginPath(); c.arc(x, z, 3.4, 0, 7); c.fill();
+      c.strokeStyle = c.fillStyle; c.beginPath(); c.moveTo(x, z); c.lineTo(x - Math.sin(py) * 8, z - Math.cos(py) * 8); c.stroke();
     }
     c.restore(); c.fillStyle = '#fff3c4'; c.beginPath(); c.moveTo(W / 2, W / 2 - 7); c.lineTo(W / 2 + 5, W / 2 + 5); c.lineTo(W / 2 - 5, W / 2 + 5); c.closePath(); c.fill();
     c.strokeStyle = '#ffffff22'; c.strokeRect(0.5, 0.5, W - 1, W - 1);

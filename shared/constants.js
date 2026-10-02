@@ -14,6 +14,7 @@ export const RULES = Object.freeze({
   maxPlayers: 10,
   warmupSeconds: 20,
   freezeSeconds: 15,
+  buyAfterLiveSeconds: 15,   // the buy menu stays open this long after the round goes live
   roundSeconds: 115,          // 1:55
   postRoundSeconds: 7,
   halftimeSeconds: 12,
@@ -49,7 +50,7 @@ export const MOVEMENT = Object.freeze({
   friction: 4.4,
   stopSpeed: 80 * UNIT,
   gravity: 9.81,              // m/s^2
-  jumpSpeed: 3.32,            // 0.56 m apex standing jump; heavier load jumps a little lower
+  jumpSpeed: 3.75,            // ~0.72 m apex standing jump (crates / low walls reachable); heavier load jumps a little lower
   jumpLoad: 0.12,             // jump speed lost at the heaviest load (factor 0.6 -> -12 %)
   jumpFatigue: 0.38,          // each jump adds fatigue (0..1); a jump at full fatigue is 30 % weaker
   fatigueRecovery: 0.55,      // fatigue recovered per second on the ground

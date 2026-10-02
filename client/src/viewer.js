@@ -8,9 +8,10 @@ import { animateOperator, buildOperator, holdWeapon, setHoldPose } from './chara
 import { buildWeaponRig } from './viewmodels.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { models } from './models.js';
 
-models.init(new GLTFLoader()).then(() => models.preload()).then(main);
+models.init(new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)).then(() => models.preload()).then(main);
 function main() {
 
 const q = new URLSearchParams(location.search);
@@ -83,7 +84,7 @@ if (mode === 'gun') {
   actor.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   const crouch = Number(q.get('crouch') || 0), pitch = Number(q.get('pitch') || 0), yaw = Number(q.get('yaw') || 0.6), speed = Number(q.get('speed') || 0);
   holdWeapon(actor, id); if (q.get('pose')) setHoldPose(actor, q.get('pose'));
-  const focus = mode === 'orbit' ? 1.0 : 0.95, dist = Number(q.get('dist') || (mode === 'orbit' ? 2.2 : 3.6));
+  const focus = Number(q.get('focus')) || (mode === 'orbit' ? 1.0 : 0.95), dist = Number(q.get('dist') || (mode === 'orbit' ? 2.2 : 3.6));
   tick = (dt, t) => {
     animateOperator(actor, { speed, yaw: 0, pitch, crouch, alive: true, dt, moveYaw: speed ? Math.PI : undefined });
     const a = yaw + (mode === 'orbit' ? t * 0.4 : 0);

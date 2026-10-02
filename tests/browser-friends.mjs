@@ -51,7 +51,7 @@ try {
   await b.locator('.party-invite [data-y]').waitFor({ timeout: 10000 }); await b.click('.party-invite [data-y]');
   await a.waitForFunction(() => document.querySelector('#party-count').textContent.startsWith('2'), null, { timeout: 10000 });
   for (const p of [a, b]) await p.click('#friends [data-close]');
-  await a.click('#play-nav'); await a.click('[data-mode="practice"]'); await a.click('#practice');
+  await a.click('#play-nav'); await a.click('[data-mode="practice"]'); await a.click('#go');
   for (const p of [a, b]) await p.waitForFunction(() => window.__KONTIR__.playing, null, { timeout: 90000 });
   const teamOf = p => p.evaluate(() => { const s = window.__KONTIR__; return s.state.players.find(x => x.id === s.id).team; });
   assert.equal(await teamOf(a), await teamOf(b), 'party members play on the same team');

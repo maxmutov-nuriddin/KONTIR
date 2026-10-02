@@ -1,0 +1,123 @@
+{
+  "source": "Poly Haven (CC0)",
+  "res": "1k",
+  "sets": {
+    "sand": {
+      "id": "dense_sand",
+      "size": [
+        1.8000000715255737,
+        1.8000000715255737
+      ],
+      "tint": false,
+      "author": "Dimitrios Savva"
+    },
+    "asphalt": {
+      "id": "asphalt_02",
+      "size": [
+        3.000000238418579,
+        3
+      ],
+      "tint": false,
+      "author": "Rob Tuytel"
+    },
+    "concrete": {
+      "id": "brushed_concrete",
+      "size": [
+        2.5,
+        2.5
+      ],
+      "tint": false,
+      "author": "Dario Barresi, Dimitrios Savva"
+    },
+    "plaster": {
+      "id": "painted_plaster_wall",
+      "size": [
+        2,
+        2
+      ],
+      "tint": true,
+      "author": "Amal Kumar"
+    },
+    "brick": {
+      "id": "brick_wall_001",
+      "size": [
+        3,
+        3
+      ],
+      "tint": false,
+      "author": "Rob Tuytel, Dimitrios Savva"
+    },
+    "stone": {
+      "id": "stone_wall",
+      "size": [
+        2,
+        2
+      ],
+      "tint": true,
+      "author": "Dario Barresi, Charlotte Baglioni"
+    },
+    "paving": {
+      "id": "patterned_paving",
+      "size": [
+        2,
+        2
+      ],
+      "tint": false,
+      "author": "Charlotte Baglioni"
+    },
+    "wood": {
+      "id": "brown_planks_03",
+      "size": [
+        1,
+        1
+      ],
+      "tint": true,
+      "author": "Rob Tuytel"
+    },
+    "crate": {
+      "id": "brown_planks_03",
+      "size": [
+        1,
+        1
+      ],
+      "tint": true,
+      "author": "Rob Tuytel"
+    },
+    "metal": {
+      "id": "metal_plate",
+      "size": [
+        0.5,
+        0.5
+      ],
+      "tint": false,
+      "author": "Rob Tuytel"
+    },
+    "rust": {
+      "id": "rusty_metal_02",
+      "size": [
+        1,
+        1
+      ],
+      "tint": false,
+      "author": "Rob Tuytel"
+    },
+    "container": {
+      "id": "corrugated_iron",
+      "size": [
+        1.1200000047683716,
+        1.1200000047683716
+      ],
+      "tint": true,
+      "author": "Jenelle van Heerden, Dimitrios Savva"
+    },
+    "cladding": {
+      "id": "worn_corrugated_iron",
+      "size": [
+        1.7999995946884155,
+        1.7999995946884155
+      ],
+      "tint": false,
+      "author": "Jenelle van Heerden, Dimitrios Savva"
+    }
+  }
+}

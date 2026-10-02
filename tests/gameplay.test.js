@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { MapLibrary } from '../server/server.js';
 import { Room } from '../server/Room.js';
 import { RULES } from '../shared/constants.js';
+import { Inventory } from '../shared/inventory.js';
 
 const library = await new MapLibrary(await MapLibrary.locate()).init();
 const map = await library.get('sahara');
@@ -95,4 +96,41 @@ test('anti-wallhack: enemies behind walls are not sent; team chat / radio / ping
   assert.ok(forB.some(e => e.type === 'chat' && e.text === 'gg'), 'all-chat reaches everybody');
   assert.ok(forM.some(e => e.type === 'radio') && forM.some(e => e.type === 'ping') && forM.some(e => e.type === 'chat' && e.text === 'rush B'));
   assert.equal(room.chat('a', 'spam', false), false, 'chat is rate limited');
+});
+
+test('buy menu stays open for 15 s after the round goes live, then closes', () => {
+  const room = mk(); const a = room.add('a', 'A', 'TERRORIST'); room.add('b', 'B', 'COUNTER_TERRORIST'); live(room);
+  a.money = 10000;
+  const snap = room.snapshot('a'); assert.equal(snap.buyOpen, true); assert.ok(snap.buyLeft > 14 && snap.buyLeft <= RULES.buyAfterLiveSeconds);
+  assert.equal(room.buy('a', 'ak47').ok, true, 'buying right after the round starts works');
+  while (room.buyLeft() > 0) room.step();
+  assert.equal(room.phase, 'live'); assert.equal(room.snapshot('a').buyOpen, false);
+  assert.ok(room.buy('a', 'kevlar').error, 'after 15 s of live play the buy menu is closed');
+});
+
+test('refund a weapon bought this round while buying is open; never the knife / starting pistol; ammo refills each round', () => {
+  const room = mk(); const a = room.add('a', 'A', 'TERRORIST'); room.add('b', 'B', 'COUNTER_TERRORIST'); live(room);
+  a.money = 5000;
+  assert.equal(room.buy('a', 'ak47').ok, true); assert.equal(a.money, 2300);
+  assert.ok(room.sell('a', 'glock').error, 'default pistol cannot be sold'); assert.ok(room.sell('a', 'knife').error);
+  assert.equal(room.sell('a', 'ak47').ok, true); assert.equal(a.money, 5000); assert.equal(a.inv.weaponId(1), null);
+  room.buy('a', 'ak47'); a.inv.ammo.ak47 = { mag: 3, reserve: 10 };
+  while (room.buyLeft() > 0) room.step();
+  assert.ok(room.sell('a', 'ak47').error, 'buy window closed');
+  room.endRound('TERRORIST', 'elimination'); while (room.phase !== 'buy') room.step();
+  assert.deepEqual(a.inv.ammoOf('ak47'), { mag: 30, reserve: 90 }, 'survivor keeps the rifle with full ammo');
+  assert.ok(room.sell('a', 'ak47').error, 'last round’s purchase is not refundable');
+});
+
+test('USP-S / M4A1-S: right click removes / attaches the silencer; shots carry the state', () => {
+  const room = mk(); const a = room.add('a', 'A', 'COUNTER_TERRORIST'); room.add('b', 'B', 'TERRORIST'); live(room);
+  assert.equal(a.inv.weaponId(2), 'usp'); assert.equal(a.inv.isSilenced('usp'), true);
+  const step = c => a.inv.step(c, { canFire: true });
+  const base = { fire: false, fire2: false, reload: false, slot: 0, quick: false };
+  a.inv.select(2, { force: true }); for (let i = 0; i < 64; i++) step(base);
+  const ev = step({ ...base, fire2: true });
+  assert.ok(ev.some(e => e.type === 'silencer' && e.on === false)); assert.equal(a.inv.isSilenced('usp'), false);
+  for (let i = 0; i < 100; i++) step(base);
+  const shot = step({ ...base, fire: true }).find(e => e.type === 'shot'); assert.equal(shot.silenced, false);
+  assert.equal(Inventory.from(a.inv.toJSON()).isSilenced('usp'), false, 'state survives serialization');
 });

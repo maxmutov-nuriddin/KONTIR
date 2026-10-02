@@ -64,9 +64,16 @@ function snapDown(p, collider, radius, height, maxDrop) {
   for (let dropped = 0; dropped < maxDrop;) {
     const d = Math.min(0.08, maxDrop - dropped);
     p.y -= d; dropped += d; contacts.length = 0;
+    const bx = p.x, by = p.y, bz = p.z;
     if (collider.resolveCapsule(p, radius, height, contacts, 0, -1, 0)) {
       const ground = bestGround(contacts);
-      if (ground) { setGround(p, ground); return true; }
+      if (ground) {
+        // the push-out runs along the slope normal; keep the feet where they are and lift vertically instead,
+        // otherwise every idle tick on a ramp / staircase slides the player a little further down it
+        const push = Math.hypot(p.x - bx, p.y - by, p.z - bz);
+        p.x = bx; p.z = bz; p.y = by + Math.min(push / Math.max(0.2, ground.y), d + 0.005);   // never lift above where this probe started
+        setGround(p, ground); return true;
+      }
     }
   }
   p.y = startY;

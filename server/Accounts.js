@@ -6,7 +6,8 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { MongoClient } from 'mongodb';
-import { newStats, applyMatch, cleanChoices, FINISH_PRICES } from '../shared/progress.js';
+import { newStats, applyMatch, cleanChoices, migrateSkins } from '../shared/progress.js';
+import { skinPrice, validSkin, WEAR, marketKey, marketTrade, SELL_RATE, AD_REWARD, DOUBLE_WINDOW_MS, claimAd, equippedView } from '../shared/economy.js';
 
 const scrypt = promisify(scryptCb);
 const TOKEN_TTL = 30 * 24 * 3600 * 1000;
@@ -21,6 +22,7 @@ export class Accounts {
     this.users = {};
     this.tokens = {};
     this.messages = {};
+    this.market = {};
     this.saving = null;
     this.dirty = false;
     this.client = null;
@@ -32,6 +34,7 @@ export class Accounts {
       this.users = d.users || {};
       this.tokens = d.tokens || {};
       this.messages = d.messages || {};
+      this.market = d.market || {};
     } catch { /* first run */ }
 
     if (this.mongoUri && process.env.NODE_ENV !== 'test') {
@@ -53,6 +56,7 @@ export class Accounts {
           this.tokens[_id] = rest;
         }
 
+        const marketDoc = await this.db.collection('meta').findOne({ _id: 'market' }); if (marketDoc?.market) this.market = marketDoc.market;
         const messageDocs = await this.db.collection('messages').find().toArray();
         for (const doc of messageDocs) {
           const { _id, list } = doc;
@@ -75,7 +79,7 @@ export class Accounts {
         for (const [k, v] of Object.entries(this.tokens)) if (v.exp < t) delete this.tokens[k];
         try {
           await mkdir(dirname(this.file), { recursive: true });
-          await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens, messages: this.messages }));
+          await writeFile(this.file + '.tmp', JSON.stringify({ users: this.users, tokens: this.tokens, messages: this.messages, market: this.market }));
           await rename(this.file + '.tmp', this.file);
         } catch { /* ignore local file errors */ }
 
@@ -96,6 +100,7 @@ export class Accounts {
               replaceOne: { filter: { _id: id }, replacement: { _id: id, list }, upsert: true }
             }));
             if (msgOps.length > 0) await this.db.collection('messages').bulkWrite(msgOps, { ordered: false });
+            await this.db.collection('meta').replaceOne({ _id: 'market' }, { _id: 'market', market: this.market }, { upsert: true });
           } catch (err) {
             console.error('[KONTIR] MongoDB ga saqlashda xatolik:', err.message);
           }
@@ -111,7 +116,7 @@ export class Accounts {
       this.db = null;
     }
   }
-  public(u) { const { salt, hash, friends, requests, ...rest } = u; return { ...rest, demo: false }; }
+  public(u) { migrateSkins(u); const { salt, hash, friends, requests, lastGains, ...rest } = u; return { ...rest, ...equippedView(u.items, u.equipped), demo: false }; }
   issue(key) { const token = randomBytes(32).toString('hex'); this.tokens[sha(token)] = { user: key, exp: this.now() + TOKEN_TTL }; this.save(); return token; }
 
   async register(username, password) {
@@ -138,21 +143,48 @@ export class Accounts {
   }
   logout(token) { delete this.tokens[sha(String(token ?? ''))]; this.save(); }
   update(key, choices) { const u = this.users[key]; if (!u) return null; cleanChoices(u, choices); this.save(); return this.public(u); }
-  buy(key, finish) {
-    const u = this.users[key], price = FINISH_PRICES[finish];
-    if (!u || price === undefined || finish === 'standard') throw new Error('item');
-    if (u.owned.includes(finish)) throw new Error('owned');
+  /** Buys a skin from the market: weapon + finish + wear tier (the exact float is rolled inside the tier). */
+  buy(key, req) {
+    const u = this.users[key]; if (!u) throw new Error('item'); migrateSkins(u);
+    const { weapon, finish, tier } = req && typeof req === 'object' ? req : {};
+    const w = WEAR.find(x => x.id === tier);
+    if (!validSkin(weapon, finish) || !w) throw new Error('item');
+    if (u.items.length >= 200) throw new Error('full');
+    const wear = +(w.lo + Math.random() * (Math.min(w.hi, 1) - w.lo) * 0.999).toFixed(4);
+    const price = skinPrice(weapon, finish, w.lo, this.market, this.now());     // tier list price (clean end of the tier)
     if (u.coins < price) throw new Error('coins');
-    u.coins -= price; u.owned.push(finish); this.save();
-    return this.public(u);
+    u.coins -= price; u.seq = (u.seq || 0) + 1;
+    const item = { id: `i${u.seq}`, weapon, finish, wear, seed: Math.floor(Math.random() * 1000), bought: price };
+    u.items.push(item); marketTrade(this.market, marketKey(weapon, finish), true, this.now());
+    this.save(); return { profile: this.public(u), item };
   }
-  award(key, stats) { const u = this.users[key]; if (!u) return null; const gains = applyMatch(u, stats); this.save(); return { gains, profile: this.public(u) }; }
-  awardCoins(key, amount) {
-    const u = this.users[key]; if (!u) return null;
-    const add = Math.max(0, Math.min(2000, Math.round(Number(amount) || 0)));
-    u.coins = (u.coins || 0) + add;
-    this.save();
-    return this.public(u);
+  /** Sells an owned skin back to the market at SELL_RATE of its current value (worn skins are worth less). */
+  sell(key, itemId) {
+    const u = this.users[key]; if (!u) throw new Error('item'); migrateSkins(u);
+    const it = u.items.find(i => i.id === itemId); if (!it) throw new Error('item');
+    const coins = Math.floor(skinPrice(it.weapon, it.finish, it.wear, this.market, this.now()) * SELL_RATE);
+    u.items = u.items.filter(i => i !== it); for (const [w, id] of Object.entries(u.equipped)) if (id === it.id) delete u.equipped[w];
+    u.coins += coins; marketTrade(this.market, marketKey(it.weapon, it.finish), false, this.now());
+    this.save(); return { profile: this.public(u), coins };
+  }
+  /** Market multipliers for the store view. */
+  marketView() { return this.market; }
+  award(key, stats) {
+    const u = this.users[key]; if (!u) return null; migrateSkins(u);
+    const gains = applyMatch(u, stats); u.lastGains = { coins: gains.coins, at: this.now(), claimed: false };
+    this.save(); return { gains, profile: this.public(u) };
+  }
+  /** Rewarded ad. The SERVER decides the amount: 'free' = fixed coins with a cooldown and a daily cap;
+   *  'double' = the coins of the last finished match, once, shortly after it. */
+  reward(key, kind) {
+    const u = this.users[key]; if (!u) throw new Error('auth'); u.ads ||= {};
+    let add;
+    if (kind === 'double') {
+      const g = u.lastGains; if (!g || g.claimed || this.now() - g.at > DOUBLE_WINDOW_MS) throw new Error('nodouble');
+      g.claimed = true; add = g.coins;
+    } else { const err = claimAd(u.ads, this.now()); if (err) throw new Error(err); add = AD_REWARD; }
+    u.coins = (u.coins || 0) + add; this.save();
+    return { profile: this.public(u), coins: add };
   }
 
   // ---- friends: requests (incoming list on the target), mutual friend lists, direct messages (last 50 per pair)

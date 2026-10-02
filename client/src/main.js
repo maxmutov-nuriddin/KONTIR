@@ -4,7 +4,7 @@ import { FramePacer } from './frame-pacer.js';
 import { spectatorTarget } from './spectator.js';
 import * as THREE from 'three';
 import { UI } from './ui.js';
-import { WorldEngine } from '../WorldEngine.js';
+import { WorldEngine, detectQuality } from '../WorldEngine.js';
 import { PlayerController, DEFAULT_BINDS, DEFAULT_MOUSE, keyLabel } from '../PlayerController.js';
 import { WeaponManager } from '../WeaponManager.js';
 import { Network } from './network.js';
@@ -13,10 +13,13 @@ import { AudioEngine } from './audio.js';
 import { loadProfile, saveProfile, recordMatch, rankOf, levelOf, adopt, getToken, setToken } from './profile.js';
 import { startI18n, setLang, getLang } from './i18n.js';
 import { Friends } from './friends.js';
-import { FINISHES, applyFinish } from './finishes.js';
-import { weaponIcon } from './icons.js';
+import { FINISHES, applyFinish, finishSwatch, swatchKey } from './finishes.js';
+import * as eco from '../../shared/economy.js';
+import { weaponIcon, iconSrc } from './icons.js';
+import { TouchControls } from './touch.js';
 import { weaponMaterials } from './viewmodels.js';
 import { models } from './models.js';
+import { loadPhotoTextures } from './materials.js';
 import { buildWeaponRig } from './viewmodels.js';
 import { DT, TICK_RATE } from '../../shared/constants.js';
 import { WEAPONS, inaccuracy, weaponMass } from '../../shared/weapons.js';
@@ -28,20 +31,27 @@ let fireList = [], scopeK = 0;
 const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
 let savedFps = store.get('fpsLimit', null);
-if (savedFps === null || savedFps === '30' || savedFps === 30) {
-  savedFps = '0';
-  store.set('fpsLimit', 0);
+// 60 FPS by default: an uncapped loop runs a 120 Hz MacBook / gaming laptop GPU flat out and heats it for nothing.
+// Older builds stored 0 (MAX) automatically, so that one-time default is migrated; a later explicit choice is kept.
+if (savedFps === null || savedFps === '30' || savedFps === 30 || (store.get('perfDefaults', '0') !== '2' && savedFps === '0')) {
+  savedFps = '60';
+  store.set('fpsLimit', 60);
 }
-const pacer = new FramePacer(Number(savedFps)); // MAX / Uncapped by default (100+ FPS)
+const pacer = new FramePacer(Number(savedFps));
 let world;
-try { world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') }); }
+try {
+  world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') });
+  // first run of this build: pick the quality tier from the hardware (weak laptops would otherwise overheat / stutter)
+  if (store.get('perfDefaults', '0') !== '2') { const q = detectQuality(world.renderer); world.setQuality(q); store.set('quality', q); store.set('perfDefaults', '2'); }
+}
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
 // GPU reset / memory pressure: three.js keeps the page alive and re-uploads everything on restore (no reload needed)
 world.renderer.domElement.addEventListener('webglcontextlost', () => ui.toast('Grafika xotirasi tiklanmoqda…'));
 world.renderer.domElement.addEventListener('webglcontextrestored', () => ui.toast('Grafika tiklandi.'));
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
-weapons.finishFor = id => profile.finishes[id];
+weapons.finishFor = id => profile.finishes?.[id];
+weapons.wearFor = id => profile.wears?.[id] || 0;
 const readJSON = (k, d) => { try { return JSON.parse(store.get(k, '') || 'null') ?? d; } catch { return d; } };
 controller.setBinds(readJSON('binds', DEFAULT_BINDS));
 controller.setMouse({ ...DEFAULT_MOUSE, sensitivity: Number(store.get('sens', 0.6)), ...readJSON('mouse', {}) });
@@ -71,7 +81,7 @@ async function authSubmit(mode, username, password) {
     return null;
   } catch (e) { return AUTH_ERRORS[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'; }
 }
-function applyAccount() { for (const w of Object.keys(WEAPONS)) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); friends.hangup(true); friends.chatWith = null; friends.refresh(); }
+function applyAccount() { for (const w of [...Object.keys(WEAPONS), 'gloves']) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); friends.hangup(true); friends.chatWith = null; friends.refresh(); }
 function signOut(notify = true) {
   const tk = getToken(); if (tk && network.socket.connected) network.socket.emit('auth:logout', tk);
   setToken(null); adopt(profile, loadProfile()); applyAccount(); if (notify) ui.toast('Akkauntdan chiqildi.');
@@ -87,7 +97,7 @@ function openAuth(canClose = true) {
 /** Account choices go to the server (it validates ownership); demo choices stay in this session. */
 function saveChoices() {
   if (profile.demo) return saveProfile(profile);
-  network.request('account:update', { loadout: profile.loadout, finishes: profile.finishes }).then(r => { adopt(profile, r.profile); refreshLobby(); }).catch(() => {});
+  network.request('account:update', { loadout: profile.loadout, equipped: profile.equipped }).then(r => { adopt(profile, r.profile); refreshLobby(); }).catch(() => {});
 }
 
 // ---- hero weapon shown behind the menu
@@ -135,18 +145,12 @@ function receive(next) {
       btn.disabled = true;
       yandexSDK.showRewardedAd({
         onRewarded: async () => {
-          const bonusCoins = gains ? gains.coins : 50;
+          let bonusCoins = 0;
           if (!profile.demo && getToken()) {
-            try {
-              const r = await network.request('account:reward', { coins: bonusCoins });
-              if (r?.profile) adopt(profile, r.profile);
-            } catch {
-              profile.coins += bonusCoins;
-              saveProfile(profile);
-            }
-          } else {
-            profile.coins += bonusCoins;
-            saveProfile(profile);
+            try { const r = await network.request('account:reward', { kind: 'double' }); adopt(profile, r.profile); bonusCoins = r.coins; }
+            catch { return ui.toast('2x mukofot bu o‘yin uchun allaqachon olingan yoki muddati o‘tgan.'); }
+          } else if (gains && !profile.doubled?.[state?.code + ':' + state?.round]) {
+            bonusCoins = gains.coins; profile.coins += bonusCoins; (profile.doubled ||= {})[state?.code + ':' + state?.round] = true; saveProfile(profile);
           }
           refreshLobby();
           ui.toast(`2x mukofot olindi! +${bonusCoins} ◈ tanga berildi.`);
@@ -167,13 +171,15 @@ function receive(next) {
 
 const V = new THREE.Vector3(), V2 = new THREE.Vector3();
 function playerPos(pid) { const p = state?.players.find(q => q.id === pid); return p?.char ? { x: p.char.x, y: p.char.y + 1.4, z: p.char.z } : null; }
+// a USP-S / M4A1-S fired without its silencer sounds like its unsuppressed cousin
+const unsilenced = e => e.silenced === false && WEAPONS[e.weapon]?.detachable ? (e.weapon === 'usp' ? 'p2000' in WEAPONS ? 'p2000' : 'p250' : 'm4a4') : e.weapon;
 function handleEvent(e, me) {
   switch (e.type) {
     case 'shot': {
       const mine = e.shooter === id;
       if (!mine) {
         const muzzle = world.actorMuzzleWorld(e.shooter, V) ? V.clone() : new THREE.Vector3(e.from.x, e.from.y - 0.1, e.from.z);
-        world.effects.tracer(muzzle, e.to); world.effects.remoteMuzzle(muzzle); audio.gunshot(e.weapon, e.from, false);
+        world.effects.tracer(muzzle, e.to); world.effects.remoteMuzzle(muzzle); audio.gunshot(unsilenced(e), e.from, false);
       } else {
         const muzzle = weapons.activeRig?.muzzle?.getWorldPosition(V2) ? V2.clone() : new THREE.Vector3(e.from.x, e.from.y - 0.1, e.from.z);
         // the view scene has its own camera space: project the muzzle straight ahead of the eye for the tracer origin
@@ -232,13 +238,19 @@ function handleEvent(e, me) {
 
 // ---------------------------------------------------------------------------------------------- local prediction audio / fx
 weapons.on('shot', e => {
-  audio.gunshot(e.weapon, null, true); world.shake += 0.12;
+  audio.gunshot(unsilenced(e), null, true); world.shake += 0.12;
   const rig = weapons.activeRig, from = new THREE.Vector3(world.camera.position.x, world.camera.position.y - 0.12, world.camera.position.z);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(world.camera.quaternion), fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(world.camera.quaternion);
   from.addScaledVector(right, 0.16).addScaledVector(fwd, 0.35);
   if (rig?.eject && prediction) world.effects.casing(from, right.clone().multiplyScalar(1.2).add(new THREE.Vector3(0, 0.6, 0)), prediction.char.y);
 });
 weapons.on('reload', () => {}).on('foley', f => audio.foley(f.kind, null, true, f.weapon)).on('draw', () => audio.draw(null, true)).on('dry', () => audio.dry()).on('melee', () => audio.swish(null, true)).on('throw', () => audio.throwSound(null, true)).on('pin', () => audio.click());
+weapons.setLeftHanded(store.get('leftHanded', '0') === '1');
+const viewmodelOpts = { x: 0, y: 0, z: 0, fov: 58, ...readJSON('viewmodel', {}) };
+function applyViewmodel() { weapons.setViewOffset(viewmodelOpts); world.viewCamera.fov = viewmodelOpts.fov; world.viewCamera.updateProjectionMatrix(); }
+applyViewmodel();
+const touch = new TouchControls(controller); controller.touchMode = touch.enabled;
+controller.on('hand', () => store.set('leftHanded', weapons.setLeftHanded(!weapons.leftHanded) ? '1' : '0'));
 controller.on('inspect', () => { if (weapons.inspect()) audio.draw(null, true); }).on('wheel', dir => weapons.wheelSlot(dir)).on('scoreboard', show => { document.querySelector('#scoreboard').classList.toggle('hidden', !show); if (show && state) ui.scoreboard(state, id); }).on('buy', openBuy);
 controller.on('lock', () => { audio.unlock(); audio.warmShots([weapons.inventory.weaponId(1), weapons.inventory.weaponId(2)].filter(Boolean)); ui.resume(false); }).on('unlock', () => { if (playing && state && state.phase !== 'warmup' && !resultShown && !ui.modal.open) ui.resume(true); });
 
@@ -248,7 +260,7 @@ async function join(options) {
   joining = true; const my = ++generation;
   ui.showBusy('ULANMOQDA…'); audio.unlock();
   try {
-    const result = await network.join({ name: profile.name, code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: selectedMap, team,
+    const result = await network.join({ name: profile.name, code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: pickMap(), team,
       loadout: { t: profile.loadout.t, ct: profile.loadout.ct }, bots: options.practice ? { t: botCfg.t, ct: botCfg.ct } : undefined, difficulty: botCfg.difficulty });
     if (my !== generation) { network.leave(); return; }
     await enter(result, my);
@@ -294,12 +306,12 @@ function openBuy() {
     return;
   }
   const me = state?.players.find(p => p.id === id); if (!playing || !me) return;
-  if (!(state.phase === 'buy' || state.phase === 'warmup')) { ui.toast('Xarid vaqti tugagan. Keyingi raundni kuting.'); return; }
+  if (!state.buyOpen && !(state.phase === 'buy' || state.phase === 'warmup')) { ui.toast('Xarid vaqti tugagan. Keyingi raundni kuting.'); return; }
   if (!me.alive) { ui.toast('Yo‘q qilinganda xarid qilib bo‘lmaydi.'); return; }
   isBuyOpen = true;
   controller.unlock(); ui.resume(false);
   const render = () => {
-    if (!playing || !state || !['buy', 'warmup'].includes(state.phase) || !isBuyOpen) return;
+    if (!playing || !state || !(state.buyOpen || ['buy', 'warmup'].includes(state.phase)) || !isBuyOpen) { if (isBuyOpen && ui.modal.open && ui.modal.querySelector('.buy-cols')) { ui.modal.close(); isBuyOpen = false; } return; }
     const p = state.players.find(q => q.id === id);
     ui.buy(state, p, async item => {
       try {
@@ -307,6 +319,9 @@ function openBuy() {
         audio.click();
         setTimeout(() => { if (ui.modal.open && ui.modal.querySelector('.buy-cols') && isBuyOpen) render(); }, 140);
       } catch (e) { ui.toast(e.message); }
+    }, async item => {
+      try { await network.request('sellback', item); audio.click(); setTimeout(() => { if (ui.modal.open && ui.modal.querySelector('.buy-cols') && isBuyOpen) render(); }, 140); }
+      catch (e) { ui.toast(e.message); }
     });
   };
   render();
@@ -330,6 +345,15 @@ controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, 
 // ---------------------------------------------------------------------------------------------- matchmaking (CS2-style)
 let searchingMM = false, mode = store.get('mode', 'competitive');
 const pool = new Set(JSON.parse(store.get('pool', '[]') || '[]'));
+/** Random map from the selected pool, never the one just played (and not the one before it when the pool allows). */
+function pickMap() {
+  const ids = [...pool].filter(id => maps.some(m => m.id === id)); if (!ids.length) return selectedMap;
+  const recent = JSON.parse(store.get('recentMaps', '[]') || '[]');
+  const fresh = ids.filter(id => !recent.slice(0, Math.min(2, ids.length - 1)).includes(id));
+  const id = (fresh.length ? fresh : ids)[Math.floor(Math.random() * (fresh.length || ids.length))];
+  store.set('recentMaps', JSON.stringify([id, ...recent.filter(x => x !== id)].slice(0, 3)));
+  return id;
+}
 async function startSearch() {
   if (searchingMM || playing || joining) return;
   const name = profile.name;
@@ -367,7 +391,7 @@ document.querySelector('#go').onclick = () => {
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (searchingMM) stopSearch(true); mode = b.dataset.mode; store.set('mode', mode); ui.setMode(mode); });
 // ---------------------------------------------------------------------------------------------- CS2-style lobby: profile, pages, showcase
 const botCfg = { t: 5, ct: 5, difficulty: 'medium', ...JSON.parse(store.get('bots', '{}') || '{}') };
-const icon = (wid, fin) => weaponIcon(wid, fin || 'standard');
+const icon = (wid, fin) => iconSrc(wid, fin || 'standard');
 const INVENTORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'awp', 'deagle', 'usp', 'glock', 'galil', 'famas', 'sg553', 'aug', 'ssg08', 'mp9', 'mac10', 'ump45', 'mp7', 'p90', 'nova', 'xm1014', 'mag7', 'sawedoff', 'negev', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'];
 // news in all three languages (the i18n observer only knows fixed UI phrases)
 const NEWS = [
@@ -382,43 +406,63 @@ function refreshLobby() {
   ui.renderProfile(profile, { rankOf, levelOf });
   ui.loadoutM4 = profile.loadout.m4;
   if (ui.view === 'loadout') ui.renderLoadout(profile, icon, (key, wid) => { profile.loadout[key] = wid; saveChoices(); refreshLobby(); updateShowcase(); });
-  if (ui.view === 'inventory') ui.renderInventory(profile, INVENTORY_WEAPONS, FINISHES, icon, (wid, fin) => { if (wid) { if (fin === 'standard') delete profile.finishes[wid]; else profile.finishes[wid] = fin; saveChoices(); weapons.refreshFinish?.(wid); updateShowcase(); } refreshLobby(); });
-  if (ui.view === 'store') ui.renderStore(profile, FINISHES, icon, async fin => {
-    const f = FINISHES[fin]; if (!f || profile.owned.includes(fin) || profile.coins < f.price) return;
-    if (profile.demo) { ui.toast('Skin olish uchun akkaunt kerak. Demo rejimda skinlar yo‘q.'); return openAuth(); }
-    try { adopt(profile, (await network.request('account:buy', fin)).profile); audio.click(); ui.toast(`${f.name} — sotib olindi. INVENTARdan qurolga qo‘ying.`); }
-    catch { ui.toast('Server xatosi. Qayta urinib ko‘ring.'); }
-    refreshLobby();
-  });
+  const ctx = { icon: skinIcon, finishes: FINISHES, eco, market, now: marketNow + (performance.now() - marketAt) };
+  if (ui.view === 'inventory') ui.renderInventory(profile, { ...ctx, weapons: ['knife', ...INVENTORY_WEAPONS], onEquip: equip, onSell: sell });
+  if (ui.view === 'store') ui.renderStore(profile, { ...ctx, onBuy: buySkin });
   if (ui.view === 'news') ui.renderNews(newsFor());
 }
+// ---- skin market (server-priced; see shared/economy.js)
+let market = {}, marketNow = Date.now(), marketAt = performance.now(), marketTimer = 0;
+async function loadMarket() { try { const r = await network.request('market'); market = r.market || {}; marketNow = r.now || Date.now(); marketAt = performance.now(); } catch { /* offline: base prices */ } }
+const skinIcon = (w, f, wear = 0) => w === 'gloves'
+  ? `<span class="glove-ico" data-swatch="${swatchKey(f, wear)}" style="background-image:url(${finishSwatch(f, wear)})"><svg viewBox="0 0 64 64"><path d="M14 60 V30 L10 14 a4 4 0 0 1 8-2 L22 26 V8 a4 4 0 0 1 8 0 V24 V6 a4 4 0 0 1 8 0 V24 V9 a4 4 0 0 1 8 0 V28 l4-8 a4 4 0 0 1 7 4 L50 44 V60 Z" fill="none" stroke="#0009" stroke-width="2.5"/></svg></span>`
+  : `<img alt="" data-icon="${w}:${f || 'standard'}" src="${iconSrc(w, f || 'standard')}">`;
+const ERR = { coins: 'Tanga yetarli emas.', item: 'Bu skin mavjud emas.', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
+function syncSkins() { Object.assign(profile, eco.equippedView(profile.items, profile.equipped)); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
+async function buySkin(req) {
+  if (profile.demo) { ui.toast('Skin olish uchun akkaunt kerak.'); return openAuth(); }
+  try { const r = await network.request('account:buy', req); adopt(profile, r.profile); audio.click(); syncSkins(); await loadMarket();
+    ui.toast(`Sotib olindi: ${eco.wearOf(r.item.wear).name}, float ${r.item.wear.toFixed(4)}. INVENTARdan kiying.`); }
+  catch (e) { ui.toast(ERR[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'); }
+  refreshLobby();
+}
+async function sell(itemId) {
+  try { const r = await network.request('account:sell', itemId); adopt(profile, r.profile); audio.click(); syncSkins(); await loadMarket(); ui.toast(`Sotildi: +${r.coins} ◈`); }
+  catch (e) { ui.toast(ERR[e.message] || 'Server xatosi.'); }
+  refreshLobby();
+}
+function equip(weapon, itemId) {
+  profile.equipped ||= {}; if (itemId) profile.equipped[weapon] = itemId; else delete profile.equipped[weapon];
+  syncSkins(); saveChoices(); refreshLobby();
+}
+ui.onRefresh = () => refreshLobby();
+setTimeout(() => { for (const w of ['ak47', 'm4a4', 'm4a1s', 'awp', 'deagle', 'usp', 'glock', 'p250', 'knife']) iconSrc(w, 'standard'); }, 4000);
+document.querySelectorAll('[data-view="store"], [data-view="inventory"]').forEach(b => b.addEventListener('click', async () => { await loadMarket(); refreshLobby(); }));
+clearInterval(marketTimer); marketTimer = setInterval(() => { if (ui.view === 'store') loadMarket().then(refreshLobby); }, 60000);
+
 function updateShowcase() {
   if (playing || !world.map) return;
   const side = team, rifle = side === 'TERRORIST' ? 'ak47' : profile.loadout.m4;
-  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => applyFinish(g, profile.finishes[rifle], weaponMaterials()) });
+  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => applyFinish(g, profile.finishes?.[rifle], weaponMaterials(), profile.wears?.[rifle] || 0) });
 }
 {
   const nameEl = document.querySelector('#lobby-name');
   ui.onAuth = () => openAuth();
   ui.onFreeCoins = () => {
     audio.click();
+    // check the cooldown / daily cap BEFORE showing an ad (the server enforces the same rules)
+    const probe = structuredClone(profile.ads || {}), err = eco.claimAd(probe, Date.now());
+    if (err === 'daily') return ui.toast(`Bugungi reklama limiti tugadi (${eco.AD_DAILY_MAX} ta). Ertaga qayta urinib ko‘ring.`);
+    if (err === 'cooldown') return ui.toast(`Keyingi bepul tanga ${Math.ceil((eco.AD_COOLDOWN_MS - (Date.now() - (profile.ads?.last || 0))) / 60000)} daqiqadan keyin.`);
     yandexSDK.showRewardedAd({
       onRewarded: async () => {
-        const bonus = 150;
+        let got = 0;
         if (!profile.demo && getToken()) {
-          try {
-            const r = await network.request('account:reward', { coins: bonus });
-            if (r?.profile) adopt(profile, r.profile);
-          } catch {
-            profile.coins += bonus;
-            saveProfile(profile);
-          }
-        } else {
-          profile.coins += bonus;
-          saveProfile(profile);
-        }
+          try { const r = await network.request('account:reward', { kind: 'free' }); adopt(profile, r.profile); got = r.coins; }
+          catch (e) { return ui.toast(e.message === 'daily' ? 'Bugungi limit tugadi.' : e.message === 'cooldown' ? 'Biroz kuting.' : 'Server xatosi.'); }
+        } else { profile.ads ||= {}; if (eco.claimAd(profile.ads, Date.now())) return; profile.coins += eco.AD_REWARD; got = eco.AD_REWARD; saveProfile(profile); }
         refreshLobby();
-        ui.toast(`Tabriklaymiz! +${bonus} ◈ bepul tanga berildi.`);
+        ui.toast(`+${got} ◈ tanga berildi.`);
       },
       onError: () => {
         ui.toast('Reklama yuklanmadi yoki internet aloqasi yo‘q.');
@@ -489,7 +533,9 @@ document.querySelector('#settings').onclick = () => ui.settings({ quality: world
   onBinds: b => { controller.setBinds(b || DEFAULT_BINDS); store.set('binds', JSON.stringify(controller.binds)); },
   onMouse: m => { controller.setMouse(m); store.set('mouse', JSON.stringify(controller.mouseOpts)); store.set('sens', controller.mouseOpts.sensitivity); },
   onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
-  onQuality: q => { world.setQuality(q); store.set('quality', q); }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
+  onQuality: q => { world.setQuality(q); store.set('quality', q); },
+  viewmodel: viewmodelOpts, onViewmodel: vm => { Object.assign(viewmodelOpts, vm); applyViewmodel(); store.set('viewmodel', JSON.stringify(viewmodelOpts)); },
+  onAutoQuality: () => { const r = detectQuality(world.renderer, true); world.setQuality(r.quality); store.set('quality', r.quality); pacer.setLimit(r.fps); store.set('fpsLimit', r.fps); return r; }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
 ui.modal.addEventListener('close', () => { controller.capture = null; });
 document.querySelector('#lock').onclick = () => { audio.unlock(); try { controller.lock(); } catch { ui.toast('Sichqoncha boshqaruvini yoqish uchun tugmani qayta bosing.'); } };
 // click anywhere on the game view (not on UI) captures the mouse; Esc once = pause menu, Esc again = back to the game
@@ -550,6 +596,7 @@ function frame(nowMs) {
   // adaptive quality: sustained < 28 FPS at minimum resolution drops one tier (the player can raise it again in Settings)
   if (playing && controller.locked && fps < 28 && (world.resScale ?? 1) <= world.minResolutionScale + 0.01 && world.qualityName !== 'low' && store.get('adaptive', '1') !== '0') { slowSince ||= nowMs; if (nowMs - slowSince > 5000) { world.setQuality(QUALITY_DOWN[world.qualityName] || 'low'); store.set('quality', world.qualityName); ui.toast(`FPS past: grafika ${QUALITY_LABEL[world.qualityName]} rejimiga o‘tkazildi.`); slowSince = 0; } } else slowSince = 0;
   const alive = !!(playing && state && prediction?.char && state.players.find(p => p.id === id)?.alive);
+  { const want = playing && !ui.modal.open; if (want !== touch.visible) touch.setVisible(want); }
   heroHolder.visible = !playing && !world.showcase; heroHolder.rotation.set(0.08, -0.7 + Math.sin(nowMs * 0.00025) * 0.25, 0.12); weapons.root.visible = playing && alive;
   if (playing && state && prediction?.char) {
     acc += dt; let steps = 0;
@@ -604,10 +651,10 @@ function frame(nowMs) {
     const w = weapons.inventory.weapon();
     const spread = w?.kind === 'gun' ? inaccuracy(w, { speed: Math.hypot(prediction.char.vx, prediction.char.vz), grounded: prediction.char.grounded, crouch: prediction.char.crouch, burst: weapons.inventory.burst, zoom: weapons.inventory.zoom }) : 0.004;
     const px = Math.tan(spread) * (innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(world.camera.fov / 2));
-    crossGap += (2 + px * 1.2 - crossGap) * Math.min(1, dt * 16); ui.crosshair(crossGap); ui.setCrosshairVisible(alive && w?.kind !== 'melee' && w?.kind !== 'grenade' && scopeK < 0.7);
+    crossGap += (2 + px * 1.2 - crossGap) * Math.min(1, dt * 16); ui.crosshair(crossGap); ui.setCrosshairVisible(alive && w?.kind !== 'grenade' && scopeK < 0.7);   // the knife keeps a crosshair (where the stab lands)
     if (nowMs - lastHud > 80) {
       lastHud = nowMs; ui.update(state, id, weapons.hud(), { fps, drawCalls: world.renderer.info.render.calls });
-      if (world.map?.radar && nowMs - lastRadar > 45) { lastRadar = nowMs; ui.drawRadar(state, { ...me, char: prediction.char, id }, world.map.radar, controller.yaw, world.map.sites); }
+      if (world.map?.radar) { lastRadar = nowMs; ui.drawRadar(state, { ...me, char: prediction.char, id }, world.map.radar, controller.yaw, world.map.sites, pid => world.actors.get(pid)); }   // every frame: smooth
     }
   } else if (world.map) { if (promptKey) { promptKey = ''; promptEl.classList.remove('on'); } world.updateDrops([], dt); world.setMenuCamera(nowMs / 1000); world.updateBomb(null, dt); }
   if (debugCam) { world.setCamera(V.set(debugCam.x, debugCam.y, debugCam.z), debugCam.yaw, debugCam.pitch, 0); weapons.root.visible = false; }
@@ -620,6 +667,7 @@ world.renderer.setAnimationLoop(frame);
   try {
     await models.init(world.gltf);
     if (models.count()) { ui.setLoading(0.05, '3D modellar'); await models.preload(f => ui.setLoading(0.05 + f * 0.3, '3D modellar')); }
+    ui.setLoading(0.36, 'Teksturalar'); await loadPhotoTextures('./textures/', world.maxAniso);
     const manifest = await (await fetch('./maps/manifest.json')).json();
     maps = manifest.maps.filter(m => m.valid !== false); selectedMap = maps.find(m => m.id === selectedMap)?.id || maps[0].id;
     for (const id of [...pool]) if (!maps.some(m => m.id === id)) pool.delete(id);

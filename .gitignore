@@ -15,3 +15,7 @@ client/public/maps/manifest.json
 client/public/models/models.json
 # accounts store (KONTIR_DATA)
 data/
+# Blender pipeline intermediates (tools/blender/export-rigs.mjs output, Python cache)
+tools/blender/rigs/
+__pycache__/
+tools/blender/assets/

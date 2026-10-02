@@ -85,9 +85,9 @@ test('walls stop the player and slide along them', () => {
   assert.ok(p.z < -5, `slid along wall, z=${p.z}`);
 });
 const jumpPeak = p => { let peak = p.y; for (let i = 0; i < 128; i++) { stepPlayer(p, cmd({ jump: i === 0 }), collider); peak = Math.max(peak, p.y); } return peak; };
-test('realistic jump: ~0.56 m under Earth gravity, needs a fresh press, lower with a heavy weapon', () => {
+test('realistic jump: ~0.72 m under Earth gravity, needs a fresh press, lower with a heavy weapon', () => {
   const peak = jumpPeak(spawn());
-  assert.ok(peak > 0.52 && peak < 0.6, `peak=${peak} m`);
+  assert.ok(peak > 0.66 && peak < 0.78, `peak=${peak} m`);
   const q = spawn(); const e = run(q, { jump: true }, 3);
   assert.equal(e.filter(x => x.jumped).length, 1, 'holding space must not auto-bhop');
   const heavy = spawn(); heavy.speedMul = speedMul('negev');
@@ -127,7 +127,7 @@ test('steps up stairs (0.2 m risers) and low crates, walks up a ramp', () => {
   assert.ok(cratePeak > 0.38, `crate peak=${cratePeak}`);
   const blocked = spawn(-20, 0, 6, 0); run(blocked, { forward: 1 }, 1.6);
   assert.ok(blocked.y < 0.05 && blocked.z > 0.5, `0.6 m block must stop the player, y=${blocked.y} z=${blocked.z}`);
-  const r = spawn(0, 0, -14, 0); run(r, { forward: 1 }, 1.9);
+  const r = spawn(0, 0, -14, 0); run(r, { forward: 1 }, 1.6);   // still on the ramp (its top edge is at z = -24)
   assert.ok(r.y > 1.2 && r.grounded, `ramp y=${r.y} z=${r.z}`);
 });
 test('silent walk emits zero footstep events; running and crouch behave per spec', () => {
@@ -177,4 +177,16 @@ test('GLB rejects truncated chunks, cyclic nodes and out-of-bounds accessors', (
   };
   assert.throws(() => parseGLB(rewrite(d => { d.nodes[0].children = [0]; })), /cyclic/);
   assert.throws(() => parseGLB(rewrite(d => { d.accessors[0].byteOffset = 999999; })), /outside buffer/);
+});
+
+test('standing still on a ramp / staircase does not slide the player down it', async () => {
+  const { MapLibrary } = await import('../server/server.js');
+  const { GridMap } = await import('../tools/maps/builder.mjs');
+  const lib = await new MapLibrary(await MapLibrary.locate()).init(); const col = (await lib.get('sarob')).collider;
+  const g = new GridMap({ id: 't', cols: 44, rows: 40, seed: 1 });
+  const x = g.x0 + 16.5 * g.cell, z = g.z0 + 15.5 * g.cell;          // 'N' stairs mid -> short
+  const hit = col.raycast(x, 10, z, 0, -1, 0, 20), p = createPlayer({ x, y: 10 - hit.distance + 0.02, z, yaw: 0 });
+  for (let i = 0; i < 192; i++) stepPlayer(p, cmd({ yaw: 0 }), col, DT);
+  assert.ok(Math.hypot(p.x - x, p.z - z) < 0.01, 'no horizontal drift');
+  assert.ok(Math.abs(p.y - (10 - hit.distance)) < 0.1, 'stays at the tread height'); assert.ok(p.grounded);
 });

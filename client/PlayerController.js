@@ -8,7 +8,7 @@ import { MOVEMENT as M, clamp, lerp, smoothstep, neutralInput } from '../shared/
 export const DEFAULT_BINDS = Object.freeze({
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   jump: ['Space'], crouch: ['ControlLeft', 'KeyC'], walk: ['ShiftLeft'], attack: ['Mouse0'], attack2: ['Mouse2'],
-  reload: ['KeyR'], use: ['KeyE'], quick: ['KeyQ'], drop: ['KeyG'], inspect: ['KeyF'], buy: ['KeyB'], scoreboard: ['Tab'],
+  reload: ['KeyR'], use: ['KeyE'], quick: ['KeyQ'], drop: ['KeyG'], inspect: ['KeyF'], hand: ['KeyH'], buy: ['KeyB'], scoreboard: ['Tab'],
   chat: ['KeyY'], teamchat: ['KeyU'], radio: ['KeyZ'], ping: ['KeyX', 'Mouse1'], voice: ['KeyV'],
   slot1: ['Digit1', 'Numpad1'], slot2: ['Digit2', 'Numpad2'], slot3: ['Digit3', 'Numpad3'], slot4: ['Digit4', 'Numpad4'], slot5: ['Digit5', 'Numpad5'],
 });
@@ -103,10 +103,12 @@ export class PlayerController {
   setMouse(opts) { Object.assign(this.mouseOpts, opts); this.sens = null; this.setSensitivity(Number(this.mouseOpts.sensitivity)); this.toggleCrouch = !!this.mouseOpts.toggleCrouch; }
   /** Held state of an action (any of its bound inputs is down). */
   held(a) { return this.binds[a].some(c => c && this.keys.has(c)); }
-  get locked() { return this.controls.isLocked; }
+  // touch devices have no pointer lock: TouchControls switches a virtual one on while a match is played
+  get locked() { return this.controls.isLocked || !!this.touchActive; }
   /** Raw input (unadjustedMovement) exists only in Chromium on Windows / macOS / ChromeOS; elsewhere it errors, so skip it. */
   get rawSupported() { const ua = navigator.userAgentData; return !this.rawFailed && !!ua && !/linux|android/i.test(ua.platform || navigator.platform || ''); }
   lock() {
+    if (this.touchMode) { this.touchActive = true; return; }
     if (this.mouseOpts.rawInput && this.rawSupported) {
       const r = this.dom.requestPointerLock?.({ unadjustedMovement: true });
       if (r?.catch) { r.catch(e => { if (e?.name === 'NotSupportedError') { this.rawFailed = true; this.controls.lock(); } }); return; }
@@ -117,6 +119,12 @@ export class PlayerController {
   setSensitivity(v) { this.sens = Number.isFinite(v) ? clamp(v, 0.15, 2) : 0.6; this.controls.pointerSpeed = this.sens * (this.zoomScale || 1); }
   /** Scales mouse speed with the field of view so a scoped aim feels the same in screen space. */
   setZoomScale(k) { this.zoomScale = clamp(k, 0.2, 1) * (k < 1 ? this.mouseOpts.zoomSensitivity : 1); this.controls.pointerSpeed = (this.sens ?? 0.6) * this.zoomScale; }
+  /** Drag-to-look from TouchControls (dx / dy in mouse counts). */
+  touchLook(dx, dy) {
+    const k = 0.002 * (this.controls.pointerSpeed || 0.6), r = this.aim.rotation;
+    r.y -= dx * k; r.x = clamp(r.x - dy * k * (this.mouseOpts.invertY ? -1 : 1), -Math.PI / 2 + 0.03, Math.PI / 2 - 0.03);
+    this.mouse.dx += dx; this.mouse.dy += dy;
+  }
   get yaw() { return this.aim.rotation.y; }
   get pitch() { return this.aim.rotation.x; }
   setAim(yaw, pitch) { this.aim.rotation.set(pitch, yaw, 0, 'YXZ'); }
@@ -172,6 +180,7 @@ export class PlayerController {
       else if (a === 'drop') this.edges.drop = true;
       else if (a === 'reload') this.edges.reload = true;
       else if (a === 'inspect') this.callbacks.inspect?.();
+      else if (a === 'hand') this.callbacks.hand?.();
       else if (a === 'buy') this.callbacks.buy?.();
       else if (a === 'scoreboard') this.callbacks.scoreboard?.(true);
       else if (a === 'radio') this.callbacks.radio?.();
@@ -202,11 +211,12 @@ export class PlayerController {
     c.yaw = this.yaw; c.pitch = this.pitch;
     if (!this.locked || !this.enabled) { this.edges = { slot: 0, quick: false, drop: false, jump: false, reload: false, wheel: 0 }; this.firePressed = false; return c; }
     const k = this.keys, e = this.edges;
-    c.forward = Number(this.held('forward')) - Number(this.held('back'));
-    c.right = Number(this.held('right')) - Number(this.held('left'));
+    const ax = this.axis || { x: 0, y: 0 };   // analog move stick (touch)
+    c.forward = clamp(Number(this.held('forward')) - Number(this.held('back')) + ax.y, -1, 1);
+    c.right = clamp(Number(this.held('right')) - Number(this.held('left')) + ax.x, -1, 1);
     c.jump = this.held('jump') || e.jump;
     c.crouch = this.toggleCrouch ? this.crouchLatched : this.held('crouch');
-    c.walk = this.held('walk');
+    c.walk = this.held('walk') || (!!this.walkTouch && (ax.x !== 0 || ax.y !== 0));
     c.fire = this.fire || this.firePressed; c.fire2 = this.fire2;
     c.reload = this.held('reload') || e.reload; c.interact = this.held('use');
     c.slot = e.slot; c.quick = e.quick; c.drop = !!e.drop;

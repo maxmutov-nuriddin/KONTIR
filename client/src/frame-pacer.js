@@ -1,5 +1,5 @@
 /** Bounds GPU work independently of the fixed 64 Hz gameplay accumulator. */
-export const MENU_FPS = 60;
+export const MENU_FPS = 30;          // the menu background is a still scene: 30 fps keeps fanless laptops cool
 export class FramePacer {
   constructor(limit = 0) { this.setLimit(limit); this.next = null; }
   setLimit(value) {

@@ -127,6 +127,11 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       try { const data = await publicFile(resolve(library.dir), decodeURIComponent(url.pathname.slice(6))); res.writeHead(200, { 'Content-Type': MIME[extname(url.pathname)] || 'application/octet-stream', 'Cache-Control': 'public, max-age=300' }); return res.end(data); }
       catch { res.writeHead(404); return res.end(); }
     }
+    const asset = /^\/(models|textures)\//.exec(url.pathname);
+    if (asset) { // real 3D models and scanned textures live in client/public (the client build does not copy them)
+      try { const data = await publicFile(resolve(here, '../client/public', asset[1]), decodeURIComponent(url.pathname.slice(asset[0].length))); res.writeHead(200, { 'Content-Type': MIME[extname(url.pathname)] || 'application/octet-stream', 'Cache-Control': 'public, max-age=300' }); return res.end(data); }
+      catch { res.writeHead(404); return res.end(); }
+    }
     try {
       let path = resolve(staticRoot, '.' + decodeURIComponent(url.pathname));
       if (path !== staticRoot && !path.startsWith(staticRoot + sep)) { res.writeHead(403); return res.end(); }
@@ -296,6 +301,13 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       socket.data.lastBuy = now;
       ack(rooms.get(socket.data.room)?.buy(socket.id, String(item)) || { error: 'Xona topilmadi.' });
     });
+    socket.on('sellback', (item, ack) => {
+      if (typeof ack !== 'function') return;
+      const now = performance.now();
+      if (now - (socket.data.lastBuy ?? -1000) < 120) return ack({ error: 'Bir oz kuting.' });
+      socket.data.lastBuy = now;
+      ack(rooms.get(socket.data.room)?.sell(socket.id, String(item)) || { error: 'Xona topilmadi.' });
+    });
     socket.on('chat', msg => { if (msg && typeof msg === 'object') rooms.get(socket.data.room)?.chat(socket.id, msg.text, msg.team === true); });
     socket.on('radio', n => rooms.get(socket.data.room)?.radio(socket.id, n));
     socket.on('ping', pt => { if (pt && typeof pt === 'object') rooms.get(socket.data.room)?.ping(socket.id, +pt.x, +pt.y, +pt.z); });
@@ -326,16 +338,23 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     });
     socket.on('auth:logout', token => { accounts.logout(token); bindAccount(socket, null); });
     socket.on('account:update', (choices, ack) => { const key = socket.data.account; const p = key && accounts.update(key, choices); if (typeof ack === 'function') ack(p ? { ok: true, profile: p } : { error: 'auth' }); });
-    socket.on('account:buy', (finish, ack) => {
+    const acctLimited = () => { const t = performance.now(); if (t - (socket.data.aAt ?? -1e9) > 10000) { socket.data.aAt = t; socket.data.aN = 0; } return ++socket.data.aN > 20; };
+    socket.on('account:buy', (req, ack) => {
       if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' });
-      try { ack({ ok: true, profile: accounts.buy(key, String(finish)) }); } catch (e) { ack({ error: e.message }); }
+      if (acctLimited()) return ack({ error: 'slow' });
+      try { ack({ ok: true, ...accounts.buy(key, req) }); } catch (e) { ack({ error: e.message }); }
     });
+    socket.on('account:sell', (itemId, ack) => {
+      if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' });
+      if (acctLimited()) return ack({ error: 'slow' });
+      try { ack({ ok: true, ...accounts.sell(key, String(itemId)) }); } catch (e) { ack({ error: e.message }); }
+    });
+    socket.on('market', (_, ack) => { if (typeof ack === 'function') ack({ ok: true, market: accounts.marketView(), now: Date.now() }); });
+    // rewarded ads: the amount is decided here (never by the client); see economy.js for the cooldown / daily cap
     socket.on('account:reward', (req, ack) => {
       if (typeof ack !== 'function') return;
       const key = socket.data.account; if (!key) return ack({ error: 'auth' });
-      const coins = Math.max(1, Math.min(2000, Number(req?.coins) || 150));
-      const p = accounts.awardCoins(key, coins);
-      ack(p ? { ok: true, profile: p } : { error: 'failed' });
+      try { ack({ ok: true, ...accounts.reward(key, req?.kind === 'double' ? 'double' : 'free') }); } catch (e) { ack({ error: e.message }); }
     });
     // ---- friends: search, requests, list with presence, direct messages, WebRTC voice signalling (friends only)
     const acct = (ack, fn) => { if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' }); try { ack({ ok: true, ...fn(key) }); } catch (e) { ack({ error: e.message }); } };

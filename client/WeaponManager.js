@@ -7,7 +7,7 @@ import { Inventory } from '../shared/inventory.js';
 import { GRENADES, SLOT, WEAPONS } from '../shared/weapons.js';
 import { DT } from '../shared/constants.js';
 import { buildArms, buildWeaponRig, poseArms, weaponMaterials } from './src/viewmodels.js';
-import { applyFinish } from './src/finishes.js';
+import { applyFinish, applyGloveFinish } from './src/finishes.js';
 import { aimSleeve } from './src/hands.js';
 import { cuesFor, reloadStyle } from './src/reload.js';
 
@@ -27,9 +27,20 @@ const REST = {
   nova: { p: [0.1, -0.095, -0.5], r: [0.04, 0.05, 0.0], s: 0.82 }, ssg08: { p: [0.105, -0.115, -0.54], r: [0.04, 0.05, 0.0], s: 0.82 },
   p250: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, fiveseven: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] }, tec9: { p: [0.075, -0.105, -0.4], r: [0.02, 0.05, 0.0] },
   molotov: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] }, incendiary: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] }, decoy: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] },
-  knife: { p: [0.14, -0.13, -0.4], r: [-0.25, 0.5, 0.45] }, he: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] },
+  knife: { p: [0.14, -0.13, -0.4], r: [0.15, 0.5, 0.45] }, he: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] },
   flash: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] }, smoke: { p: [0.12, -0.135, -0.45], r: [0.12, 0.0, 0.0] }, c4: { p: [0.04, -0.16, -0.4], r: [0.35, 0.0, 0.0] },
 };
+
+// left hand on a right-side charging handle: palm down over the receiver, fingers wrapping the knob from above
+const BOLT_REACH = new THREE.Vector3(0.012, 0.03, 0.015);
+const _q0 = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+const FINGERS_DIR = new THREE.Vector3(0.75, -0.55, -0.35).normalize();
+function overhandQ() {
+  const roll = -Math.PI / 2;                     // fingers curl down onto the knob from above
+  _qa.setFromUnitVectors(new THREE.Vector3(0, 0, -1), FINGERS_DIR);
+  _qb.setFromAxisAngle(FINGERS_DIR, roll);
+  return _qb.multiply(_qa);
+}
 
 export class WeaponManager {
   /** @param {THREE.Scene} viewScene scene rendered by the dedicated viewmodel camera */
@@ -37,6 +48,7 @@ export class WeaponManager {
     this.scene = viewScene; this.team = team;
     this.inventory = new Inventory(team);
     this.root = new THREE.Group(); this.root.name = 'viewmodel'; viewScene.add(this.root);
+    this.leftHanded = false; this.viewOffset = { x: 0, y: 0, z: 0 };
     this.rigs = new Map(); this.activeWeaponMesh = null; this.activeId = null;
     this.arms = buildArms(team); this.arms.traverse(o => { if (o.isMesh) o.castShadow = false; });
     this.kick = 0; this.melee = 0; this.throwT = 0; this.flashT = 0; this.punchVisual = { yaw: 0, pitch: 0 };
@@ -91,6 +103,7 @@ export class WeaponManager {
       this.reloadAnim = { id: e.weapon, style: reloadStyle(e.weapon), full, shells, cues: cuesFor(e.weapon, { full, shells }), last: 0 };
       this.emit('reload', e);
     }
+    else if (e.type === 'silencer') { this.silencerAnim = { id: e.weapon, on: e.on, t: 0, dur: WEAPONS[e.weapon]?.silencerTime || 1.5 }; this.emit('silencer', e); }
     else if (e.type === 'dryfire') this.emit('dry', e);
     else if (e.type === 'pin') this.emit('pin', e);
   }
@@ -99,14 +112,15 @@ export class WeaponManager {
     let r = this.rigs.get(id);
     if (!r) {
       r = buildWeaponRig(id); r.group.visible = false; r.group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
-      applyFinish(r.group, this.finishFor?.(id), weaponMaterials());
+      applyFinish(r.group, this.finishFor?.(id), weaponMaterials(), this.wearFor?.(id) || 0);
       this.root.add(r.group); this.rigs.set(id, r);
     }
     return r;
   }
   /** Re-applies the profile's finish after it changed in the inventory. */
   refreshFinish(id) {
-    const r = this.rigs.get(id); if (r) applyFinish(r.group, this.finishFor?.(id), weaponMaterials());
+    if (id === 'gloves') return applyGloveFinish(this.arms, this.finishFor?.('gloves'), this.wearFor?.('gloves') || 0);
+    const r = this.rigs.get(id); if (r) applyFinish(r.group, this.finishFor?.(id), weaponMaterials(), this.wearFor?.(id) || 0);
   }
   /** Toggle mesh visibility: activeWeaponMesh.visible = true, every other rig hidden. */
   setActive(id, force = false) {
@@ -144,8 +158,10 @@ export class WeaponManager {
     p.set(rest.p[0], rest.p[1], rest.p[2]); r.set(rest.r[0], rest.r[1], rest.r[2]);
     p.add(dyn.position); r.x += dyn.rotation.x; r.y += dyn.rotation.y; r.z += dyn.rotation.z;
     // draw / unholster
-    const draw = inv.drawing ? ease(inv.drawProgress()) : 1, d = 1 - draw;
+    const S = this.silencerAnim?.id === this.activeId ? this.silencerAnim : null;
+    const draw = inv.drawing && !S ? ease(inv.drawProgress()) : 1, d = 1 - draw;
     p.y -= 0.3 * d; p.z += 0.06 * d; p.x += 0.07 * d; r.x -= 1.0 * d; r.z += 0.35 * d;
+    this.animateSilencer(rig, S, dt, p, r);
     // recoil kick (weapon slams back and pitches up), decays fast
     this.kick *= Math.exp(-dt * 19);
     const w = inv.weapon(), gun = w?.kind === 'gun';
@@ -190,7 +206,8 @@ export class WeaponManager {
     this.flashT -= dt;
     const on = this.flashT > 0 && rig.muzzle;
     this.flash.visible = !!on;
-    if (on) { const s = 0.7 + Math.random() * 0.7; this.flash.scale.setScalar(s); this.flash.rotation.z = Math.random() * 6.28; this.flashLight.intensity = 1.6 * (this.flashT / 0.055); } else this.flashLight.intensity = 0;
+    if (on && this.inventory.isSilenced(this.activeId)) { this.flash.visible = false; this.flashLight.intensity = 0.4 * (this.flashT / 0.055); }   // a can hides the flash
+    else if (on) { const s = 0.7 + Math.random() * 0.7; this.flash.scale.setScalar(s); this.flash.rotation.z = Math.random() * 6.28; this.flashLight.intensity = 1.6 * (this.flashT / 0.055); } else this.flashLight.intensity = 0;
     // C4 display when planting
     void GRENADES;
     this.lastDt = dt;
@@ -222,7 +239,7 @@ export class WeaponManager {
     // sound cues crossed since last frame
     for (const [at, kind] of R.cues) if (R.last < at && t >= at) this.emit('foley', { kind, weapon: R.id });
     R.last = t;
-    const S = R.style, rest = left?.userData.rest;
+    const S = R.style, rest = left?.userData.rest; let handTurn = 0;
     const tilt = ease(seg(t, 0.0, 0.14)) - ease(seg(t, 0.86, 1.0));
     const hand = new THREE.Vector3().copy(rest?.p || new THREE.Vector3());
     const mix = (a, b, k) => hand.copy(a).lerp(b, k);
@@ -269,18 +286,47 @@ export class WeaponManager {
       if (mag) mag.position.copy(m0).add(t >= 0.2 && t < 0.66 ? disp : new THREE.Vector3());
       if (t >= 0.62 && t < 0.68) { p.y += 0.006 * Math.sin(seg(t, 0.62, 0.68) * Math.PI); }           // seating jolt
       const cyc = R.full || S === 'bolt';
-      const boltPt = new THREE.Vector3().copy(bolt?.userData.p0 || grip).add(new THREE.Vector3(0.028, 0.0, 0.01));
+      // the support hand reaches OVER the receiver and pulls the right-side handle palm-down (not through the gun)
+      const boltPt = new THREE.Vector3().copy(bolt?.userData.p0 || grip).add(BOLT_REACH);
       if (t >= 0.66) {
         if (cyc) {
-          if (t < 0.76) mix(grip, boltPt, ease(seg(t, 0.66, 0.76)));
-          else if (t < 0.9) { hand.copy(boltPt); const pb = ease(seg(t, 0.78, 0.82)) - ease(seg(t, 0.85, 0.87)); hand.z += 0.05 * pb; if (bolt) bolt.position.z = bolt.userData.p0.z + 0.05 * pb; }
-          else mix(boltPt, rest.p, ease(seg(t, 0.9, 0.99)));
+          let k;
+          if (t < 0.76) { k = ease(seg(t, 0.66, 0.76)); mix(grip, boltPt, k); hand.y += 0.05 * Math.sin(k * Math.PI); }   // arc over the top
+          else if (t < 0.9) { k = 1; hand.copy(boltPt); const pb = ease(seg(t, 0.78, 0.82)) - ease(seg(t, 0.85, 0.87)); hand.z += 0.05 * pb; if (bolt) bolt.position.z = bolt.userData.p0.z + 0.05 * pb; }
+          else { k = 1 - ease(seg(t, 0.9, 0.99)); mix(boltPt, rest.p, 1 - k); }
+          handTurn = k;
         } else mix(grip, rest.p, ease(seg(t, 0.68, 0.86)));
       }
     }
-    if (left?.visible && rest) { left.position.copy(hand); aimSleeve(left); }
+    if (left?.visible && rest) {
+      left.position.copy(hand);
+      if (handTurn > 0) { _q0.setFromEuler(rest.r); left.quaternion.copy(_q0).slerp(overhandQ(), handTurn); } else left.rotation.copy(rest.r);
+      aimSleeve(left);
+    }
   }
 
+  /** USP-S / M4A1-S: the weapon tilts toward the camera, the can is unscrewed (spins while sliding off the muzzle)
+   *  and disappears from view, or comes back and screws on. Muzzle flash / sound follow the state. */
+  animateSilencer(rig, S, dt, p, r) {
+    const can = rig.parts.suppressor; if (!can) return;
+    can.userData.p0 ??= can.position.clone();
+    rig.muzzle.userData.z0 ??= rig.muzzle.position.z;
+    const off = !!this.inventory.silencerOff?.[this.activeId];
+    if (!S) { can.visible = !off; can.position.copy(can.userData.p0); can.rotation.z = 0; rig.muzzle.position.z = off && rig.bareMuzzleZ !== undefined ? rig.bareMuzzleZ : rig.muzzle.userData.z0; return; }
+    S.t += dt; const k = Math.min(1, S.t / S.dur);
+    if (k >= 1) { this.silencerAnim = null; return this.animateSilencer(rig, null, 0, p, r); }
+    const tilt = ease(seg(k, 0, 0.18)) - ease(seg(k, 0.82, 1));
+    r.y += 0.55 * tilt; r.z += 0.35 * tilt; p.x -= 0.05 * tilt; p.y += 0.02 * tilt;
+    // removing: screw out (0.2..0.6), pull away (0.6..0.75); attaching: the reverse
+    const u = S.on ? 1 - k : k, screw = seg(u, 0.2, 0.6), pull = ease(seg(u, 0.6, 0.75));
+    can.visible = u < 0.75; can.rotation.z = screw * Math.PI * 6;
+    can.position.copy(can.userData.p0); can.position.z -= 0.012 * screw + 0.12 * pull; can.position.x -= 0.05 * pull; can.position.y -= 0.04 * pull;
+  }
+  /** 'H': carry the weapon on the left or right side. The whole viewmodel (arms + weapon) is mirrored; three.js flips
+   *  the face winding for a negative-scale node, so lighting and culling stay correct. */
+  /** Viewmodel offset from Settings (cm-like steps): moves the whole arms + weapon rig. */
+  setViewOffset({ x = 0, y = 0, z = 0 } = {}) { this.viewOffset = { x, y, z }; this.root.position.set(x * 0.01, y * 0.01, -z * 0.01); }
+  setLeftHanded(on) { this.leftHanded = !!on; this.root.scale.x = this.leftHanded ? -1 : 1; return this.leftHanded; }
   /** 'F': weapon inspect (CS-style). Ignored while drawing, reloading, firing or holding a pulled grenade. */
   inspect() {
     const inv = this.inventory;
