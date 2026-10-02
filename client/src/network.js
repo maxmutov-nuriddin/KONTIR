@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import { angleDelta, RULES, TICK_RATE } from '../../shared/constants.js';
+import { LocalRoom } from './local-room.js';
 
 export class Network {
   constructor(onSnapshot, onDisconnect) {
@@ -10,13 +11,15 @@ export class Network {
     this.latest = null; this.frames = []; this.received = 0; this.id = null; this.rtt = 0; this.lastSent = -1;
     let disconnectTimer = null;
     this.socket.on('probe', ack => { if (typeof ack === 'function') ack(); });
-    this.socket.on('snapshot', state => {
+    this.local = null;
+    this.ingest = state => {
       if (!this.id || (this.latest && state.tick < this.latest.tick)) return;
       if (this.latest && state.epoch !== this.latest.epoch) this.frames = [];
       this.latest = state; this.frames.push(state); if (this.frames.length > 24) this.frames.shift();
       this.received = performance.now(); onSnapshot(state);
-    });
-    this.socket.on('kicked', () => onDisconnect('AFK'));
+    };
+    this.socket.on('snapshot', state => { if (!this.local) this.ingest(state); });
+    this.socket.on('kicked', () => { if (!this.local) onDisconnect('AFK'); });
     this.socket.on('connect', () => {
       if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
     });
@@ -24,7 +27,7 @@ export class Network {
       if (reason === 'io client disconnect') return;
       if (disconnectTimer) clearTimeout(disconnectTimer);
       disconnectTimer = setTimeout(() => {
-        if (!this.socket.connected) onDisconnect(reason);
+        if (!this.socket.connected && !this.local) onDisconnect(reason);
       }, 4000);
     });
   }
@@ -40,6 +43,15 @@ export class Network {
     await this.connect();
     return this.adopt(await this.request('join', request));
   }
+  /** Offline practice: the room runs in this browser (ping 0). `map` is the loaded client map data. */
+  startLocal(map, request) {
+    this.local = new LocalRoom(map, request, state => this.ingest(state));
+    return this.adopt({ ok: true, id: this.local.id, code: 'LOCAL', team: this.local.team, practice: true, local: true, snapshot: this.local.snapshot() });
+  }
+  /** True while a room is reachable (the local room, or a connected socket). */
+  get connected() { return !!this.local || this.socket.connected; }
+  /** Fire-and-forget room event (chat, radio, ping, revive). */
+  emit(event, payload) { if (this.local) this.local.handle(event, payload); else this.socket.emit(event, payload); }
   /** Takes over a room assignment (from 'join' or from matchmaking's 'queue:ready'). */
   adopt(result) {
     this.id = result.id; this.lastSent = -1; this.latest = result.snapshot; this.frames = [result.snapshot]; this.received = performance.now();
@@ -55,18 +67,22 @@ export class Network {
   queueLeave() { if (this.socket.connected) this.socket.emit('queue:leave'); }
   queueAccept(matchId) { this.socket.emit('queue:accept', matchId); }
   request(event, payload) {
+    if (this.local && ['buy', 'sellback', 'start', 'practice:revive'].includes(event)) {
+      const r = this.local.handle(event, payload);
+      return r?.error ? Promise.reject(new Error(r.error)) : Promise.resolve(r);
+    }
     return new Promise((resolve, reject) => this.socket.timeout(8000).emit(event, payload, (error, response) => {
       if (error) reject(new Error('Server javob bermadi.')); else if (response?.error) reject(new Error(response.error)); else resolve(response);
     }));
   }
   /** Resend the oldest unacknowledged commands in order; never discard an input edge. */
   send(pending) {
-    if (!this.socket.connected || !pending.length) return;
+    if (this.local || !this.socket.connected || !pending.length) return;   // the local room is ticked in lockstep instead
     // Volatile packets may be dropped, so the authoritative ack (not lastSent) owns retirement.
     this.socket.volatile.emit('commands', pending.slice(0, 32));
   }
   // the socket stays open after a match: it also carries the account session, friends presence, messages and call signalling
-  leave() { if (this.socket.connected) this.socket.emit('leave'); this.id = null; this.latest = null; this.frames = []; }
+  leave() { if (this.local) this.local = null; else if (this.socket.connected) this.socket.emit('leave'); this.id = null; this.latest = null; this.frames = []; }
   /** Estimated authoritative tick of the world as currently *rendered* (interpolation delay included). Sent as viewTick for lag compensation. */
   viewTick(now) {
     if (!this.latest) return 0;

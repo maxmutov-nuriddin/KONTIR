@@ -39,8 +39,9 @@ export const QUALITY = {
   // TINIQ: eski/oddiy PC uchun eng toza tasvir — to‘liq ruxsat, 4x MSAA, RCAS keskinlashtirish, bitta yengil soya
   // kaskadi (har 2-kadrda). FPS tushsa ichki ruxsat 60 % gacha pasayadi, lekin RCAS tufayli tasvir xiralashmaydi.
   crisp: { pixelRatio: 2, render: 1.5, sharpen: 0.45, shadows: true, mapSize: 1024, post: false, msaa: 4, cascades: 1, maxFar: 42, shadowEvery: 2, macro: true, motes: false, operatorLod: 16 },
-  // O'RTA (MacBook / Iris): UI va canvas Retina 2x, sahna 1x da 2x MSAA + RCAS keskinlashtirish — tiniq va fansiz MacBook Air'da ham sovuq
-  medium: { pixelRatio: 2, render: 1.0, sharpen: 0.45, shadows: false, mapSize: 512, post: false, msaa: 2, cascades: 0, maxFar: 70, macro: false, motes: false, operatorLod: 14 },
+  // O'RTA (MacBook / Iris): canvas 1.5x (HUD — DOM, Retina'da tiniq qoladi), sahna 1x da 2x MSAA + RCAS keskinlashtirish.
+  // 2x canvas har kadr 7.6 Mpx chiqish pass'ini berib MacBook'ni qizdirardi; 1.5x — 44 % kam piksel, farqi deyarli sezilmaydi
+  medium: { pixelRatio: 1.5, render: 1.0, sharpen: 0.45, shadows: false, mapSize: 512, post: false, msaa: 2, cascades: 0, maxFar: 70, macro: false, motes: false, operatorLod: 14 },
   // TEZKOR: sahna 75 % ruxsatda, RCAS bilan tiniq qilib kattalashtiriladi — eng zaif noutbuklar uchun
   low: { pixelRatio: 1.0, render: 0.75, sharpen: 0.5, shadows: false, mapSize: 512, post: false, msaa: 0, cascades: 0, maxFar: 50, macro: false, motes: false, operatorLod: 10 },
 };
@@ -112,7 +113,7 @@ export class WorldEngine {
     renderer.shadowMap.enabled = this.quality.shadows;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.autoClear = false;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.quality.pixelRatio));
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.maxPixelRatio()));
     renderer.setSize(innerWidth, innerHeight, false);
     // sharper ground / walls at grazing angles: 16x anisotropic filtering on the crisp tiers, 8x on the light ones
     this.maxAniso = Math.min(quality === 'low' || quality === 'medium' ? 8 : 16, renderer.capabilities.getMaxAnisotropy());
@@ -288,16 +289,23 @@ export class WorldEngine {
     if (this.composer) { for (const pass of this.composer.passes) pass.dispose?.(); this.composer.dispose(); }
     this.composer = null; this.gtao = null;
   }
+  /** Canvas DPR cap: the quality tier's, unless the player picked a resolution in Settings (dprCap). */
+  maxPixelRatio() { return this.dprCap ?? this.quality.pixelRatio; }
+  /** Settings "Ruxsat": null = by quality tier, else a fixed canvas DPR cap (1 / 1.5 / 2). */
+  setPixelRatioCap(cap) {
+    this.dprCap = [1, 1.5, 2].includes(cap) ? cap : null;
+    if (this.renderer) { this.applyQualityTargets(); this.resize(); }
+  }
   /** Canvas DPR. The upscaler path keeps the canvas at full resolution and scales only the scene target. */
   outputPixelRatio() {
-    const q = this.quality, dpr = devicePixelRatio || 1;
-    if (this.upscaler || (!q.post && q.render !== undefined && this.canUpscale)) return Math.min(dpr, q.pixelRatio);
+    const q = this.quality, dpr = devicePixelRatio || 1, cap = this.maxPixelRatio();
+    if (this.upscaler || (!q.post && q.render !== undefined && this.canUpscale)) return Math.min(dpr, cap);
     // no float targets: fall back to rendering the scene straight to a (smaller) canvas
-    return Math.min(dpr, q.render ?? q.pixelRatio) * (this.resScale ?? 1);
+    return Math.min(dpr, q.render ?? cap, cap) * (this.resScale ?? 1);
   }
   /** Scene resolution relative to the canvas on the upscaler path. */
   baseRenderScale() {
-    const q = this.quality, dpr = devicePixelRatio || 1, out = Math.min(dpr, q.pixelRatio);
+    const q = this.quality, dpr = devicePixelRatio || 1, out = Math.min(dpr, this.maxPixelRatio());
     return Math.min(1, Math.min(dpr, q.render ?? out) / out);
   }
   renderScale() { return Math.max(MIN_INTERNAL_SCALE, this.baseRenderScale() * (this.resScale ?? 1)); }

@@ -263,11 +263,23 @@ test('post-round projectile deaths cannot carry weapons into the next round', ()
   assert.equal(t.inv.weaponId(SLOT.PRIMARY), null); assert.equal(t.alive, true);
 });
 
-test('packet jitter preserves held jump state without inventing a fresh jump press', () => {
+test('packet jitter preserves held jump state without inventing any input', () => {
   const room = mkRoom({ ...fast, round: 60 }); const p = room.add('jump', 'Jump'); room.add('ct', 'CT', 'COUNTER_TERRORIST'); toLive(room);
   Object.assign(p.char, openSpot(0, 0)); send(room, p.id, { jump: true }); room.step();
   assert.equal(p.char.prevJump, true); room.step(); assert.equal(p.char.prevJump, true);
-  assert.equal(room.nextCommand(p).jump, true);
+  assert.deepEqual(room.nextCommands(p), [], 'a brief gap waits for the late commands instead of inventing input');
+});
+
+test('late commands are replayed after a gap and a backlog drains without exceeding real time', () => {
+  const room = mkRoom({ ...fast, round: 60 }); const p = room.add('lag', 'Lag'); room.add('ct2', 'CT', 'COUNTER_TERRORIST'); toLive(room);
+  Object.assign(p.char, openSpot(0, 0));
+  send(room, p.id); room.step(); const time = p.inv.time;
+  run(room, 6);                                       // 6 ticks without input: the player waits
+  assert.equal(p.inv.time, time);
+  for (let i = 0; i < 6; i++) send(room, p.id);       // the late commands arrive in one burst
+  run(room, 4); assert.equal(p.inv.time - time, 6, 'the backlog is caught up');
+  for (let i = 0; i < 40; i++) send(room, p.id);
+  run(room, 10); assert.ok(p.inv.time - time <= 20 + 1, 'never more commands than ticks elapsed (6 + 4 + 10)');
 });
 
 test('practice options: bot counts per side and difficulty shape the bots', () => {

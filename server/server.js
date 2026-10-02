@@ -360,6 +360,11 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
     const acct = (ack, fn) => { if (typeof ack !== 'function') return; const key = socket.data.account; if (!key) return ack({ error: 'auth' }); try { ack({ ok: true, ...fn(key) }); } catch (e) { ack({ error: e.message }); } };
     const limited = () => { const t = performance.now(); if (t - (socket.data.fAt ?? -1e9) > 10000) { socket.data.fAt = t; socket.data.fN = 0; } return ++socket.data.fN > 40; };
     socket.on('friends:list', (_, ack) => acct(ack, key => friendList(key)));
+    // public player cards (inventory / stats) — guests may look too; private profiles return only the name
+    socket.on('profile:view', (name, ack) => {
+      if (typeof ack !== 'function') return; if (limited()) return ack({ error: 'slow' });
+      try { const r = accounts.view(socket.data.account || null, name); r.profile.online = online.has(String(name ?? '').trim().toLowerCase()); ack({ ok: true, ...r }); } catch (e) { ack({ error: e.message }); }
+    });
     socket.on('friends:search', (q, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const u = accounts.users[key]; return { users: accounts.search(key, q).map(name => ({ name, friend: accounts.areFriends(key, name.toLowerCase()), pending: accounts.users[name.toLowerCase()]?.requests?.includes(key) || false, online: online.has(name.toLowerCase()) })) }; }));
     socket.on('friends:request', (name, ack) => acct(ack, key => { if (limited()) throw new Error('slow'); const tk = accounts.request(key, name); notifyFriends(tk); notifyFriends(key); return {}; }));
     socket.on('friends:respond', (req, ack) => acct(ack, key => { const tk = accounts.respond(key, req?.name, req?.accept === true); notifyFriends(tk); notifyFriends(key); return {}; }));

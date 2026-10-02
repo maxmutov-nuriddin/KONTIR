@@ -39,7 +39,8 @@ export function applyMatch(p, { won, draw = false, kills = 0, deaths = 0, assist
 }
 
 /** Keeps only valid loadout / equip choices (an equipped item must be owned and belong to that weapon). */
-export function cleanChoices(p, { loadout, equipped } = {}) {
+export function cleanChoices(p, { loadout, equipped, privateProfile } = {}) {
+  if (typeof privateProfile === 'boolean') p.privateProfile = privateProfile;   // hides inventory and stats from other players
   if (loadout && typeof loadout === 'object') for (const [k, ok] of Object.entries(LOADOUT_CHOICES)) if (ok.includes(loadout[k])) p.loadout[k] = loadout[k];
   if (equipped && typeof equipped === 'object') {
     const next = {};

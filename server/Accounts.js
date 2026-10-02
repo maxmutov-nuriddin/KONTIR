@@ -166,6 +166,16 @@ export class Accounts {
     return { key: t.user, profile: this.public(this.users[t.user]) };
   }
   logout(token) { delete this.tokens[sha(String(token ?? ''))]; this.save(); }
+  /** Another player's public card: stats and inventory, or only the name when the profile is private (self always sees all). */
+  view(viewerKey, name) {
+    const key = String(name ?? '').trim().toLowerCase(), u = this.users[key];
+    if (!u) throw new Error('nouser');
+    if (u.privateProfile && key !== viewerKey) return { profile: { name: u.name, hue: u.hue, private: true } };
+    migrateSkins(u);
+    const items = (u.items || []).map(({ id, weapon, finish, wear, seed }) => ({ id, weapon, finish, wear, seed }));
+    return { profile: { name: u.name, hue: u.hue, created: u.created, xp: u.xp, rating: u.rating, matches: u.matches, wins: u.wins, kills: u.kills, deaths: u.deaths, headshots: u.headshots,
+      items, equipped: { ...(u.equipped || {}) }, private: !!u.privateProfile, online: false } };
+  }
   update(key, choices) { const u = this.users[key]; if (!u) return null; cleanChoices(u, choices); this.save(); return this.public(u); }
   /** Buys a skin from the market: weapon + finish + wear tier (the exact float is rolled inside the tier). */
   buy(key, req) {

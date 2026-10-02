@@ -31,6 +31,8 @@ let fireList = [], scopeK = 0;
 const promptEl = document.createElement('div'); promptEl.id = 'use-prompt'; document.body.appendChild(promptEl); let promptKey = '';
 const scopeEl = document.createElement('div'); scopeEl.id = 'scope'; scopeEl.innerHTML = '<i></i><i></i>'; document.body.appendChild(scopeEl);
 let savedFps = store.get('fpsLimit', null);
+/** Practice against bots runs in the browser (ping 0) unless the player chose server practice (account rewards). */
+const localPractice = () => store.get('localPractice', '1') !== '0';
 // 60 FPS by default: an uncapped loop runs a 120 Hz MacBook / gaming laptop GPU flat out and heats it for nothing.
 // Older builds stored 0 (MAX) automatically, so that one-time default is migrated; a later explicit choice is kept.
 if (savedFps === null || savedFps === '30' || savedFps === 30 || (store.get('perfDefaults', '0') !== '2' && savedFps === '0')) {
@@ -43,6 +45,7 @@ try {
   world = new WorldEngine(document.querySelector('#scene'), { quality: store.get('quality', 'medium') });
   // first run of this build: pick the quality tier from the hardware (weak laptops would otherwise overheat / stutter)
   if (store.get('perfDefaults', '0') !== '2') { const q = detectQuality(world.renderer); world.setQuality(q); store.set('quality', q); store.set('perfDefaults', '2'); }
+  { const cap = Number(store.get('dprCap', 'auto')); if ([1, 1.5, 2].includes(cap)) world.setPixelRatioCap(cap); }   // Settings → Ruxsat
 }
 catch (error) { document.querySelector('#loader').innerHTML = '<b>WebGL2 talab qilinadi.</b><span>Brauzerda grafik tezlashtirishni yoqing.</span>'; throw error; }
 // GPU reset / memory pressure: three.js keeps the page alive and re-uploads everything on restore (no reload needed)
@@ -261,8 +264,15 @@ async function join(options) {
   joining = true; const my = ++generation;
   ui.showBusy('ULANMOQDA…'); audio.unlock();
   try {
-    const result = await network.join({ name: profile.name, code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: pickMap(), team,
-      loadout: { t: profile.loadout.t, ct: profile.loadout.ct }, bots: options.practice ? { t: botCfg.t, ct: botCfg.ct } : undefined, difficulty: botCfg.difficulty });
+    const request = { name: profile.name, code: options.code, practice: !!options.practice, quick: !!options.quick, mapId: pickMap(), team,
+      loadout: { t: profile.loadout.t, ct: profile.loadout.ct }, bots: options.practice ? { t: botCfg.t, ct: botCfg.ct } : undefined, difficulty: botCfg.difficulty };
+    let result;
+    if (options.practice && localPractice()) {
+      // offline practice: the room runs in this browser on the already-loaded collision map (ping 0, no account rewards)
+      await loadMapById(request.mapId, true);
+      if (my !== generation) return;
+      result = network.startLocal(world.map, request);
+    } else result = await network.join(request);
     if (my !== generation) { network.leave(); return; }
     await enter(result, my);
   } catch (error) {
@@ -273,7 +283,7 @@ async function join(options) {
 async function enter(result, my) {
   id = result.id; state = result.snapshot;
     await loadMapById(state.mapId, true);
-    if (!network.socket.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
+    if (!network.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
     if (my !== generation) { network.leave(); return; }
     weapons.setTeam(result.team);
     ui.showBusy('GRAFIKA TAYYORLANMOQDA…');
@@ -333,14 +343,14 @@ const RADIO = ['Hujumga!', 'Orqaga chekinamiz', 'Meni yopib turing', 'Dushman ko
 let specPick = 0, deadView = false;
 controller.on('cycle', d => { if (deadView) specPick += d; });
 controller.on('voice', down => friends.setPTT(down));
-controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, text => network.socket.emit('chat', { text, team: teamOnly }), () => {}); })
+controller.on('chat', teamOnly => { if (!playing) return; ui.openChat(teamOnly, text => network.emit('chat', { text, team: teamOnly }), () => {}); })
   .on('radio', () => { if (!playing) return; controller.radioOpen = !controller.radioOpen; ui.radioMenu(controller.radioOpen ? RADIO : null); })
-  .on('radioPick', n => { controller.radioOpen = false; ui.radioMenu(null); if (RADIO[n - 1]) network.socket.emit('radio', n - 1); })
+  .on('radioPick', n => { controller.radioOpen = false; ui.radioMenu(null); if (RADIO[n - 1]) network.emit('radio', n - 1); })
   .on('ping', () => {
     if (!playing || !world.map) return;
     const f = V.set(0, 0, -1).applyQuaternion(world.camera.quaternion), o = world.camera.position;
     const hit = world.map.collider.raycast(o.x, o.y, o.z, f.x, f.y, f.z, 90);
-    if (hit) network.socket.emit('ping', { x: hit.x, y: hit.y, z: hit.z });
+    if (hit) network.emit('ping', { x: hit.x, y: hit.y, z: hit.z });
   });
 
 // ---------------------------------------------------------------------------------------------- matchmaking (CS2-style)
@@ -414,6 +424,14 @@ function refreshLobby() {
 }
 // ---- skin market (server-priced; see shared/economy.js)
 let market = {}, marketNow = Date.now(), marketAt = performance.now(), marketTimer = 0;
+/** Friends → player name: their public card (inventory + stats), or a lock when they made it private. */
+friends.viewProfile = async name => {
+  try {
+    await network.connect();
+    const { profile: u } = await network.request('profile:view', name);
+    ui.playerProfile(u, { icon: skinIcon, finishes: FINISHES, eco, market, now: marketNow + (performance.now() - marketAt) });
+  } catch (e) { ui.toast(e.message === 'nouser' ? 'O‘yinchi topilmadi.' : 'Profilni ochib bo‘lmadi.'); }
+};
 async function loadMarket() { try { const r = await network.request('market'); market = r.market || {}; marketNow = r.now || Date.now(); marketAt = performance.now(); } catch { /* offline: base prices */ } }
 const skinIcon = (w, f, wear = 0) => w === 'gloves'
   ? `<span class="glove-ico" data-swatch="${swatchKey(f, wear)}" style="background-image:url(${finishSwatch(f, wear)})"><svg viewBox="0 0 64 64"><path d="M14 60 V30 L10 14 a4 4 0 0 1 8-2 L22 26 V8 a4 4 0 0 1 8 0 V24 V6 a4 4 0 0 1 8 0 V24 V9 a4 4 0 0 1 8 0 V28 l4-8 a4 4 0 0 1 7 4 L50 44 V60 Z" fill="none" stroke="#0009" stroke-width="2.5"/></svg></span>`
@@ -476,7 +494,7 @@ function updateShowcase() {
     yandexSDK.showRewardedAd({
       onRewarded: () => {
         ui.revivedThisRound = true;
-        network.socket.emit('practice:revive', {}, res => {
+        network.request('practice:revive', {}).catch(e => ({ error: e.message })).then(res => {
           if (res?.ok) {
             ui.toast('Qayta tirildingiz!');
             try { controller.lock(); } catch {}
@@ -534,6 +552,13 @@ document.querySelector('#settings').onclick = () => ui.settings({ quality: world
   onBinds: b => { controller.setBinds(b || DEFAULT_BINDS); store.set('binds', JSON.stringify(controller.binds)); },
   onMouse: m => { controller.setMouse(m); store.set('mouse', JSON.stringify(controller.mouseOpts)); store.set('sens', controller.mouseOpts.sensitivity); },
   onFpsLimit: v => { pacer.setLimit(v); store.set('fpsLimit', pacer.limit); },
+  dprCap: world.dprCap ?? null, onDpr: v => { world.setPixelRatioCap(v); store.set('dprCap', v ?? 'auto'); },
+  localPractice: localPractice(), onLocalPractice: on => store.set('localPractice', on ? '1' : '0'),
+  account: !profile.demo && !!getToken(), privateProfile: !!profile.privateProfile,
+  onPrivateProfile: async on => {
+    try { const r = await network.request('account:update', { privateProfile: on }); adopt(profile, r.profile); ui.toast(on ? 'Profil yopildi.' : 'Profil ochildi.'); }
+    catch { ui.toast('Saqlab bo‘lmadi. Internetni tekshiring.'); }
+  },
   onQuality: q => { world.setQuality(q); store.set('quality', q); },
   viewmodel: viewmodelOpts, onViewmodel: vm => { Object.assign(viewmodelOpts, vm); applyViewmodel(); store.set('viewmodel', JSON.stringify(viewmodelOpts)); },
   onAutoQuality: () => { const r = detectQuality(world.renderer, true); world.setQuality(r.quality); store.set('quality', r.quality); pacer.setLimit(r.fps); store.set('fpsLimit', r.fps); return r; }, onVolume: v => { audio.setVolume(v); store.set('volume', v); } });
@@ -603,6 +628,7 @@ function frame(nowMs) {
     acc += dt; let steps = 0;
     while (acc >= DT && steps++ < 16) {
       const step = prediction.command(controller.sampleCommand(), network.viewTick(now));
+      if (network.local) network.local.tick(prediction.pending);   // offline practice: the room advances in lockstep
       if (step?.events) {
         controller.notify(step.events);
         if (step.events.footstep) audio.footstep(null, true, 0.55);

@@ -59,8 +59,8 @@ export class Friends {
       <form class="fr-search"><input id="fr-q" maxlength="16" placeholder="Foydalanuvchi nomini qidiring" spellcheck="false" autocomplete="off" value="${esc(this.query || '')}"><button class="primary">IZLASH</button></form>
       <div class="fr-list">
         <div id="fr-results">${this.resultsHTML()}</div>
-        ${incoming.length ? `<small class="fr-h">SO‘ROVLAR</small>${incoming.map(n => `<div class="fr-row"><span class="av">${esc(n[0].toUpperCase())}</span><b>${esc(n)}</b><button data-accept="${esc(n)}" class="ok">QABUL</button><button data-decline="${esc(n)}">RAD</button></div>`).join('')}` : ''}
-        <small class="fr-h">DO‘STLAR</small>${friends.length ? [...friends].sort((a, b) => order[a.status] - order[b.status]).map(f => `<div class="fr-row status-${f.status} ${f.status !== 'lobby' ? f.status : ''}"><span class="av">${esc(f.name[0].toUpperCase())}<i></i></span><div><b>${esc(f.name)}</b><small>${STATUS[f.status]}</small></div>
+        ${incoming.length ? `<small class="fr-h">SO‘ROVLAR</small>${incoming.map(n => `<div class="fr-row"><span class="av">${esc(n[0].toUpperCase())}</span><b class="fr-name" data-profile="${esc(n)}" title="Profilni ko‘rish">${esc(n)}</b><button data-accept="${esc(n)}" class="ok">QABUL</button><button data-decline="${esc(n)}">RAD</button></div>`).join('')}` : ''}
+        <small class="fr-h">DO‘STLAR</small>${friends.length ? [...friends].sort((a, b) => order[a.status] - order[b.status]).map(f => `<div class="fr-row status-${f.status} ${f.status !== 'lobby' ? f.status : ''}"><span class="av">${esc(f.name[0].toUpperCase())}<i></i></span><div><b class="fr-name" data-profile="${esc(f.name)}" title="Profilni ko‘rish">${esc(f.name)}</b><small>${STATUS[f.status]}</small></div>
           <button data-chat="${esc(f.name)}" title="Xabar">✉${this.unread.get(f.name) ? `<i class="badge">${this.unread.get(f.name)}</i>` : ''}</button><button data-invite="${esc(f.name)}" title="Partiyaga taklif" ${f.status === 'offline' || this.party?.members.includes(f.name) ? 'disabled' : ''}>＋</button><button data-call="${esc(f.name)}" title="Ovozli qo‘ng‘iroq" ${f.status === 'offline' || this.call ? 'disabled' : ''}>🎙</button><button data-remove="${esc(f.name)}" title="O‘chirish">×</button></div>`).join('') : '<p class="fr-note">Hali do‘stlar yo‘q. Yuqorida nom bo‘yicha qidiring.</p>'}
       </div>`;
     const $ = q => this.el.querySelector(q);
@@ -75,6 +75,7 @@ export class Friends {
     this.el.querySelectorAll('[data-decline]').forEach(b => b.onclick = () => this.act('friends:respond', { name: b.dataset.decline, accept: false }));
     this.el.querySelectorAll('[data-remove]').forEach(b => b.onclick = () => { if (confirm(`${b.dataset.remove} — do‘stlardan o‘chirilsinmi?`)) this.act('friends:remove', b.dataset.remove); });
     this.el.querySelectorAll('[data-chat]').forEach(b => b.onclick = () => this.openChat(b.dataset.chat));
+    this.el.querySelectorAll('[data-profile]').forEach(b => b.onclick = () => this.viewProfile?.(b.dataset.profile));
     this.el.querySelectorAll('[data-call]').forEach(b => b.onclick = () => this.startCall(b.dataset.call));
     this.el.querySelectorAll('[data-invite]').forEach(b => b.onclick = () => this.act('party:invite', b.dataset.invite, 'Taklif yuborildi.'));
   }
@@ -99,7 +100,7 @@ export class Friends {
   }
   resultsHTML() {
     const users = this.results; if (!users) return '';
-    return users.length ? users.map(u => `<div class="fr-row"><span class="av">${esc(u.name[0].toUpperCase())}</span><b>${esc(u.name)}</b>${u.friend ? '<small>DO‘ST</small>' : u.pending ? '<small>YUBORILGAN</small>' : `<button data-add="${esc(u.name)}" class="ok">QO‘SHISH</button>`}</div>`).join('') : '<p class="fr-note">Hech kim topilmadi.</p>';
+    return users.length ? users.map(u => `<div class="fr-row"><span class="av">${esc(u.name[0].toUpperCase())}</span><b class="fr-name" data-profile="${esc(u.name)}" title="Profilni ko‘rish">${esc(u.name)}</b>${u.friend ? '<small>DO‘ST</small>' : u.pending ? '<small>YUBORILGAN</small>' : `<button data-add="${esc(u.name)}" class="ok">QO‘SHISH</button>`}</div>`).join('') : '<p class="fr-note">Hech kim topilmadi.</p>';
   }
   /** Search results live in state so presence / list refreshes never wipe them. */
   async search(q) {

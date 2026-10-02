@@ -91,3 +91,18 @@ test('friends: search, request, accept, messages only between friends, unfriend'
   a.unfriend('burgut', 'Lochin');
   assert.ok(!a.areFriends('lochin', 'burgut')); assert.deepEqual(a.history('lochin', 'Burgut'), []);
 });
+
+test('profiles: public card shows inventory and stats, a private one only the name (owner still sees all)', async () => {
+  const a = await fresh();
+  await a.register('alice', 'secret1'); await a.register('bob', 'secret2');
+  a.users.alice.items.push({ id: 'i1', weapon: 'ak47', finish: 'tiger', wear: 0.12, seed: 3, bought: 100 });
+  const open = a.view('bob', 'Alice').profile;
+  assert.equal(open.private, false); assert.equal(open.items.length, 1); assert.equal(open.items[0].bought, undefined);
+  assert.equal(open.salt, undefined); assert.equal(open.hash, undefined); assert.equal(open.coins, undefined);
+  a.update('alice', { privateProfile: true });
+  const closed = a.view('bob', 'alice').profile;
+  assert.deepEqual(Object.keys(closed).sort(), ['hue', 'name', 'private']); assert.equal(closed.private, true);
+  assert.equal(a.view('alice', 'alice').profile.items.length, 1);
+  a.update('alice', { privateProfile: 'yes' }); assert.equal(a.users.alice.privateProfile, true, 'only booleans change the flag');
+  assert.throws(() => a.view('bob', 'nobody'), /nouser/);
+});

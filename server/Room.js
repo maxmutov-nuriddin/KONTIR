@@ -1,6 +1,5 @@
 // One authoritative 5v5 match: lobby/team allocation, MR12 round state machine, economy, combat with
 // lag-compensated hit registration, grenades, bomb objective and bots.
-import { randomBytes } from 'node:crypto';
 import { DT, TICK_RATE, RULES, MOVEMENT as M, TEAM_IDS, neutralInput, otherTeam, clamp, validCommand } from '../shared/constants.js';
 import { createPlayer, eyeHeight, horizontalSpeed, stepPlayer } from '../shared/movement.js';
 import { Inventory } from '../shared/inventory.js';
@@ -8,6 +7,11 @@ import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, loadSpeedMul, inaccu
 import { LagCompensator } from './LagCompensator.js';
 import { PENETRATION } from '../shared/collision.js';
 import { BotBrain } from './Bots.js';
+
+const CMD_BUFFER_TARGET = 2;    // commands kept queued before draining two per tick (absorbs ~30 ms of send jitter)
+const CMD_BUDGET_CAP = 32;      // max ticks of catch-up after a stall (~500 ms)
+const CMD_STALL_TICKS = 24;     // grounded: wait up to ~375 ms for late input before running neutral commands
+const CMD_STALL_AIR_TICKS = 8;  // airborne: ~125 ms, so going silent cannot pause a fall (hover)
 
 const BOT_NAMES = ['NOVA', 'GHOST', 'ATLAS', 'VIPER', 'RAVEN', 'ORION', 'COBRA', 'DELTA', 'SABLE', 'ONYX', 'KESTREL', 'BISHOP', 'TITAN', 'MAMBA', 'FALCON', 'JACKAL', 'HYDRA', 'LYNX', 'RONIN', 'WOLF'];
 const secondsToTick = s => Math.round(s * TICK_RATE);
@@ -89,7 +93,7 @@ export class Room {
     return p;
   }
   nextIndex() { const used = new Set([...this.players.values()].map(p => p.index)); let i = 0; while (used.has(i)) i++; return i; }
-  addBot(team) { const id = `bot-${randomBytes(3).toString('hex')}`; const used = new Set([...this.players.values()].map(q => q.name)); const name = BOT_NAMES.find(n => !used.has(n)) || BOT_NAMES[this.players.size % BOT_NAMES.length]; return this.add(id, name, team, true); }
+  addBot(team) { const id = `bot-${Math.random().toString(16).slice(2, 8)}`; const used = new Set([...this.players.values()].map(q => q.name)); const name = BOT_NAMES.find(n => !used.has(n)) || BOT_NAMES[this.players.size % BOT_NAMES.length]; return this.add(id, name, team, true); }
   /** Fills each side with bots up to `counts[team]` (default 5 per side). */
   fillBots(counts = null) { for (const team of TEAM_IDS) { const want = Math.min(RULES.perTeam, counts?.[team] ?? RULES.perTeam); while (this.count(team) < want) if (!this.addBot(team)) break; } }
 
@@ -692,16 +696,31 @@ export class Room {
   }
 
   // ---------------------------------------------------------------------------------------- tick driver
-  nextCommand(p) {
-    if (p.bot) return p.brain.command(p);
-    if (p.queue.length) {
-      const cmd = p.queue.shift(); p.ack = cmd.seq; p.lastExecutedTick = this.tick;
-      return cmd;
+  /**
+   * Commands to run for `p` this tick. The server replays exactly the client's command stream (no invented input), so
+   * client prediction never diverges on packet jitter:
+   *  - an empty queue just waits (the late commands are run when they arrive) — inventing a repeat here used to put the
+   *    server one tick ahead of the client per hiccup, which snapped the camera back and grew the input delay for good;
+   *  - a backlog is drained at up to 2 commands per tick, so latency recovers after a burst;
+   *  - a tick budget (+1 per tick, capped) bounds the catch-up: a client can never run faster than real time.
+   */
+  nextCommands(p) {
+    if (p.bot) return [p.brain.command(p)];
+    p.cmdBudget = Math.min(CMD_BUDGET_CAP, (p.cmdBudget ?? 1) + 1);
+    const out = [];
+    const take = () => { const cmd = p.queue.shift(); p.ack = cmd.seq; p.lastExecutedTick = this.tick; p.cmdBudget--; out.push(cmd); };
+    if (p.queue.length && p.cmdBudget >= 1) {
+      take();
+      if (p.queue.length > CMD_BUFFER_TARGET && p.cmdBudget >= 1) take();
+      return out;
     }
-    // Hold continuous input across brief packet jitter, never repeat button edges.
-    if (this.tick - p.lastExecutedTick <= 8) return { ...p.cmd, slot: 0, quick: false, drop: false };
-    // Gravity, friction and weapon timers keep running even if a client stops sending.
-    return { ...neutralInput(), ...p.lastLook, crouch: p.char.crouch > 0.5 };
+    // Gravity, friction and weapon timers keep running when a client stops sending for a while (lag spike / alt-tab).
+    // The ticks spent waiting are owed too (up to 2 per tick), so going silent cannot pause gravity / hover.
+    if (this.tick - p.lastExecutedTick > (p.char.grounded ? CMD_STALL_TICKS : CMD_STALL_AIR_TICKS)) {
+      const n = Math.min(2, Math.max(1, Math.floor(p.cmdBudget))); p.cmdBudget = Math.max(0, p.cmdBudget - n);
+      for (let i = 0; i < n; i++) out.push({ ...neutralInput(), ...p.lastLook, crouch: p.char.crouch > 0.5 });
+    }
+    return out;
   }
 
   runCommand(p, cmd) {
@@ -761,10 +780,9 @@ export class Room {
     // ---- players
     for (const p of this.players.values()) {
       if (!p.alive && this.phase === 'warmup' && this.tick >= p.respawnTick && p.respawnTick) { this.respawn(p); p.respawnTick = 0; }
-      let cmd = this.nextCommand(p);
-      p.consumed = !!cmd;
-      if (!cmd) continue;
-      this.runCommand(p, cmd);
+      const cmds = this.nextCommands(p);
+      p.consumed = cmds.length > 0;
+      for (const cmd of cmds) this.runCommand(p, cmd);
 
     }
     if (this.phase === 'warmup') for (const p of this.players.values()) p.money = RULES.maxMoney;

@@ -519,3 +519,12 @@ button.skin-card:hover { border-color: var(--rar); }
 
 .grid-break { grid-column: 1 / -1; margin: 10px 0 0; font: 800 11px 'DM Sans', sans-serif; letter-spacing: 1.6px; color: var(--gold); }
 .inv .skin-grid { max-height: calc(100vh - 210px); }
+/* player profile (Friends → name) */
+.fr-name { cursor: pointer; } .fr-name:hover { color: var(--gold); text-decoration: underline; }
+#modal:has(.pp-stats) { width: min(980px, 96vw); }
+.pp-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 6px 0 16px; }
+.pp-stats div { background: #ffffff08; border: 1px solid #ffffff14; border-radius: 4px; padding: 8px 10px; }
+.pp-stats small { display: block; font: 700 10px 'DM Sans', sans-serif; letter-spacing: 1.4px; color: #9fb0a8; }
+.pp-stats b { font: 800 22px 'Barlow Condensed', sans-serif; }
+.pp-grid { max-height: 52vh; }
+@media (max-width: 700px) { .pp-stats { grid-template-columns: repeat(3, 1fr); } }

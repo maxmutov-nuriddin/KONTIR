@@ -235,6 +235,26 @@ export class UI {
     document.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const it = items.find(i => i.id === b.dataset.eq); onEquip(it.weapon, p.equipped?.[it.weapon] === it.id ? null : it.id); });
     document.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => { if (b.dataset.armed) return onSell(b.dataset.sell); b.dataset.armed = '1'; b.textContent = 'TASDIQLANG?'; setTimeout(() => { delete b.dataset.armed; this.onRefresh?.(); }, 2500); });
   }
+  /** Another player's card (Friends → name): level, stats and inventory, or a lock when the profile is private. */
+  playerProfile(u, ctx) {
+    const { icon, finishes, eco, market, now } = ctx, W = this.weaponsTable;
+    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const head = `<small class="eyebrow">OPERATOR PROFILI${u.online ? ' · ONLAYN' : ''}</small><h2>${esc(u.name)}</h2>`;
+    if (u.private) return this.dialog(`${head}<p class="note">🔒 Bu profil yopiq. O‘yinchi inventari va statistikasini yashirgan.</p>`);
+    const items = [...(u.items || [])].sort((a, b) => eco.skinPrice(b.weapon, b.finish, b.wear, market, now) - eco.skinPrice(a.weapon, a.finish, a.wear, market, now));
+    const worth = items.reduce((t, it) => t + eco.skinPrice(it.weapon, it.finish, it.wear, market, now), 0);
+    const kd = u.deaths ? (u.kills / u.deaths).toFixed(2) : String(u.kills || 0), hs = u.kills ? Math.round((u.headshots || 0) / u.kills * 100) : 0;
+    const stat = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+    const card = it => {
+      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = u.equipped?.[it.weapon] === it.id;
+      return `<div class="skin-card ${on ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}</div>
+        <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}${on ? ' · KIYILGAN' : ''}</small>
+        <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div></div>`;
+    };
+    this.dialog(`${head}<div class="pp-stats">${stat('DARAJA', 1 + Math.floor((u.xp || 0) / 1000))}${stat('REYTING', u.rating ?? '—')}${stat('O‘YINLAR', u.matches || 0)}${stat('G‘ALABA', u.wins || 0)}${stat('K/D', kd)}${stat('HS', hs + '%')}</div>
+      <div class="section-label">INVENTAR · ${items.length} ta skin · ◈ ${worth}</div>
+      ${items.length ? `<div class="skin-grid pp-grid">${items.map(card).join('')}</div>` : '<p class="note">Inventar bo‘sh.</p>'}`);
+  }
   /** Market: pick a category, a skin, then a wear tier (each tier has its own price; demand moves prices). */
   renderStore(p, ctx) {
     const { icon, finishes, eco, market, now, onBuy } = ctx, W = this.weaponsTable;
@@ -338,6 +358,12 @@ export class UI {
       <div class="set-page" data-page="general">
         <div class="setting"><span>Grafika</span><div class="seg" id="quality-seg">${['low', 'medium', 'crisp', 'high', 'ultra'].map(q => `<button data-q="${q}" class="${q === o.quality ? 'on' : ''}">${{ low: 'TEZKOR', medium: 'O‘RTA', crisp: 'TINIQ', high: 'YUQORI', ultra: 'ULTRA' }[q]}</button>`).join('')}<button id="quality-auto" class="auto" title="Qurilmaga qarab avtomatik tanlash">⚡ AVTO</button></div></div><small id="quality-auto-note" class="setting-note"></small>
         <div class="setting"><span>FPS limiti</span><div class="seg" id="fps-seg">${[[30, '30'], [60, '60'], [120, '120'], [144, '144'], [0, 'MAX']].map(([v, l]) => `<button data-fps="${v}" class="${v === o.fpsLimit ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="setting"><span>Ruxsat</span><div class="seg" id="dpr-seg">${[[null, 'AUTO'], [1, '1x'], [1.5, '1.5x'], [2, '2x']].map(([v, l]) => `<button data-dpr="${v ?? 'auto'}" class="${v === (o.dprCap ?? null) ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <p class="note">Ruxsat past bo‘lsa video karta kamroq ishlaydi: noutbuk kamroq qiziydi, FPS barqaror bo‘ladi. AUTO — grafika sifatiga qarab.</p>
+        <div class="setting"><span>Botlar bilan mashq</span><div class="seg" id="lp-seg">${[[true, 'LOKAL · PING 0'], [false, 'SERVER']].map(([v, l]) => `<button data-lp="${v ? 1 : 0}" class="${v === o.localPractice ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <p class="note">LOKAL: o‘yin brauzeringizda ishlaydi — ping 0, internet kerak emas, lekin mashq uchun XP / tanga berilmaydi. SERVER: mukofotli, lekin ping bor.</p>
+        ${o.account ? `<div class="setting"><span>Profil</span><div class="seg" id="priv-seg">${[[false, 'OCHIQ'], [true, 'YOPIQ']].map(([v, l]) => `<button data-priv="${v ? 1 : 0}" class="${v === o.privateProfile ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <p class="note">OCHIQ: boshqa o‘yinchilar inventaringiz va statistikangizni ko‘ra oladi. YOPIQ: faqat nomingiz ko‘rinadi.</p>` : ''}
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
         <div class="setting"><span>Qurol joylashuvi</span><div class="seg" id="vm-preset">${Object.entries(VM_PRESETS).map(([k, v]) => `<button data-vm="${k}">${v.name}</button>`).join('')}</div></div>
         ${[['x', 'CHAP ↔ O‘NG', -3, 3], ['y', 'PAST ↔ BALAND', -3, 3], ['z', 'YAQIN ↔ UZOQ', -3, 3], ['fov', 'QUROL FOV', 50, 72]].map(([k, l, a, b]) => `<label for="vm-${k}">${l} <b id="vm-${k}-val">${o.viewmodel[k]}</b></label><input id="vm-${k}" type="range" min="${a}" max="${b}" step="${k === 'fov' ? 1 : 0.5}" value="${o.viewmodel[k]}">`).join('')}
@@ -355,6 +381,10 @@ export class UI {
     document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-q]').forEach(x => x.classList.toggle('on', x === b)); o.onQuality(b.dataset.q); });
     document.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-fps]').forEach(x => x.classList.toggle('on', x === b)); o.onFpsLimit(Number(b.dataset.fps)); });
     $('#volume').oninput = e => o.onVolume(Number(e.target.value));
+    const seg = (attr, fn) => document.querySelectorAll(`[${attr}]`).forEach(b => b.onclick = () => { document.querySelectorAll(`[${attr}]`).forEach(x => x.classList.toggle('on', x === b)); fn(b.getAttribute(attr)); });
+    seg('data-dpr', v => o.onDpr?.(v === 'auto' ? null : Number(v)));
+    seg('data-lp', v => o.onLocalPractice?.(v === '1'));
+    seg('data-priv', v => o.onPrivateProfile?.(v === '1'));
     const vmSet = vm => { for (const k of ['x', 'y', 'z', 'fov']) { $(`#vm-${k}`).value = vm[k]; $(`#vm-${k}-val`).textContent = vm[k]; } o.onViewmodel?.(vm); };
     for (const k of ['x', 'y', 'z', 'fov']) $(`#vm-${k}`).oninput = () => vmSet({ x: +$('#vm-x').value, y: +$('#vm-y').value, z: +$('#vm-z').value, fov: +$('#vm-fov').value });
     document.querySelectorAll('[data-vm]').forEach(b => b.onclick = () => { const { name, ...vm } = VM_PRESETS[b.dataset.vm]; vmSet(vm); });
