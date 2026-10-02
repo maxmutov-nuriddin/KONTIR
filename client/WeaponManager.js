@@ -68,9 +68,15 @@ export class WeaponManager {
   get previousSlot() { return this.inventory.previous; }
   on(name, fn) { this.handlers[name] = fn; return this; }
   emit(name, data) { this.handlers[name]?.(data); }
+  /** New arms for the current team + equipped agent (sleeves) and glove skin; re-attached to the active rig. */
+  rebuildArms() {
+    if (this.arms) { this.arms.removeFromParent(); disposeTree(this.arms); }
+    this.arms = buildArms(this.team, this.agentFor?.()); this.arms.traverse(o => { if (o.isMesh) o.castShadow = false; });
+    this.setActive(this.activeId, true);
+  }
   setTeam(team) {
     if (team === this.team) return;
-    this.team = team; disposeTree(this.arms); this.arms = buildArms(team); this.inventory.team = team; this.setActive(this.activeId, true);
+    this.team = team; this.inventory.team = team; this.rebuildArms();
     // skins are equipped per side: repaint the gloves and every rig for the new team
     this.refreshFinish('gloves'); for (const r of this.rigs.values()) this.paint(r, r.id);
   }
@@ -143,6 +149,7 @@ export class WeaponManager {
   /** Re-applies the profile's finish after it changed in the inventory. */
   refreshFinish(id) {
     if (id === 'gloves') return applyGloveFinish(this.arms, this.finishFor?.('gloves'), this.wearFor?.('gloves') || 0);
+    if (id === 'agent') { if ((this.arms.userData.agent || undefined) !== (this.agentFor?.() || undefined)) { this.rebuildArms(); this.refreshFinish('gloves'); } return; }
     if (id === 'knife' && this.activeId === 'knife' && this.activeRig?.buildId !== this.buildId('knife')) return this.setActive('knife', true);
     const r = this.rigs.get(this.buildId(id)); if (r) this.paint(r, id);
   }

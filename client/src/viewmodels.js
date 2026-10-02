@@ -7,6 +7,7 @@ import { applyPBR } from './materials.js';
 import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { models } from './models.js';
 import { buildArms as makeArms, poseArms as placeArms } from './hands.js';
+import { AGENTS } from '../../shared/cosmetics.js';
 
 const V2 = (x, y) => new THREE.Vector2(x, y);
 let shared = null;
@@ -883,7 +884,7 @@ const HANDS = {
   sawedoff: { right: { p: [0.033, -0.08, 0.1], r: [0.15, 0.12, -R], elbow: [0.14, -0.4, 0.6], grip: 'grip' }, left: { p: [-0.006, -0.055, -0.27], r: [0.1, 0.1, 2.5], elbow: [-0.3, -0.38, 0.4], grip: 'wrap' } },
   molotov: { right: { p: [0.048, -0.02, 0.0], r: [0.2, 0.1, -R], elbow: [0.24, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.05, 0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
   pistol: { right: { p: [0.03, -0.075, 0.06], r: [0.2, 0.12, -R], elbow: [0.16, -0.36, 0.6], grip: 'grip' }, left: { p: [-0.035, -0.085, 0.045], r: [0.25, -0.2, R], elbow: [-0.2, -0.34, 0.55], grip: 'wrap' } },
-  knife: { right: { p: [0.03, -0.042, 0.072], r: [Math.PI, R, 0], elbow: [0.2, -0.34, 0.3], grip: 'grip' }, left: null },   // hammer grip: knuckle axis along the handle, thumb toward the guard, palm under it, fingers curling up around it
+  knife: { right: { p: [-0.0042, -0.0401, 0.07], r: [R, Math.PI / 4, R], elbow: [0.22, -0.32, 0.3], grip: 'grip' }, left: null },   // hammer grip: fist closed round the handle, fingers wrapping over it, wrist and sleeve toward the lower right
   grenade: { right: { p: [0.03, -0.035, 0.0], r: [0.2, 0.1, -R], elbow: [0.22, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.045, -0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
   c4: { right: { p: [0.085, -0.035, 0.03], r: [0.15, 0.1, -R], elbow: [0.22, -0.34, 0.55], grip: 'wrap' }, left: { p: [-0.085, -0.035, 0.03], r: [0.15, -0.1, R], elbow: [-0.24, -0.34, 0.55], grip: 'wrap' } },
 };
@@ -973,7 +974,28 @@ export function buildWeaponRigTP(id) {
 const sleeves = { TERRORIST: 0x7a6a49, COUNTER_TERRORIST: 0x6f6a50 };   // CT: multicam base (matches the operator)
 const armMats = {};
 /** First-person arms: sleeved forearms + gloved hands, posed by poseArms(arms, rig). */
-export function buildArms(team = 'TERRORIST') {
+/** Sleeve camo for an agent: the agent's uniform with its three camo tones (tileable canvas, cached per agent). */
+function agentSleeve(agent) {
+  const key = 'agent:' + agent;
+  if (armMats[key]) return armMats[key];
+  const pal = AGENTS[agent].pal, hex = n => `#${(n >>> 0).toString(16).padStart(6, '0')}`, c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'); g.fillStyle = hex(pal.uniform); g.fillRect(0, 0, 256, 256);
+  let seed = [...agent].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (const col of pal.camo || []) for (let i = 0; i < 14; i++) {
+    const x = rnd() * 256, y = rnd() * 256, r = 14 + rnd() * 30; g.fillStyle = hex(col);
+    for (const dx of [-256, 0, 256]) for (const dy of [-256, 0, 256]) { g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, rr = r * (0.6 + rnd() * 0.5); g.lineTo(x + dx + Math.cos(a) * rr, y + dy + Math.sin(a) * rr * 0.7); } g.closePath(); g.fill(); }
+  }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1.5, 3); tex.userData.shared = true;
+  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }); m.userData.shared = true;
+  return (armMats[key] = m);
+}
+/** `agent` (character skin) recolours the sleeves to match the operator you are playing. */
+export function buildArms(team = 'TERRORIST', agent) {
+  if (agent && AGENTS[agent]?.side === team) {
+    const arms = buildArms(team);
+    for (const k of ['right', 'left']) arms.userData[k].userData.sleeve.material = agentSleeve(agent);
+    arms.userData.agent = agent; return arms;
+  }
   if (!armMats.glove) { armMats.glove = new THREE.MeshStandardMaterial({ color: 0x1e1f21, roughness: 0.72, metalness: 0 }); armMats.glove.userData.shared = true; applyPBR(armMats.glove, 'polymer', { size: 256, normalScale: 0.6, procedural: true }); }
   if (!armMats['glove' + team]) { const gm = armMats.glove.clone(); gm.color.set(team === 'TERRORIST' ? 0x6a5a44 : 0x6c5c45); gm.userData.shared = true; gm.userData.glove = true; armMats['glove' + team] = gm; }
   if (!armMats[team]) { const m = new THREE.MeshStandardMaterial({ color: sleeves[team], roughness: 1 }); applyPBR(m, 'cloth', { size: 256, normalScale: 1, procedural: true }); m.userData.shared = true; armMats[team] = m; }

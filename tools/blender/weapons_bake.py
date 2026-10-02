@@ -13,6 +13,7 @@ SRC = {
     'darkMetal':  ('receiver',  dict(base=0x2a2d30, rough=0.48, metal=0.85, kind='paint', wear=0.55)),
     'blackSteel': ('receiver',  dict(base=0x1c1e21, rough=0.42, metal=0.9, kind='paint', wear=0.45)),
     'silver':     ('receiver',  dict(base=0xa9adb1, rough=0.32, metal=1.0, kind='metal', wear=0.25)),
+    'blade':      ('receiver',  dict(base=0xd2d7dc, rough=0.36, metal=0.88, kind='metal', wear=0.12)),   # knife blades (take skins)
     'oliveMetal': ('receiver',  dict(base=0x4f573a, rough=0.55, metal=0.4, kind='paint', wear=0.6)),
     'polymer':    ('furniture', dict(base=0x222325, rough=0.72, metal=0.0, kind='plaster', wear=0.12, scale=4, bump=0.4)),
     'olivePoly':  ('furniture', dict(base=0x3c4534, rough=0.72, metal=0.0, kind='plaster', wear=0.12, scale=4, bump=0.4)),

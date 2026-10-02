@@ -58,6 +58,7 @@ const ctSide = () => weapons.team === 'COUNTER_TERRORIST';
 weapons.finishFor = id => (ctSide() ? profile.finishesCT : profile.finishes)?.[id];
 weapons.wearFor = id => (ctSide() ? profile.wearsCT : profile.wears)?.[id] || 0;
 weapons.modelFor = id => (ctSide() ? profile.modelsCT : profile.models)?.[id];
+weapons.agentFor = () => (ctSide() ? profile.finishesCT?.agent_ct : profile.finishes?.agent_t);
 const readJSON = (k, d) => { try { return JSON.parse(store.get(k, '') || 'null') ?? d; } catch { return d; } };
 controller.setBinds(readJSON('binds', DEFAULT_BINDS));
 controller.setMouse({ ...DEFAULT_MOUSE, sensitivity: Number(store.get('sens', 0.6)), ...readJSON('mouse', {}) });
@@ -87,7 +88,7 @@ async function authSubmit(mode, username, password) {
     return null;
   } catch (e) { return AUTH_ERRORS[e.message] || 'Server xatosi. Qayta urinib ko‘ring.'; }
 }
-function applyAccount() { for (const w of [...Object.keys(WEAPONS), 'gloves']) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); friends.hangup(true); friends.chatWith = null; friends.refresh(); }
+function applyAccount() { weapons.refreshFinish?.('agent'); for (const w of [...Object.keys(WEAPONS), 'gloves']) weapons.refreshFinish?.(w); refreshLobby(); updateShowcase(); friends.hangup(true); friends.chatWith = null; friends.refresh(); }
 function signOut(notify = true) {
   const tk = getToken(); if (tk && network.socket.connected) network.socket.emit('auth:logout', tk);
   setToken(null); adopt(profile, loadProfile()); applyAccount(); if (notify) ui.toast('Akkauntdan chiqildi.');
@@ -295,6 +296,8 @@ async function enter(result, my) {
     if (!network.connected) throw new Error('Xarita yuklanayotganda aloqa uzildi. Qayta kiring.');
     if (my !== generation) { network.leave(); return; }
     weapons.setTeam(result.team);
+    // re-apply every cosmetic on entry (gloves / agent sleeves / knife model / weapon skins), whatever happened in the lobby
+    weapons.refreshFinish('agent'); for (const w of [...Object.keys(WEAPONS), 'gloves']) weapons.refreshFinish(w);
     ui.showBusy('GRAFIKA TAYYORLANMOQDA…');
     await world.prewarm(weapons).catch(() => {});
     if (my !== generation) { network.leave(); return; }
@@ -455,6 +458,7 @@ const skinIcon = (w, f, wear = 0) => eco.isAgentWeapon(w) ? agentIcon(f) : w ===
   : `<img alt="" data-icon="${w}:${f || 'standard'}" src="${iconSrc(w, f || 'standard')}">`;
 const ERR = { coins: 'KONTI yetarli emas.', item: 'Bu skin mavjud emas.', shop: 'Bu taklif bugungi do‘konda yo‘q (do‘kon yangilandi).', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
 function syncSkins() {
+  setTimeout(() => weapons.refreshFinish?.('agent'));
   const ct = eco.equippedView(profile.items, profile.equippedCT || {});
   Object.assign(profile, eco.equippedView(profile.items, profile.equipped), { finishesCT: ct.finishes, wearsCT: ct.wears, modelsCT: ct.models }); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
 async function buySkin(req) {

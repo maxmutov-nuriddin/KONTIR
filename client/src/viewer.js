@@ -62,7 +62,9 @@ if (mode === 'gun') {
   // rig inspection: the first-person rig (weapon + sleeves + hands) seen from outside
   const vs = new THREE.Scene(); vs.background = new THREE.Color(0x8c9aa1); environment(vs, sunDir); vs.environmentIntensity = 0.7;
   vs.add(new THREE.HemisphereLight(0xbcd3f2, 0xa48b68, 0.4)); vs.environmentIntensity = 0.9; { const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); vs.add(rim); } const l = new THREE.DirectionalLight(0xffe1b0, 3.5); l.position.set(-1.5, 3, 2); vs.add(l);
-  const wm = new WeaponManager(vs, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
+  const km = id.startsWith('knife_') ? id.slice(6) : null, wid = km ? 'knife' : id;
+  const wm = new WeaponManager(vs, team); if (km) wm.modelFor = () => km; wm.inventory.give(wid, { select: true }); if (km) wm.inventory.select(3, { force: true }); wm.inventory.drawUntil = 0; wm.setActive(wid);
+  if (q.get('hr')) { const n = k => q.get(k).split(',').map(Number), R = wm.activeRig; R.hands = { ...R.hands, right: { ...R.hands.right, p: n('hp'), r: n('hr'), elbow: q.get('he') ? n('he') : R.hands.right.elbow, grip: q.get('hg') || R.hands.right.grip } }; wm.setActive(wid, true); }
   forceReload(wm);
   const dyn = new ViewmodelDynamics(); camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 20);
   const cam = new THREE.Vector3(...(q.get('cam') || '0.9,0.35,0.5').split(',').map(Number)), at = new THREE.Vector3(...(q.get('at') || '0.1,-0.15,-0.4').split(',').map(Number));
@@ -78,6 +80,8 @@ if (mode === 'gun') {
   // knife models (knife_karambit…) are shown the way the game does: the 'knife' weapon with that model equipped
   const km = id.startsWith('knife_') ? id.slice(6) : null, wid = km ? 'knife' : id;
   const wm = new WeaponManager(viewScene, team); if (km) wm.modelFor = () => km; wm.inventory.give(wid, { select: true }); if (km) wm.inventory.select(3, { force: true }); wm.inventory.drawUntil = 0; wm.setActive(wid);
+  // pose tuning: &hp=x,y,z&hr=rx,ry,rz&he=ex,ey,ez&hg=grip overrides the right hand on the active rig
+  if (q.get('hr')) { const n = k => q.get(k).split(',').map(Number), R = wm.activeRig; R.hands = { ...R.hands, right: { ...R.hands.right, p: n('hp'), r: n('hr'), elbow: q.get('he') ? n('he') : R.hands.right.elbow, grip: q.get('hg') || R.hands.right.grip } }; wm.setActive(wid, true); }
   const dyn = new ViewmodelDynamics(); const grid = new THREE.GridHelper(4, 16, 0x556, 0x445); grid.position.set(0, -0.6, -1); if (q.get('grid')) viewScene.add(grid);
   window.__wm = wm;
   forceReload(wm);

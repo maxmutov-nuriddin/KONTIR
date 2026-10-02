@@ -541,3 +541,13 @@ button.skin-card:hover { border-color: var(--rar); }
 .skin-pic.big .agent-ico { width: 130px; height: 130px; }
 .skin-actions { flex-wrap: wrap; } .skin-actions .side-pick { flex: 1 1 100%; }
 .store-cats button i { font-style: normal; opacity: .6; font-size: 11px; margin-left: 4px; }
+/* store: head with balance + rotation timer chips, roomier cards */
+.store-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.store-meta { display: flex; gap: 8px; }
+.shop-chip { min-width: 120px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 4px; background: #0e1517; text-align: right; }
+.shop-chip small { display: block; font: 700 10px 'DM Sans', sans-serif; letter-spacing: 1.5px; color: #8fa09a; }
+.shop-chip b { font: 800 24px 'Barlow Condensed', sans-serif; color: var(--gold); }
+.shop-chip.timer b { color: #8ee07a; }
+.store .skin-card b { line-height: 1.25; }
+.store .skin-card .from { font-weight: 700; }
+.store-cats { flex-wrap: wrap; }
