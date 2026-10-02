@@ -52,10 +52,12 @@ export class Prediction {
     this.char = { ...me.char };
     if (me.inv) this.weapons.load(me.inv);
     for (const cmd of this.pending) this.simulate(this.char, cmd, state.phase, me.alive, true);
-    const error = Math.hypot(before.x - this.char.x, before.y - this.char.y, before.z - this.char.z);
-    if (error > 2.5 || !me.alive) this.offset = { x: 0, y: 0, z: 0 };
-    else { this.offset.x += before.x - this.char.x; this.offset.y += before.y - this.char.y; this.offset.z += before.z - this.char.z; }
-    this.prev = { ...this.char, x: this.char.x, y: this.char.y, z: this.char.z };
+    const dx = before.x - this.char.x, dy = before.y - this.char.y, dz = before.z - this.char.z;
+    if (Math.hypot(dx, dy, dz) > 2.5 || !me.alive) { this.offset = { x: 0, y: 0, z: 0 }; this.prev = { ...this.char }; return false; }
+    this.offset.x += dx; this.offset.y += dy; this.offset.z += dz;
+    // shift prev by the same correction so lerp(prev, char, alpha) stays continuous within the frame (no pop per snapshot)
+    const prev = this.prev || before;
+    this.prev = { ...this.char, x: prev.x - dx, y: prev.y - dy, z: prev.z - dz };
     return false;
   }
   smooth(dt) { const k = Math.exp(-14 * dt); this.offset.x *= k; this.offset.y *= k; this.offset.z *= k; }

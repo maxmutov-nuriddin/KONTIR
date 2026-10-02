@@ -138,6 +138,6 @@ export function applyGloveFinish(arms, id, wear = 0) {
     if (!o.isMesh) return;
     o.userData.baseMaterial ??= o.material; const base = o.userData.baseMaterial;
     if (!base.userData?.glove) return;
-    o.material = id && FINISHES[id] ? finishMaterial(base, id, wear) : base;
+    o.material = id && id !== 'standard' && FINISHES[id] ? finishMaterial(base, id, wear) : base;
   });
 }

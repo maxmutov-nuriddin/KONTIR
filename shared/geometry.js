@@ -51,7 +51,7 @@ export function rampMesh(name, material, cx, baseY, cz, w, l, h, dir, tile = 4) 
   const tris = [[0, 1, 5], [0, 5, 4], [3, 2, 1], [3, 1, 0], [2, 5, 1], [3, 0, 4], [3, 4, 5], [3, 5, 2]];
   const positions = [], indices = [], uvs = [];
   for (const t of tris) {
-    for (const k of t) { const p = pts[k]; positions.push(...p); uvs.push(p[0] / tile, p[2] / tile); }
+    for (const k of t) positions.push(...pts[k]);
     const b = positions.length / 3;
     indices.push(b - 3, b - 2, b - 1);
   }
@@ -67,6 +67,12 @@ export function rampMesh(name, material, cx, baseY, cz, w, l, h, dir, tile = 4) 
     const out = g[0] * (p[a] - centre[0]) + g[1] * (p[a + 1] - centre[1]) + g[2] * (p[a + 2] - centre[2]);
     if (out < 0) { g = g.map(v => -v); const t = indices[i + 1]; indices[i + 1] = indices[i + 2]; indices[i + 2] = t; }
     for (const k of [a, b, c]) { normals[k] = g[0]; normals[k + 1] = g[1]; normals[k + 2] = g[2]; }
+  }
+  // Box-project each face along its dominant normal axis so the vertical sides don't smear the texture.
+  for (let i = 0; i < positions.length; i += 3) {
+    const ax = Math.abs(normals[i]), ay = Math.abs(normals[i + 1]), az = Math.abs(normals[i + 2]);
+    const [u, v] = ay >= ax && ay >= az ? [0, 2] : ax >= az ? [2, 1] : [0, 1];
+    uvs.push(positions[i + u] / tile, positions[i + v] / tile);
   }
   return { name, material, positions: new Float32Array(positions), normals, uvs: new Float32Array(uvs), indices: new Uint32Array(indices) };
 }

@@ -19,13 +19,30 @@ import { textureSet } from './materials.js';
 
 // ---------------------------------------------------------------------------------------------- skinned (real model) path
 const CLIPS = { lowready: /low.?ready/i, idle: /idle|stand/i, walk: /walk/i, run: /run|jog|sprint/i, crouch: /crouch.*idle|crouch(?!.*walk)|squat/i, crouch_walk: /crouch.*walk|sneak/i, jump: /jump/i, death: /death|die|dying/i };
+// Operators must read against sun-baked walls: CT kit is darkened, and every operator gets a fresnel rim light so the
+// silhouette separates from same-coloured stone / plaster at range. Patched once per (source material, team).
+const readableCache = new Map();
+function readable(m, team) {
+  const key = m.uuid + team; if (readableCache.has(key)) return readableCache.get(key);
+  const out = m.clone(); out.userData.shared = true;
+  if (team === 'COUNTER_TERRORIST' && out.color) out.color.multiplyScalar(0.55);
+  const rim = shader => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance += vec3(0.42, 0.40, 0.36) * pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 2.5);`);
+  };
+  // the engine chains userData.shaderPatch after its own hooks (prepareMaterial); set onBeforeCompile too for un-adopted use
+  const prev = out.userData.shaderPatch;
+  out.userData.shaderPatch = prev ? sh => { prev(sh); rim(sh); } : rim; out.userData.shaderPatchKey = (out.userData.shaderPatchKey || '') + 'rim';
+  out.onBeforeCompile = rim; out.customProgramCacheKey = () => 'operatorRim';
+  readableCache.set(key, out); return out;
+}
 function buildSkinned(team, gltf) {
   const root = new THREE.Group(), body = cloneSkinned(gltf.scene);
   body.rotation.y = Math.PI;                                              // assets face +Z; operators face -Z
   root.add(body); body.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(body), h = box.max.y - box.min.y;
   if (h > 0.2) { const k = 1.8 / h; body.scale.multiplyScalar(k); body.position.y = -box.min.y * k; }
-  body.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  body.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material = [].concat(o.material).map(m => readable(m, team)); if (o.material.length === 1) o.material = o.material[0]; } });
   const bone = re => { let hit = null; body.traverse(o => { if (!hit && (o.isBone || o.type === 'Bone') && re.test(o.name)) hit = o; }); return hit; };
   const mixer = new THREE.AnimationMixer(body), actions = {};
   for (const [state, re] of Object.entries(CLIPS)) { const clip = gltf.animations.find(c => re.test(c.name)); if (clip) actions[state] = mixer.clipAction(clip); }

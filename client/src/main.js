@@ -13,7 +13,7 @@ import { AudioEngine } from './audio.js';
 import { loadProfile, saveProfile, recordMatch, rankOf, levelOf, adopt, getToken, setToken } from './profile.js';
 import { startI18n, setLang, getLang } from './i18n.js';
 import { Friends } from './friends.js';
-import { FINISHES, applyFinish, finishSwatch, swatchKey } from './finishes.js';
+import { FINISHES, applyFinish, applyGloveFinish, finishSwatch, swatchKey } from './finishes.js';
 import * as eco from '../../shared/economy.js';
 import { weaponIcon, iconSrc } from './icons.js';
 import { TouchControls } from './touch.js';
@@ -443,7 +443,7 @@ clearInterval(marketTimer); marketTimer = setInterval(() => { if (ui.view === 's
 function updateShowcase() {
   if (playing || !world.map) return;
   const side = team, rifle = side === 'TERRORIST' ? 'ak47' : profile.loadout.m4;
-  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => applyFinish(g, profile.finishes?.[rifle], weaponMaterials(), profile.wears?.[rifle] || 0) });
+  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => { applyFinish(g, profile.finishes?.[rifle], weaponMaterials(), profile.wears?.[rifle] || 0); applyGloveFinish(g, profile.finishes?.gloves, profile.wears?.gloves || 0); } });
 }
 {
   const nameEl = document.querySelector('#lobby-name');

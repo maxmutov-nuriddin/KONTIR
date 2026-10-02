@@ -14,7 +14,7 @@ export const RULES = Object.freeze({
   maxPlayers: 10,
   warmupSeconds: 20,
   freezeSeconds: 15,
-  buyAfterLiveSeconds: 15,   // the buy menu stays open this long after the round goes live
+  buyAfterLiveSeconds: 20,   // the buy menu stays open this long after the round goes live
   roundSeconds: 115,          // 1:55
   postRoundSeconds: 7,
   halftimeSeconds: 12,

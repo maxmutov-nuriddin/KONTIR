@@ -317,7 +317,7 @@ export class UI {
 
   controls() {
     this.dialog(`<small class="eyebrow">FIELD MANUAL</small><h2>Avval reja. Keyin harakat.</h2>
-      <p>MR12: 12 raund yarim, 13 raund yutgan jamoa g‘olib. Buy 15 s, raund 1:55, bomba 40 s. Defuse: 10 s, kit bilan 5 s.</p>
+      <p>MR12: 12 raund yarim, 13 raund yutgan jamoa g‘olib. Buy 20 s, raund 1:55, bomba 40 s. Defuse: 10 s, kit bilan 5 s.</p>
       <div class="control-grid"><kbd>W A S D</kbd><span>Harakat (250 u/s)</span><kbd>SHIFT</kbd><span>Jimgina yurish (130 u/s, qadam ovozi yo‘q)</span><kbd>CTRL / C</kbd><span>Cho‘kish (100 u/s)</span>
       <kbd>SPACE</kbd><span>Sakrash (havoda strafe)</span><kbd>1 – 5</kbd><span>Asosiy · Pistolet · Pichoq · Granata · C4</span><kbd>Q</kbd><span>Oxirgi qurolga qaytish</span>
       <kbd>LMB / RMB</kbd><span>Otish / pichoq sanchish · kuchsiz otish</span><kbd>R</kbd><span>Qayta o‘qlash</span><kbd>B</kbd><span>Xarid menyusi</span>
