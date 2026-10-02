@@ -27,7 +27,10 @@ export class Accounts {
     this.dirty = false;
     this.client = null;
     this.db = null;
+    this.snap = {};   // last state known to be in MongoDB, per user and top-level field (JSON strings)
+    this.pullTimer = null;
   }
+  static fields(u) { const o = {}; for (const [k, v] of Object.entries(u)) o[k] = JSON.stringify(v); return o; }
   async load() {
     try {
       const d = JSON.parse(await readFile(this.file, 'utf8'));
@@ -47,8 +50,9 @@ export class Accounts {
         const userDocs = await this.db.collection('users').find().toArray();
         for (const doc of userDocs) {
           const { _id, ...rest } = doc;
-          this.users[_id] = rest;
+          this.users[_id] = rest; this.snap[_id] = Accounts.fields(rest);
         }
+        this.pullTimer = setInterval(() => this.pull().catch(() => {}), 10000); this.pullTimer.unref?.();
 
         const tokenDocs = await this.db.collection('tokens').find().toArray();
         for (const doc of tokenDocs) {
@@ -85,9 +89,17 @@ export class Accounts {
 
         if (this.db) {
           try {
-            const userOps = Object.entries(this.users).map(([id, data]) => ({
-              replaceOne: { filter: { _id: id }, replacement: { _id: id, ...data }, upsert: true }
-            }));
+            // write only the fields this server changed, so manual edits in MongoDB are never overwritten
+            const userOps = [];
+            for (const [id, data] of Object.entries(this.users)) {
+              const cur = Accounts.fields(data), old = this.snap[id] || {}, $set = {}, $unset = {};
+              for (const k of Object.keys(cur)) if (cur[k] !== old[k]) $set[k] = data[k];
+              for (const k of Object.keys(old)) if (!(k in cur)) $unset[k] = '';
+              const update = {}; if (Object.keys($set).length) update.$set = $set; if (Object.keys($unset).length) update.$unset = $unset;
+              if (!Object.keys(update).length) continue;
+              userOps.push({ updateOne: { filter: { _id: id }, update, upsert: true } });
+              this.snap[id] = cur;
+            }
             if (userOps.length > 0) await this.db.collection('users').bulkWrite(userOps, { ordered: false });
 
             const tokenOps = Object.entries(this.tokens).map(([id, data]) => ({
@@ -109,7 +121,19 @@ export class Accounts {
     })().finally(() => { this.saving = null; });
     return this.saving;
   }
+  /** Picks up edits made directly in MongoDB: fields not changed locally since the last sync take the DB value. */
+  async pull() {
+    if (!this.db) return;
+    for (const doc of await this.db.collection('users').find().toArray()) {
+      const { _id, ...rest } = doc, u = this.users[_id];
+      if (!u) { this.users[_id] = rest; this.snap[_id] = Accounts.fields(rest); continue; }
+      const old = this.snap[_id] || {}, cur = Accounts.fields(u), db = Accounts.fields(rest);
+      for (const k of Object.keys(db)) if (db[k] !== old[k] && cur[k] === old[k]) { u[k] = rest[k]; old[k] = db[k]; }
+      this.snap[_id] = old;
+    }
+  }
   async close() {
+    clearInterval(this.pullTimer);
     if (this.client) {
       try { await this.client.close(); } catch { /* ignore */ }
       this.client = null;
