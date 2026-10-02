@@ -28,8 +28,8 @@ if (process.argv.includes('--if-missing')) {
 }
 
 const BUILT_IN = {
-  sarob: { build: buildSarob, name: 'SAROB', subtitle: 'Mirage layouti 1:1 — palace, T ramp, tetris, connector, window, underpass, apartments.', env: { sky: 'day', sun: [0.5, 0.7, 0.35], sunColor: '#ffdcaa', sunIntensity: 3.4, exposure: 1.0, fog: '#d8c3a0', fogDensity: 0.005, ambient: '#bccad6' } },
-  changtepa: { build: buildChangtepa, name: 'CHANGTEPA', subtitle: 'Dust II layouti 1:1 — long, pit, catwalk, short, mid doors, B tunnellari.', env: { sky: 'day', sun: [-0.35, 0.78, 0.45], sunColor: '#ffe0ae', sunIntensity: 3.5, exposure: 1.0, fog: '#dcc9a0', fogDensity: 0.005, ambient: '#b9c9d8' } },
+  sarob: { build: buildSarob, name: 'MIRAGE · SAROB', subtitle: 'Mirage layouti 1:1 — palace, T ramp, tetris, connector, window, underpass, apartments.', env: { sky: 'day', sun: [0.5, 0.7, 0.35], sunColor: '#ffdcaa', sunIntensity: 3.4, exposure: 1.0, fog: '#d8c3a0', fogDensity: 0.005, ambient: '#bccad6' } },
+  changtepa: { build: buildChangtepa, name: 'DUST II · CHANGTEPA', subtitle: 'Dust II layouti 1:1 — long, pit, catwalk, short, mid doors, B tunnellari.', env: { sky: 'day', sun: [-0.35, 0.78, 0.45], sunColor: '#ffe0ae', sunIntensity: 3.5, exposure: 1.0, fog: '#dcc9a0', fogDensity: 0.005, ambient: '#b9c9d8' } },
   qishloq: { build: buildQishloq, name: 'QISHLOQ', subtitle: 'Klassik “inferno” uslubi: banana, apartments, balcony, pit, library, arch.', env: { sky: 'day', sun: [-0.5, 0.62, 0.45], sunColor: '#ffd9a0', sunIntensity: 3.3, exposure: 1.0, fog: '#d6c09a', fogDensity: 0.005, ambient: '#bac7d2' } },
   ombor: { build: buildOmbor, name: 'OMBOR', subtitle: 'Klassik “cache” uslubi: A main, quad, mid white box, vents, checkers, heaven.', env: { sky: 'overcast', sun: [0.35, 0.66, -0.4], sunColor: '#eef2ff', sunIntensity: 2.8, exposure: 1.0, fog: '#a9b4b8', fogDensity: 0.007, ambient: '#a8b7c4' } },
   sahara: { build: buildSahara, name: 'SAHARA OUTPOST', subtitle: 'Cho‘l shahri. Uch yo‘lak, ko‘tarilgan A hududi.', env: { sky: 'day', sun: [-0.45, 0.72, 0.38], sunColor: '#ffe1b0', sunIntensity: 3.4, exposure: 1.0, fog: '#d9c9a6', fogDensity: 0.006, ambient: '#b7c8d6' } },
