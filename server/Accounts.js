@@ -7,7 +7,7 @@ import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { MongoClient } from 'mongodb';
 import { newStats, applyMatch, cleanChoices, migrateSkins } from '../shared/progress.js';
-import { skinPrice, validSkin, WEAR, marketKey, marketTrade, SELL_RATE, AD_REWARD, DOUBLE_WINDOW_MS, claimAd, equippedView } from '../shared/economy.js';
+import { skinPrice, validSkin, inShop, isAgentWeapon, WEAR, marketKey, marketTrade, SELL_RATE, AD_REWARD, DOUBLE_WINDOW_MS, claimAd, equippedView } from '../shared/economy.js';
 
 const scrypt = promisify(scryptCb);
 const TOKEN_TTL = 30 * 24 * 3600 * 1000;
@@ -142,12 +142,19 @@ export class Accounts {
   }
   public(u) {
     migrateSkins(u); const { salt, hash, friends, requests, lastGains, ...rest } = u, ct = equippedView(u.items, u.equippedCT);
-    return { ...rest, ...equippedView(u.items, u.equipped), finishesCT: ct.finishes, wearsCT: ct.wears, demo: false };
+    return { ...rest, ...equippedView(u.items, u.equipped), finishesCT: ct.finishes, wearsCT: ct.wears, modelsCT: ct.models, demo: false };
   }
   /** Equipped skins per side for the match server: { TERRORIST: { weapon: { finish, wear } }, COUNTER_TERRORIST: ... }. */
   skinsOf(key) {
     const u = this.users[key]; if (!u) return null; migrateSkins(u);
-    const side = map => { const v = equippedView(u.items, map), out = {}; for (const [w, finish] of Object.entries(v.finishes)) out[w] = { finish, wear: v.wears[w] }; return out; };
+    const side = map => {
+      const v = equippedView(u.items, map), out = {};
+      for (const [w, finish] of Object.entries(v.finishes)) {
+        if (w === 'agent_t' || w === 'agent_ct') out.agent = { finish };                               // character skin
+        else out[w] = v.models[w] ? { finish, wear: v.wears[w], model: v.models[w] } : { finish, wear: v.wears[w] };
+      }
+      return out;
+    };
     return { TERRORIST: side(u.equipped || {}), COUNTER_TERRORIST: side(u.equippedCT || {}) };
   }
   issue(key) { const token = randomBytes(32).toString('hex'); this.tokens[sha(token)] = { user: key, exp: this.now() + TOKEN_TTL }; this.save(); return token; }
@@ -192,8 +199,9 @@ export class Accounts {
     const { weapon, finish, tier } = req && typeof req === 'object' ? req : {};
     const w = WEAR.find(x => x.id === tier);
     if (!validSkin(weapon, finish) || !w) throw new Error('item');
+    if (!inShop(weapon, finish, this.now())) throw new Error('shop');               // only today's rotating offers are for sale
     if (u.items.length >= 200) throw new Error('full');
-    const wear = +(w.lo + Math.random() * (Math.min(w.hi, 1) - w.lo) * 0.999).toFixed(4);
+    const wear = isAgentWeapon(weapon) ? 0 : +(w.lo + Math.random() * (Math.min(w.hi, 1) - w.lo) * 0.999).toFixed(4);
     const price = skinPrice(weapon, finish, w.lo, this.market, this.now());     // tier list price (clean end of the tier)
     if (u.coins < price) throw new Error('coins');
     u.coins -= price; u.seq = (u.seq || 0) + 1;

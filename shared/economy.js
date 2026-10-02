@@ -1,3 +1,6 @@
+import { KNIVES, KNIFE_WEAPONS, isKnifeType, knifeModel, VANILLA, AGENTS, isAgentWeapon, validAgent, dailyShop, shopRefreshIn } from './cosmetics.js';
+export { KNIVES, KNIFE_WEAPONS, isKnifeType, knifeModel, VANILLA, AGENTS, isAgentWeapon, shopRefreshIn };
+
 // Skin economy shared by the server (authoritative for accounts) and the client (store / inventory display).
 // A skin is an ITEM: one weapon + one finish + a wear float. Price = rarity base x weapon demand x wear x market demand.
 // Knives and gloves are always ★ (the most valuable tier). Wear grows a little every match the skin is equipped,
@@ -19,9 +22,12 @@ export const RARITY = Object.freeze(Object.fromEntries(RARITIES.map(r => [r.id, 
 export const FINISH_RARITY = Object.freeze({
   desert: 'consumer', forest: 'consumer', urban: 'industrial', arctic: 'industrial', cobalt: 'milspec', emerald: 'milspec',
   tiger: 'restricted', carbon: 'restricted', crimson: 'classified', ruby: 'classified', fade: 'covert', gold: 'covert', sapphire: 'covert',
+  sand_dune: 'consumer', safari_mesh: 'consumer', boreal: 'consumer', night_ops: 'industrial', storm: 'industrial', tide: 'industrial',
+  neon_grid: 'milspec', lime: 'milspec', zebra: 'milspec', copper: 'milspec', hex_red: 'restricted', cyber: 'restricted', jade: 'restricted', pop_dots: 'restricted',
+  damascus: 'classified', splatter: 'classified', doppler: 'classified', aqua_wave: 'classified', emerald_doppler: 'covert', gold_damascus: 'covert', inferno: 'covert', galaxy: 'covert',
 });
 /** Finishes that exist for gloves (cloth / leather patterns; metallic paints make no sense on a glove). */
-export const GLOVE_FINISHES = Object.freeze(['desert', 'forest', 'urban', 'arctic', 'tiger', 'crimson', 'carbon', 'fade']);
+export const GLOVE_FINISHES = Object.freeze(['desert', 'forest', 'urban', 'arctic', 'tiger', 'crimson', 'carbon', 'fade', 'boreal', 'safari_mesh', 'night_ops', 'zebra', 'hex_red', 'splatter', 'inferno']);
 
 /** Wear tiers by float. mul = price factor at the clean end of the tier (it drops a little more inside the tier). */
 export const WEAR = Object.freeze([
@@ -39,11 +45,30 @@ export const DEMAND = Object.freeze({
   knife: 3, gloves: 2.5, awp: 1.8, ak47: 1.7, m4a4: 1.5, m4a1s: 1.5, deagle: 1.3, usp: 1.2, glock: 1.1,
   galil: 0.9, famas: 0.9, aug: 0.9, sg553: 0.9, ssg08: 0.8, p250: 0.7, fiveseven: 0.7, tec9: 0.7, cz75: 0.7, r8: 0.7,
   mp9: 0.6, mac10: 0.6, mp7: 0.6, ump45: 0.6, p90: 0.65, nova: 0.5, xm1014: 0.5, mag7: 0.5, sawedoff: 0.5, negev: 0.5,
+  ...Object.fromEntries(KNIFE_WEAPONS.map(w => [w, KNIVES[knifeModel(w)].demand])), agent_t: 1, agent_ct: 1,
 });
 export const SKIN_WEAPONS = Object.freeze(Object.keys(DEMAND));
-export const isStarWeapon = w => w === 'knife' || w === 'gloves';
-export const rarityOf = (weapon, finish) => isStarWeapon(weapon) ? 'star' : FINISH_RARITY[finish] || 'consumer';
-export const validSkin = (weapon, finish) => Object.hasOwn(DEMAND, weapon) && Object.hasOwn(FINISH_RARITY, finish) && (weapon !== 'gloves' || GLOVE_FINISHES.includes(finish));
+/** Ordinary guns that take paint finishes (no knives, gloves or agents). */
+export const GUN_SKIN_WEAPONS = Object.freeze(SKIN_WEAPONS.filter(w => w !== 'knife' && w !== 'gloves' && !isKnifeType(w) && !isAgentWeapon(w)));
+export const isStarWeapon = w => w === 'knife' || w === 'gloves' || isKnifeType(w);
+export const rarityOf = (weapon, finish) => isAgentWeapon(weapon) ? AGENTS[finish]?.rarity || 'milspec' : isStarWeapon(weapon) ? 'star' : FINISH_RARITY[finish] || 'consumer';
+export function validSkin(weapon, finish) {
+  if (!Object.hasOwn(DEMAND, weapon)) return false;
+  if (isAgentWeapon(weapon)) return validAgent(weapon, finish);
+  if (isKnifeType(weapon) && finish === VANILLA) return true;
+  return Object.hasOwn(FINISH_RARITY, finish) && (weapon !== 'gloves' || GLOVE_FINISHES.includes(finish));
+}
+/** Every finish a weapon can carry (store / daily shop listing). */
+export function finishesFor(weapon) {
+  if (isAgentWeapon(weapon)) return Object.keys(AGENTS).filter(a => validAgent(weapon, a));
+  const list = Object.keys(FINISH_RARITY).filter(f => validSkin(weapon, f));
+  return isKnifeType(weapon) ? [VANILLA, ...list] : list;
+}
+/** The equip slot an item is worn in: every knife model goes into the knife slot. */
+export const slotOf = weapon => (isKnifeType(weapon) ? 'knife' : weapon);
+/** Today's shop (rotates daily, same for everyone) and whether an offer is in it. */
+export const todayShop = now => dailyShop(now, { weapons: GUN_SKIN_WEAPONS, finishes: finishesFor });
+export const inShop = (weapon, finish, now) => todayShop(now).some(o => o.weapon === weapon && o.finish === finish);
 
 // ---- market: every weapon:finish has a demand multiplier that buys push up, sales push down and time pulls to 1
 export const MARKET_MIN = 0.55, MARKET_MAX = 3, MARKET_HALF_LIFE_H = 6;
@@ -63,7 +88,9 @@ export function marketTrade(market, key, buy, now = Date.now()) {
 /** ★ knives / gloves: the finish still matters (a Fade knife is worth far more than a desert-camo one). */
 const STAR_FINISH = { consumer: 0.55, industrial: 0.7, milspec: 0.85, restricted: 1, classified: 1.3, covert: 1.8 };
 export function skinPrice(weapon, finish, wear, market, now) {
-  const r = RARITY[rarityOf(weapon, finish)], star = isStarWeapon(weapon) ? STAR_FINISH[FINISH_RARITY[finish]] || 1 : 1;
+  // agents never wear out (cloth kits are not scratched paint): price by their own rarity only
+  if (isAgentWeapon(weapon)) return Math.max(10, Math.round(RARITY[rarityOf(weapon, finish)].base * 0.6 * marketMul(market, marketKey(weapon, finish), now) / 5) * 5);
+  const r = RARITY[rarityOf(weapon, finish)], star = isStarWeapon(weapon) ? (finish === VANILLA ? 0.75 : STAR_FINISH[FINISH_RARITY[finish]] || 1) : 1;
   return Math.max(10, Math.round(r.base * star * (DEMAND[weapon] || 0.5) * wearMul(wear) * marketMul(market, marketKey(weapon, finish), now) / 5) * 5);
 }
 export const SELL_RATE = 0.7;          // the market keeps 30 %: buying and re-selling always loses coins
@@ -84,7 +111,11 @@ export function claimAd(ads, now) {
 
 /** Equipped finish / wear per weapon, the shape the renderer uses. */
 export function equippedView(items = [], equipped = {}) {
-  const finishes = {}, wears = {};
-  for (const [w, id] of Object.entries(equipped)) { const it = items.find(i => i.id === id); if (it && it.weapon === w) { finishes[w] = it.finish; wears[w] = it.wear; } }
-  return { finishes, wears };
+  const finishes = {}, wears = {}, models = {};
+  for (const [w, id] of Object.entries(equipped)) {
+    const it = items.find(i => i.id === id); if (!it || slotOf(it.weapon) !== w) continue;
+    finishes[w] = it.finish; wears[w] = it.wear;
+    if (isKnifeType(it.weapon)) models[w] = knifeModel(it.weapon);          // knife slot: which knife model
+  }
+  return { finishes, wears, models };
 }

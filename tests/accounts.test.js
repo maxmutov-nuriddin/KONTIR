@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Accounts } from '../server/Accounts.js';
-import { skinPrice, AD_REWARD, AD_COOLDOWN_MS, AD_DAILY_MAX } from '../shared/economy.js';
+import { skinPrice, AD_REWARD, AD_COOLDOWN_MS, AD_DAILY_MAX, todayShop, isStarWeapon, GUN_SKIN_WEAPONS } from '../shared/economy.js';
 
 const fresh = async () => new Accounts(join(await mkdtemp(join(tmpdir(), 'kontir-acc-')), 'accounts.json')).load();
 
@@ -32,15 +32,21 @@ test('skin market: server-priced items, equip only owned, wear grows with use, s
   let now = Date.UTC(2026, 9, 2, 12);
   const a = new Accounts(join(await mkdtemp(join(tmpdir(), 'kontir-acc-')), 'accounts.json'), { now: () => now }); await a.load();
   await a.register('Qoplon', 'secret1'); const key = 'qoplon';
-  assert.throws(() => a.buy(key, { weapon: 'knife', finish: 'fade', tier: 'fn' }), /coins/, 'a ★ knife costs far more than the starting coins');
+  const shop = todayShop(now), knife = shop.find(o => isStarWeapon(o.weapon) && o.weapon !== 'gloves');
+  assert.throws(() => a.buy(key, { ...knife, tier: 'fn' }), /coins/, 'a ★ knife costs far more than the starting coins');
   assert.throws(() => a.buy(key, { weapon: 'gloves', finish: 'gold', tier: 'fn' }), /item/, 'gold paint does not exist for gloves');
-  const cheap = skinPrice('p250', 'desert', 0.15, a.market, now);
-  const { profile, item } = a.buy(key, { weapon: 'p250', finish: 'desert', tier: 'ft' });
-  assert.equal(profile.coins, 500 - cheap); assert.ok(item.wear >= 0.15 && item.wear < 0.38, 'float rolled inside Field-Tested');
-  assert.ok(skinPrice('p250', 'desert', 0.15, a.market, now) > cheap, 'buying raises the market price');
-  const u = a.update(key, { loadout: { t: 'p250', ct: 'deagle' }, equipped: { p250: item.id, ak47: item.id, awp: 'nope' } });
+  const off = GUN_SKIN_WEAPONS.flatMap(w => ['desert', 'forest', 'urban'].map(f => ({ weapon: w, finish: f }))).find(o => !shop.some(x => x.weapon === o.weapon && x.finish === o.finish));
+  assert.throws(() => a.buy(key, { ...off, tier: 'fn' }), /shop/, 'only today\'s offers are for sale');
+  const g = shop.filter(o => GUN_SKIN_WEAPONS.includes(o.weapon)).sort((x, y) => skinPrice(x.weapon, x.finish, 0.15, a.market, now) - skinPrice(y.weapon, y.finish, 0.15, a.market, now))[0];
+  a.users.qoplon.coins = 50000;
+  const cheap = skinPrice(g.weapon, g.finish, 0.15, a.market, now);
+  const { profile, item } = a.buy(key, { ...g, tier: 'ft' });
+  assert.equal(profile.coins, 50000 - cheap); assert.ok(item.wear >= 0.15 && item.wear < 0.38, 'float rolled inside Field-Tested');
+  assert.ok(skinPrice(g.weapon, g.finish, 0.15, a.market, now) > cheap, 'buying raises the market price');
+  const other = g.weapon === 'ak47' ? 'awp' : 'ak47';
+  const u = a.update(key, { loadout: { t: 'p250', ct: 'deagle' }, equipped: { [g.weapon]: item.id, [other]: item.id, awp: 'nope' } });
   assert.equal(u.loadout.t, 'p250'); assert.equal(u.loadout.ct, 'usp');
-  assert.deepEqual(u.equipped, { p250: item.id }, 'an item can only be equipped on its own weapon'); assert.equal(u.finishes.p250, 'desert');
+  assert.deepEqual(u.equipped, { [g.weapon]: item.id }, 'an item can only be equipped on its own weapon'); assert.equal(u.finishes[g.weapon], g.finish);
   const w0 = item.wear; const { gains } = a.award(key, { won: true, kills: 20, deaths: 10, rounds: 20 });
   assert.ok(gains.coins > 0); assert.ok(a.users.qoplon.items[0].wear > w0, 'equipped skin wears down after a match');
   now += 24 * 3.6e6;                                          // market demand relaxes back toward x1
@@ -118,4 +124,23 @@ test('skins are equipped per side; legacy accounts wear the same skin on both; s
   delete u.equippedCT; u.equipped = { awp: 'i2' };
   assert.equal(a.skinsOf('carol').COUNTER_TERRORIST.awp.finish, 'gold', 'legacy: CT copies the old single equip');
   a.sell('carol', 'i2'); assert.equal(u.equipped.awp, undefined); assert.equal(u.equippedCT.awp, undefined);
+});
+
+test('cosmetics: knife models go in the knife slot, agents only on their own side, the daily shop rotates', async () => {
+  const { todayShop, validSkin, slotOf, skinPrice } = await import('../shared/economy.js');
+  const day1 = todayShop(Date.UTC(2026, 9, 2, 3)), day1b = todayShop(Date.UTC(2026, 9, 2, 22)), day2 = todayShop(Date.UTC(2026, 9, 3, 3));
+  assert.deepEqual(day1, day1b, 'the same offers all day');
+  assert.notDeepEqual(day1, day2, 'new offers the next day');
+  assert.ok(day1.every(o => validSkin(o.weapon, o.finish)));
+  assert.ok(day1.some(o => o.weapon.startsWith('knife')) && day1.some(o => o.weapon.startsWith('agent_')));
+  assert.equal(slotOf('knife_karambit'), 'knife'); assert.ok(validSkin('knife_karambit', 'vanilla')); assert.ok(!validSkin('ak47', 'vanilla'));
+  assert.ok(validSkin('agent_t', 't_gold') && !validSkin('agent_t', 'ct_navy'));
+  assert.equal(skinPrice('agent_ct', 'ct_navy', 0.9), skinPrice('agent_ct', 'ct_navy', 0), 'agents do not lose value to wear');
+  const a = await fresh(); await a.register('dave', 'secret4'); const u = a.users.dave;
+  u.items.push({ id: 'k', weapon: 'knife_karambit', finish: 'fade', wear: 0.01, seed: 1 }, { id: 't', weapon: 'agent_t', finish: 't_gold', wear: 0, seed: 2 }, { id: 'c', weapon: 'agent_ct', finish: 'ct_navy', wear: 0, seed: 3 });
+  a.update('dave', { equipped: { knife: 'k', agent_t: 't', agent_ct: 'c' }, equippedCT: { knife: 'k', agent_ct: 'c', agent_t: 't' } });
+  assert.deepEqual(u.equipped, { knife: 'k', agent_t: 't' }, 'a CT agent cannot be worn on T');
+  assert.deepEqual(u.equippedCT, { knife: 'k', agent_ct: 'c' });
+  const sk = a.skinsOf('dave');
+  assert.deepEqual(sk.TERRORIST.knife, { finish: 'fade', wear: 0.01, model: 'karambit' }); assert.equal(sk.TERRORIST.agent.finish, 't_gold'); assert.equal(sk.COUNTER_TERRORIST.agent.finish, 'ct_navy');
 });

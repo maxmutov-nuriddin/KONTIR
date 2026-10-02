@@ -598,9 +598,9 @@ export class WorldEngine {
       if (p.id === localId) continue;
       seen.add(p.id);
       let a = this.actors.get(p.id);
-      if (!a || a.userData.team !== p.team) {
-        if (a) this.releaseTree(a);
-        a = buildOperator(p.team, [...p.id].reduce((n, c) => n + c.charCodeAt(0), 0)); this.actors.set(p.id, a); this.scene.add(a);
+      if (!a || a.userData.team !== p.team || (a.userData.agent || null) !== (p.agent || null)) {
+        if (a) { this.releaseTree(a); this.labels.delete(p.id); }
+        a = buildOperator(p.team, [...p.id].reduce((n, c) => n + c.charCodeAt(0), 0), p.agent); this.actors.set(p.id, a); this.scene.add(a);
         a.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) this.adoptMaterial(m); });
         if (p.team === localTeam) { const l = this.label(p.name); a.add(l); l.position.y = 2.1; this.labels.set(p.id, l); }
       }
@@ -610,7 +610,8 @@ export class WorldEngine {
       u.lastX = c.x; u.lastZ = c.z; u.moveSpeed = (u.moveSpeed ?? 0) + (Math.min(moved, 8) - (u.moveSpeed ?? 0)) * Math.min(1, dt * 12);
       const speed = p.alive ? Math.min(Math.hypot(c.vx, c.vz), u.moveSpeed) : 0;
       a.position.set(c.x, c.y, c.z);
-      holdWeapon(a, p.weapon);
+      // knife models and skins are visible on other players too (wskin from the snapshot)
+      holdWeapon(a, p.weapon === 'knife' && p.wskin?.m ? `knife_${p.wskin.m}` : p.weapon, p.wskin && p.wskin.f !== 'standard' ? p.wskin : null);
       if (a.userData.weapon) a.userData.weapon.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) this.adoptMaterial(m); });
       a.visible = true;
       // scoped (narrow FOV) views keep the detailed mesh proportionally further away
@@ -649,7 +650,7 @@ export class WorldEngine {
       prev.shadowRT?.dispose(); this.showcase = null;
     }
     if (!opts || !this.map) return;
-    const actor = buildOperator(opts.team, 7);
+    const actor = buildOperator(opts.team, 7, opts.agent);
     setHoldPose(actor, 'low');
     holdWeapon(actor, opts.weapon);
     const rig = actor.userData.rigs.get(opts.weapon);

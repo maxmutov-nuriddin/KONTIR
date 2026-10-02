@@ -20,6 +20,7 @@ export function weaponMaterials() {
     metal: phys({ color: 0x8e9398, metalness: 1, roughness: 0.9, clearcoat: 0.25, clearcoatRoughness: 0.4, envMapIntensity: 1.2 }, 'gunmetal', { normalScale: 0.35 }),
     darkMetal: phys({ color: 0x4b4f53, metalness: 1, roughness: 1, clearcoat: 0.35, clearcoatRoughness: 0.35, envMapIntensity: 1.15 }, 'gunmetal', { normalScale: 0.3 }),
     steel: phys({ color: 0xd9dde0, metalness: 1, roughness: 0.22, clearcoat: 0.2, clearcoatRoughness: 0.2, envMapIntensity: 1.3 }, null),
+    blade: phys({ color: 0xc9cfd4, metalness: 1, roughness: 0.3, clearcoat: 0.3, clearcoatRoughness: 0.2, envMapIntensity: 1.35 }, null),   // knife blades (paintable)
     silver: phys({ color: 0xbfc3c6, metalness: 1, roughness: 0.8, clearcoat: 0.3, clearcoatRoughness: 0.25, envMapIntensity: 1.25 }, 'gunmetal', { normalScale: 0.25 }),
     wood: phys({ color: 0x6a4026, roughness: 1, metalness: 0, clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 0.6 }, 'gunwood', { normalScale: 0.35 }),
     polymer: std({ color: 0x232426, roughness: 1, metalness: 0, envMapIntensity: 0.7 }, 'gunpolymer', { normalScale: 0.18 }),
@@ -408,6 +409,69 @@ function buildKnife(M) {
   part(g, pinX(0.0042, 0.026, 12), M.blackSteel, 0, -0.004, 0.141);
   return { group: g, muzzle: marker(g, 0, -0.002, -0.226, 'tip'), eject: null, parts: {}, hands: { right: { p: [0, -0.02, 0.07], r: [0.3, 0, 0] }, left: null }, length: 0.39 };
 }
+
+// ---------------------------------------------------------------------------------------------- ★ knife models
+// Shared composer: blade side-profile (painted 'silver' core so finishes apply, bare steel when vanilla), optional
+// guard, a handle (slab profile / stacked wrap rings / split butterfly halves / T push-dagger bar), finger ring,
+// spine serrations and a lanyard loop. Profiles are [z, y]: blade toward -z, handle +z, spine +y, edge -y.
+function knifeKit(M, o) {
+  const g = new THREE.Group(), t = o.thick ?? 0.0055;
+  const scale = o.scale ?? 1, sc = pts => pts.map(([z, y]) => [z * scale, y * scale]);
+  part(g, side(sc(o.blade), t, 0.0007), M.blade, 0, 0, 0, 0, 0, 0, 'blade');
+  if (o.fuller) part(g, side(sc(o.fuller), t + 0.0012, 0.0003), M.darkMetal);
+  if (o.serr) serrations(g, M.blackSteel, o.serr[0], 0, o.serr[1] * scale, o.serr[2] * scale, t * 0.8, 0.005, o.serr[3] * scale);
+  if (o.guard) part(g, side(o.guard, o.guardW ?? 0.022, 0.002), o.guardMat || M.darkMetal);
+  const hm = o.handleMat || M.polymer;
+  if (o.handle === 'rings') {
+    const [z0, z1, r] = o.rings || [0.024, 0.12, 0.0128], n = Math.max(4, Math.round((z1 - z0) / 0.0115)), geo = cyl(r, (z1 - z0) / n * 0.92, 16);
+    for (let i = 0; i < n; i++) { const m = part(g, geo, i % 2 ? M.rubber : hm, 0, -0.004, z0 + (i + 0.5) * (z1 - z0) / n); m.scale.set(1, 1.2, 1); }
+  } else if (o.handle === 'butterfly') {
+    for (const x of [-0.0068, 0.0068]) part(g, side(o.slab, 0.0062, 0.0015), hm, x, 0, 0);
+    part(g, box(0.02, 0.006, 0.012, 0.002), M.metal, 0, -0.016, 0.142);                   // latch
+    for (const z of [0.03, 0.06, 0.09, 0.12]) part(g, box(0.0215, 0.007, 0.006, 0.002), M.blackSteel, 0, -0.003, z);   // cut-out bars
+  } else if (o.handle === 'push') {
+    part(g, pinX(0.0115, 0.088, 14), hm, 0, -0.002, 0.03);                                  // T grip across the fist
+    part(g, box(0.014, 0.03, 0.024, 0.004), M.darkMetal, 0, -0.002, 0.012);
+  } else if (o.slab) part(g, side(o.slab, o.slabW ?? 0.021, 0.003), hm);
+  if (o.skeleton) for (const z of [0.05, 0.085]) part(g, box(o.slabW ?? 0.021, 0.014, 0.022, 0.006), M.blackSteel, 0, -0.004, z);   // hollow frame look
+  if (o.ring) { const [z, y, r] = o.ring; part(g, project(new THREE.TorusGeometry(r, 0.0048, 10, 28).rotateY(Math.PI / 2), 6), o.ringMat || M.darkMetal, 0, y, z); }
+  if (o.cord) part(g, project(new THREE.TorusGeometry(0.012, 0.0022, 6, 18).rotateY(Math.PI / 2), 6), M.rubber, 0, -0.01, o.cord);
+  if (o.thumb) part(g, pinX(0.0065, 0.004, 14), M.darkMetal, 0, o.thumb[1], o.thumb[0]);
+  if (o.pommel) part(g, cyl(0.014, 0.012, 16), o.pommelMat || M.metal, 0, -0.004, o.pommel);
+  const tip = o.tip || o.blade.reduce((a, b) => (b[0] < a[0] ? b : a));
+  return { group: g, muzzle: marker(g, 0, tip[1] * scale, tip[0] * scale, 'tip'), eject: null, parts: {}, hands: { right: { p: [0, -0.02, 0.07], r: [0.3, 0, 0] }, left: null }, length: o.length ?? 0.36 };
+}
+const SLAB = [[0.014, 0.012], [0.128, 0.013], [0.142, 0.008], [0.142, -0.018], [0.128, -0.022], [0.014, -0.018]];
+const SLAB_CURVED = [[0.012, 0.01], [0.07, 0.012], [0.125, 0.006], [0.14, -0.004], [0.13, -0.022], [0.07, -0.02], [0.012, -0.016]];
+const DROP = [[0, 0.012], [-0.12, 0.013], [-0.16, 0.007], [-0.185, -0.002], [-0.16, -0.015], [-0.03, -0.019], [0, -0.013]];
+const GUARD = [[0.004, 0.02], [0.014, 0.02], [0.014, -0.028], [0.004, -0.028]];
+const KNIFE_SPECS = {
+  bayonet: { blade: [[0, 0.011], [-0.165, 0.011], [-0.195, 0.006], [-0.22, -0.002], [-0.195, -0.012], [-0.04, -0.016], [-0.01, -0.015], [0, -0.01]], fuller: [[-0.03, 0.004], [-0.15, 0.004], [-0.15, 0.0], [-0.03, 0.0]], guard: [[0.004, 0.024], [0.014, 0.024], [0.014, -0.034], [0.004, -0.034]], slab: SLAB, length: 0.39 },
+  karambit: { blade: [[0, 0.009], [-0.03, 0.012], [-0.06, 0.008], [-0.088, -0.004], [-0.108, -0.022], [-0.117, -0.047], [-0.106, -0.031], [-0.088, -0.016], [-0.063, -0.007], [-0.034, -0.004], [0, -0.01]], slab: [[0.004, 0.008], [0.098, 0.012], [0.112, 0.006], [0.112, -0.016], [0.098, -0.02], [0.004, -0.014]], ring: [0.128, -0.004, 0.017], length: 0.27 },
+  talon: { blade: [[0, 0.01], [-0.035, 0.013], [-0.07, 0.008], [-0.1, -0.006], [-0.122, -0.026], [-0.132, -0.054], [-0.12, -0.036], [-0.1, -0.019], [-0.072, -0.008], [-0.038, -0.005], [0, -0.011]], slab: [[0.004, 0.009], [0.1, 0.013], [0.116, 0.006], [0.116, -0.017], [0.1, -0.021], [0.004, -0.015]], handleMat: 'wood', ring: [0.132, -0.004, 0.018], length: 0.29 },
+  butterfly: { blade: [[0, 0.008], [-0.12, 0.008], [-0.142, 0.004], [-0.168, -0.002], [-0.142, -0.011], [-0.02, -0.012], [0, -0.008]], handle: 'butterfly', slab: [[0.008, 0.012], [0.14, 0.012], [0.15, 0.006], [0.15, -0.016], [0.14, -0.02], [0.008, -0.018]], handleMat: 'darkMetal', length: 0.34 },
+  flip: { blade: [[0, 0.012], [-0.1, 0.014], [-0.15, 0.008], [-0.175, -0.002], [-0.15, -0.016], [-0.03, -0.02], [0, -0.014]], slab: SLAB_CURVED, thumb: [-0.012, 0.017], length: 0.34 },
+  gut: { blade: [[0, 0.012], [-0.06, 0.012], [-0.07, 0.003], [-0.08, 0.003], [-0.088, 0.012], [-0.14, 0.01], [-0.172, 0.0], [-0.15, -0.014], [-0.03, -0.018], [0, -0.013]], guard: GUARD, handle: 'rings', length: 0.34 },
+  huntsman: { blade: [[0, 0.014], [-0.14, 0.014], [-0.17, 0.006], [-0.215, -0.004], [-0.19, -0.018], [-0.04, -0.022], [0, -0.016]], serr: [10, -0.015, -0.0065, 0.016], guard: [[0.004, 0.026], [0.014, 0.026], [0.014, -0.034], [0.004, -0.034]], guardMat: 'accent', handle: 'rings', length: 0.4 },
+  falchion: { blade: [[0, 0.012], [-0.1, 0.01], [-0.15, 0.012], [-0.19, 0.019], [-0.207, 0.014], [-0.18, -0.006], [-0.12, -0.016], [-0.03, -0.018], [0, -0.013]], slab: SLAB_CURVED, length: 0.37 },
+  bowie: { blade: [[0, 0.016], [-0.15, 0.016], [-0.19, 0.008], [-0.24, -0.004], [-0.21, -0.02], [-0.04, -0.024], [0, -0.018]], guard: [[0.002, 0.03], [0.014, 0.03], [0.014, -0.038], [0.002, -0.038]], guardMat: 'accent', guardW: 0.028, slab: SLAB, handleMat: 'wood', pommel: 0.148, pommelMat: 'accent', length: 0.42 },
+  shadow: { blade: [[0, 0.018], [-0.06, 0.012], [-0.1, 0.004], [-0.115, 0], [-0.1, -0.004], [-0.06, -0.012], [0, -0.018]], handle: 'push', tip: [-0.115, 0], length: 0.24 },
+  stiletto: { blade: [[0, 0.007], [-0.2, 0.004], [-0.245, 0], [-0.2, -0.006], [0, -0.009]], guard: [[0.004, 0.012], [0.012, 0.012], [0.012, -0.018], [0.004, -0.018]], slab: [[0.012, 0.008], [0.14, 0.009], [0.15, 0.004], [0.15, -0.014], [0.14, -0.017], [0.012, -0.014]], handleMat: 'wood', slabW: 0.016, length: 0.4 },
+  ursus: { blade: [[0, 0.014], [-0.12, 0.015], [-0.17, 0.006], [-0.19, -0.004], [-0.16, -0.018], [-0.03, -0.021], [0, -0.016]], slab: SLAB_CURVED, handleMat: 'rubber', slabW: 0.024, thumb: [-0.012, 0.019], length: 0.36 },
+  navaja: { blade: [[0, 0.008], [-0.1, 0.006], [-0.16, 0.0], [-0.19, -0.009], [-0.16, -0.007], [-0.08, -0.011], [0, -0.011]], slab: [[0.006, 0.008], [0.08, 0.008], [0.13, 0.002], [0.15, -0.01], [0.13, -0.02], [0.06, -0.017], [0.006, -0.013]], handleMat: 'wood', slabW: 0.017, length: 0.35 },
+  classic: { blade: [[0, 0.013], [-0.13, 0.013], [-0.165, 0.006], [-0.2, -0.003], [-0.175, -0.016], [-0.035, -0.02], [0, -0.015]], guard: GUARD, handle: 'rings', pommel: 0.128, length: 0.38 },
+  skeleton: { blade: DROP, slab: SLAB, slabW: 0.012, handleMat: 'darkMetal', skeleton: true, ring: [0.152, -0.004, 0.013], length: 0.36 },
+  nomad: { blade: DROP, slab: SLAB_CURVED, handleMat: 'olivePoly', cord: 0.146, thumb: [-0.012, 0.016], length: 0.35 },
+  paracord: { blade: DROP, handle: 'rings', rings: [0.016, 0.122, 0.0118], handleMat: 'olivePoly', ring: [0.136, -0.004, 0.014], length: 0.35 },
+  survival: { blade: DROP, thick: 0.0065, slab: SLAB, handleMat: 'tanPoly', pommel: 0.148, cord: 0.16, length: 0.37 },
+};
+const KNIFE_BUILDERS = Object.fromEntries(Object.entries(KNIFE_SPECS).map(([k, spec]) => [`knife_${k}`, M => {
+  const o = { ...spec };
+  for (const key of ['handleMat', 'guardMat', 'pommelMat', 'ringMat']) if (typeof o[key] === 'string') o[key] = M[o[key]];
+  return knifeKit(M, o);
+}]));
+KNIFE_BUILDERS.knife_m9 = M => buildKnife(M);          // the original procedural knife is an M9-style bayonet
+
 function buildHE(M) {
   const g = new THREE.Group(), parts = {};
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.036, 20, 14), M.grenadeGreen); body.scale.set(1, 1.25, 1); body.castShadow = true; g.add(body);
@@ -823,9 +887,9 @@ const HANDS = {
   grenade: { right: { p: [0.03, -0.035, 0.0], r: [0.2, 0.1, -R], elbow: [0.22, -0.35, 0.55], grip: 'wrap' }, left: { p: [-0.045, -0.02, 0.02], r: [0.25, -0.2, R], elbow: [-0.25, -0.32, 0.5], grip: 'pinch' } },
   c4: { right: { p: [0.085, -0.035, 0.03], r: [0.15, 0.1, -R], elbow: [0.22, -0.34, 0.55], grip: 'wrap' }, left: { p: [-0.085, -0.035, 0.03], r: [0.15, -0.1, R], elbow: [-0.24, -0.34, 0.55], grip: 'wrap' } },
 };
-const HAND_CLASS = { ak47: 'ak47', galil: 'ak47', sg553: 'ak47', m4a4: 'm4a4', m4a1s: 'm4a4', famas: 'famas', aug: 'aug', awp: 'awp', ssg08: 'ssg08', mp9: 'mp9', mac10: 'mac10', mp7: 'mp7', ump45: 'ump', p90: 'p90', nova: 'nova', xm1014: 'nova', mag7: 'nova', sawedoff: 'sawedoff', negev: 'negev', glock: 'pistol', usp: 'pistol', p250: 'pistol', fiveseven: 'pistol', tec9: 'pistol', cz75: 'pistol', r8: 'pistol', deagle: 'pistol', knife: 'knife', he: 'grenade', flash: 'grenade', smoke: 'grenade', decoy: 'grenade', incendiary: 'grenade', molotov: 'molotov', c4: 'c4' };
+const HAND_CLASS = { ...Object.fromEntries(Object.keys(KNIFE_BUILDERS).map(k => [k, 'knife'])), ak47: 'ak47', galil: 'ak47', sg553: 'ak47', m4a4: 'm4a4', m4a1s: 'm4a4', famas: 'famas', aug: 'aug', awp: 'awp', ssg08: 'ssg08', mp9: 'mp9', mac10: 'mac10', mp7: 'mp7', ump45: 'ump', p90: 'p90', nova: 'nova', xm1014: 'nova', mag7: 'nova', sawedoff: 'sawedoff', negev: 'negev', glock: 'pistol', usp: 'pistol', p250: 'pistol', fiveseven: 'pistol', tec9: 'pistol', cz75: 'pistol', r8: 'pistol', deagle: 'pistol', knife: 'knife', he: 'grenade', flash: 'grenade', smoke: 'grenade', decoy: 'grenade', incendiary: 'grenade', molotov: 'molotov', c4: 'c4' };
 
-const BUILDERS = { ak47: buildAK47, galil: buildGalil, m4a4: buildM4A4, famas: buildFamas, awp: buildAWP, ssg08: buildSSG, mp9: M => buildSMG(M, 'mp9'), mac10: M => buildSMG(M, 'mac10'), nova: buildNova, xm1014: M => buildShotgunFamily(M, 'xm1014'), mag7: M => buildShotgunFamily(M, 'mag7'), sawedoff: M => buildShotgunFamily(M, 'sawedoff'), negev: buildNegev, m4a1s: buildM4A1S, aug: buildAUG, sg553: buildSG553, ump45: buildUMP, p90: buildP90, mp7: buildMP7, cz75: buildCZ75, r8: buildR8, deagle: buildDeagle, glock: buildGlock, usp: buildUSP, p250: buildP250, fiveseven: buildFiveSeven, tec9: buildTec9, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, molotov: buildMolotov, incendiary: buildIncendiary, decoy: buildDecoy, c4: buildC4 };
+const BUILDERS = { ...KNIFE_BUILDERS, ak47: buildAK47, galil: buildGalil, m4a4: buildM4A4, famas: buildFamas, awp: buildAWP, ssg08: buildSSG, mp9: M => buildSMG(M, 'mp9'), mac10: M => buildSMG(M, 'mac10'), nova: buildNova, xm1014: M => buildShotgunFamily(M, 'xm1014'), mag7: M => buildShotgunFamily(M, 'mag7'), sawedoff: M => buildShotgunFamily(M, 'sawedoff'), negev: buildNegev, m4a1s: buildM4A1S, aug: buildAUG, sg553: buildSG553, ump45: buildUMP, p90: buildP90, mp7: buildMP7, cz75: buildCZ75, r8: buildR8, deagle: buildDeagle, glock: buildGlock, usp: buildUSP, p250: buildP250, fiveseven: buildFiveSeven, tec9: buildTec9, knife: buildKnife, he: buildHE, flash: buildFlash, smoke: buildSmoke, molotov: buildMolotov, incendiary: buildIncendiary, decoy: buildDecoy, c4: buildC4 };
 export const RIG_IDS = Object.keys(BUILDERS);
 
 /** Rig from a real GLB (see models.js conventions); hands come from hand_right / hand_left empties when present. */
@@ -845,7 +909,7 @@ function rigFromModel(id, gltf) {
 
 /** Detail pass for guns: receiver cross-pins (trigger/hammer/takedown) with domed heads on both sides and a stamped
  *  data plate, found from the largest direct-child mesh (the receiver in every builder). Tiny geometry, shared material. */
-const NO_PINS = new Set(['knife', 'he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy', 'c4']);
+const NO_PINS = new Set([...Object.keys(KNIFE_BUILDERS), 'knife', 'he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy', 'c4']);
 const pinGeo = new THREE.CylinderGeometry(0.0026, 0.0026, 1, 10).rotateZ(Math.PI / 2), headGeo = new THREE.SphereGeometry(0.0034, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2);
 pinGeo.userData.shared = headGeo.userData.shared = true;
 const tmpBox = new THREE.Box3(), tmpSize = new THREE.Vector3();

@@ -2,6 +2,10 @@ import { gsap } from 'gsap';
 import { WEAPONS, BUY_ITEMS, weaponMass, speedMul } from '../../shared/weapons.js';
 import { RULES } from '../../shared/constants.js';
 import { weaponIcon, iconSrc } from './icons.js';
+import { KNIVES, AGENTS, knifeModel, isAgentWeapon } from '../../shared/cosmetics.js';
+/** Display name of a skin's item ("★ Karambit", "Agent · T") and of its finish (agents have their own names). */
+const itemName = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : knifeModel(w) ? `★ ${KNIVES[knifeModel(w)].name}` : w === 'agent_t' ? 'Agent · T' : w === 'agent_ct' ? 'Agent · CT' : WEAPONS[w]?.name || w.toUpperCase();
+const finishName = (w, f, finishes) => isAgentWeapon(w) ? AGENTS[f]?.name || f : finishes[f]?.name || f;
 
 const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
 /** Viewmodel presets (cl_righthand / viewmodel_offset style): offsets in steps of 1 cm, fov in degrees. */
@@ -216,23 +220,24 @@ export class UI {
   renderInventory(p, ctx) {
     const { icon, finishes, eco, market, now, onEquip, onSell } = ctx, W = this.weaponsTable;
     const items = [...(p.items || [])].sort((a, b) => eco.skinPrice(b.weapon, b.finish, b.wear, market, now) - eco.skinPrice(a.weapon, a.finish, a.wear, market, now));
-    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const wname = itemName;
     // skins are worn per side: `equipped` = T, `equippedCT` = CT. Team-only weapons have one side; the rest offer T / CT / both.
-    const sideOf = w => (W[w]?.team === 'TERRORIST' ? 't' : W[w]?.team === 'COUNTER_TERRORIST' ? 'ct' : null);
-    const onT = (w, id) => p.equipped?.[w] === id, onCT = (w, id) => (p.equippedCT || {})[w] === id;
+    // knife models are worn in the knife slot; agents only on their own side
+    const sideOf = w => (w === 'agent_t' || W[w]?.team === 'TERRORIST' ? 't' : w === 'agent_ct' || W[w]?.team === 'COUNTER_TERRORIST' ? 'ct' : null);
+    const onT = (w, id) => p.equipped?.[eco.slotOf(w)] === id, onCT = (w, id) => (p.equippedCT || {})[eco.slotOf(w)] === id;
     const tags = (t, ct) => `${t ? '<i class="side-tag t">T</i>' : ''}${ct ? '<i class="side-tag ct">CT</i>' : ''}`;
-    const equipButtons = (w, id, t, ct) => {
-      const only = sideOf(w);
+    const equipButtons = (item, id, t, ct) => {
+      const only = sideOf(item), w = eco.slotOf(item);
       if (only) { const on = only === 't' ? t : ct; return `<button data-eq="${id ?? ''}" data-w="${w}" data-side="${only}" data-on="${on ? 1 : 0}" class="${on ? 'secondary' : 'primary'}">${on ? (id ? 'YECHISH' : 'KIYILGAN') : 'KIYISH'}</button>`; }
       const b = (side, label, on) => `<button data-eq="${id ?? ''}" data-w="${w}" data-side="${side}" data-on="${on ? 1 : 0}" class="side-btn ${on ? 'secondary' : 'primary'}" title="${on ? 'Yechish' : 'Kiyish'}: ${label}">${label}</button>`;
-      return `<div class="side-pick">${b('t', 'T', t)}${b('ct', 'CT', ct)}${b('both', 'IKKALASI', t && ct)}</div>`;
+      return `<div class="side-pick">${b('t', 'T', t)}${b('ct', 'CT', ct)}${b('both', 'IKKALA', t && ct)}</div>`;
     };
     const card = it => {
       const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), t = onT(it.weapon, it.id), ct = onCT(it.weapon, it.id);
       const value = eco.skinPrice(it.weapon, it.finish, it.wear, market, now), sell = Math.floor(value * eco.SELL_RATE);
       return `<div class="skin-card ${t || ct ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}${tags(t, ct)}</div>
-        <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}</small>
-        <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div><div class="wear-bar"><i style="left:${(it.wear * 100).toFixed(1)}%"></i></div>
+        <b>${esc(wname(it.weapon))} | ${esc(finishName(it.weapon, it.finish, finishes))}</b><small class="rar">${esc(r.name)}</small>
+        ${isAgentWeapon(it.weapon) ? `<div class="wear-row"><span>Agent · ${it.weapon === 'agent_t' ? 'T' : 'CT'}</span><span>—</span></div>` : `<div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div><div class="wear-bar"><i style="left:${(it.wear * 100).toFixed(1)}%"></i></div>`}
         <div class="skin-actions">${equipButtons(it.weapon, it.id, t, ct)}<button data-sell="${it.id}" class="text-button" title="Bozor narxi ◈ ${value}">SOTISH ◈ ${sell}</button></div></div>`;
     };
     // every weapon also has its standard (skinless) version, worn on a side whenever no skin is
@@ -255,7 +260,7 @@ export class UI {
   /** Another player's card (Friends → name): level, stats and inventory, or a lock when the profile is private. */
   playerProfile(u, ctx) {
     const { icon, finishes, eco, market, now } = ctx, W = this.weaponsTable;
-    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const wname = itemName;
     const head = `<small class="eyebrow">OPERATOR PROFILI${u.online ? ' · ONLAYN' : ''}</small><h2>${esc(u.name)}</h2>`;
     if (u.private) return this.dialog(`${head}<p class="note">🔒 Bu profil yopiq. O‘yinchi inventari va statistikasini yashirgan.</p>`);
     const items = [...(u.items || [])].sort((a, b) => eco.skinPrice(b.weapon, b.finish, b.wear, market, now) - eco.skinPrice(a.weapon, a.finish, a.wear, market, now));
@@ -265,7 +270,7 @@ export class UI {
     const card = it => {
       const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = u.equipped?.[it.weapon] === it.id || u.equippedCT?.[it.weapon] === it.id;
       return `<div class="skin-card ${on ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}</div>
-        <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}${on ? ' · KIYILGAN' : ''}</small>
+        <b>${esc(wname(it.weapon))} | ${esc(finishName(it.weapon, it.finish, finishes))}</b><small class="rar">${esc(r.name)}${on ? ' · KIYILGAN' : ''}</small>
         <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div></div>`;
     };
     this.dialog(`${head}<div class="pp-stats">${stat('DARAJA', 1 + Math.floor((u.xp || 0) / 1000))}${stat('REYTING', u.rating ?? '—')}${stat('O‘YINLAR', u.matches || 0)}${stat('G‘ALABA', u.wins || 0)}${stat('K/D', kd)}${stat('HS', hs + '%')}</div>
@@ -275,25 +280,31 @@ export class UI {
   /** Market: pick a category, a skin, then a wear tier (each tier has its own price; demand moves prices). */
   renderStore(p, ctx) {
     const { icon, finishes, eco, market, now, onBuy } = ctx, W = this.weaponsTable;
-    const CATS = { popular: ['MASHHUR', ['knife', 'gloves', 'ak47', 'awp', 'm4a4', 'm4a1s', 'deagle', 'usp', 'glock']], knife: ['★ PICHOQ', ['knife']], gloves: ['★ QO‘LQOP', ['gloves']],
-      rifle: ['MILTIQ', ['ak47', 'm4a4', 'm4a1s', 'galil', 'famas', 'aug', 'sg553']], sniper: ['SNAYPER', ['awp', 'ssg08']], pistol: ['PISTOLET', ['deagle', 'usp', 'glock', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8']],
-      smg: ['SMG', ['mp9', 'mac10', 'mp7', 'ump45', 'p90']], heavy: ['OG‘IR', ['nova', 'xm1014', 'mag7', 'sawedoff', 'negev']] };
-    const cat = CATS[this.storeCat] ? this.storeCat : 'popular'; this.storeCat = cat;
-    const offers = CATS[cat][1].flatMap(w => Object.keys(eco.FINISH_RARITY).filter(f => eco.validSkin(w, f)).map(f => ({ w, f })))
-      .sort((a, b) => eco.skinPrice(b.w, b.f, 0, market, now) - eco.skinPrice(a.w, a.f, 0, market, now));
+    const knives = w => w === 'knife' || !!knifeModel(w);
+    const CATS = { all: ['HAMMASI', () => true], knife: ['★ PICHOQ', knives], gloves: ['★ QO‘LQOP', w => w === 'gloves'], agent: ['AGENTLAR', w => isAgentWeapon(w)],
+      rifle: ['MILTIQ', w => ['ak47', 'm4a4', 'm4a1s', 'galil', 'famas', 'aug', 'sg553'].includes(w)], sniper: ['SNAYPER', w => ['awp', 'ssg08'].includes(w)],
+      pistol: ['PISTOLET', w => ['deagle', 'usp', 'glock', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'].includes(w)], smg: ['SMG', w => ['mp9', 'mac10', 'mp7', 'ump45', 'p90'].includes(w)],
+      heavy: ['OG‘IR', w => ['nova', 'xm1014', 'mag7', 'sawedoff', 'negev'].includes(w)] };
+    const cat = CATS[this.storeCat] ? this.storeCat : 'all'; this.storeCat = cat;
+    // today's rotating shop (same for everyone, changes at 00:00 UTC)
+    const shop = eco.todayShop(now).map(o => ({ w: o.weapon, f: o.finish }));
+    const offers = shop.filter(o => CATS[cat][1](o.w)).sort((a, b) => eco.skinPrice(b.w, b.f, 0, market, now) - eco.skinPrice(a.w, a.f, 0, market, now));
     const sel = offers.find(o => `${o.w}:${o.f}` === this.storeSel) || offers[0]; this.storeSel = sel && `${sel.w}:${sel.f}`;
-    const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    const wname = itemName, fname = o => finishName(o.w, o.f, finishes);
     const trend = (w, f) => { const m = eco.marketMul(market, eco.marketKey(w, f), now); return m > 1.02 ? `<em class="up">▲ ${Math.round((m - 1) * 100)}%</em>` : m < 0.98 ? `<em class="down">▼ ${Math.round((1 - m) * 100)}%</em>` : ''; };
+    const range = o => isAgentWeapon(o.w) ? `◈ ${eco.skinPrice(o.w, o.f, 0, market, now)}` : `◈ ${eco.skinPrice(o.w, o.f, 0.45, market, now)} – ${eco.skinPrice(o.w, o.f, 0, market, now)}`;
     const card = o => { const r = eco.RARITY[eco.rarityOf(o.w, o.f)];
-      return `<button class="skin-card ${o === sel ? 'on' : ''}" data-offer="${o.w}:${o.f}" style="--rar:${r.color}"><div class="skin-pic">${icon(o.w, o.f, 0)}</div><b>${esc(wname(o.w))} | ${esc(finishes[o.f]?.name || o.f)}</b>
-        <small class="rar">${esc(r.name)}</small><span class="from">◈ ${eco.skinPrice(o.w, o.f, 0.45, market, now)} – ${eco.skinPrice(o.w, o.f, 0, market, now)} ${trend(o.w, o.f)}</span></button>`; };
-    const detail = !sel ? '' : (() => { const r = eco.RARITY[eco.rarityOf(sel.w, sel.f)];
-      return `<div class="store-detail" style="--rar:${r.color}"><div class="skin-pic big">${icon(sel.w, sel.f, 0)}</div><h3>${esc(wname(sel.w))} | ${esc(finishes[sel.f]?.name || sel.f)}</h3><small class="rar">${esc(r.name)} ${trend(sel.w, sel.f)}</small>
-        <div class="tiers">${eco.WEAR.map(t => { const price = eco.skinPrice(sel.w, sel.f, t.lo, market, now); return `<button data-tier="${t.id}" ${p.demo || p.coins < price ? 'disabled' : ''}><span>${esc(t.name)} <i>${t.short}</i></span><strong>◈ ${price}</strong></button>`; }).join('')}</div>
-        <p class="note">Float tanlangan daraja ichida tasodifan chiqadi. Ko‘p sotib olingan skinlar qimmatlashadi, sotilganlari arzonlashadi.</p></div>`; })();
-    $('#view-store').innerHTML = `<div class="page store"><div class="page-head"><small>BOZOR</small><h2>Skinlar</h2><p>Balans <b>◈ ${p.coins}</b>. KONTI o‘yinlar uchun beriladi (qatnashish, o‘ldirish, g‘alaba); reklama — kuniga cheklangan.</p></div>
+      return `<button class="skin-card ${o === sel ? 'on' : ''}" data-offer="${o.w}:${o.f}" style="--rar:${r.color}"><div class="skin-pic">${icon(o.w, o.f, 0)}</div><b>${esc(wname(o.w))} | ${esc(fname(o))}</b>
+        <small class="rar">${esc(r.name)}</small><span class="from">${range(o)} ${trend(o.w, o.f)}</span></button>`; };
+    const detail = !sel ? '' : (() => { const r = eco.RARITY[eco.rarityOf(sel.w, sel.f)], agent = isAgentWeapon(sel.w);
+      const tiers = agent ? [eco.WEAR[0]] : eco.WEAR;
+      return `<div class="store-detail" style="--rar:${r.color}"><div class="skin-pic big">${icon(sel.w, sel.f, 0)}</div><h3>${esc(wname(sel.w))} | ${esc(fname(sel))}</h3><small class="rar">${esc(r.name)} ${trend(sel.w, sel.f)}</small>
+        <div class="tiers">${tiers.map(t => { const price = eco.skinPrice(sel.w, sel.f, t.lo, market, now); return `<button data-tier="${t.id}" ${p.demo || p.coins < price ? 'disabled' : ''}><span>${agent ? 'SOTIB OLISH' : `${esc(t.name)} <i>${t.short}</i>`}</span><strong>◈ ${price}</strong></button>`; }).join('')}</div>
+        <p class="note">${agent ? `Agent — ${sel.w === 'agent_t' ? 'T' : 'CT'} tomoni uchun personaj kiyimi. Eskirmaydi.` : 'Float tanlangan daraja ichida tasodifan chiqadi. Ko‘p sotib olingan skinlar qimmatlashadi, sotilganlari arzonlashadi.'}</p></div>`; })();
+    const left = eco.shopRefreshIn(now), hh = Math.floor(left / 3.6e6), mm = Math.floor(left % 3.6e6 / 6e4);
+    $('#view-store').innerHTML = `<div class="page store"><div class="page-head"><small>BOZOR · BUGUNGI TAKLIFLAR</small><h2>Skinlar</h2><p>Balans <b>◈ ${p.coins}</b>. Do‘kon har kuni yangilanadi — keyingi takliflar <b>${hh} soat ${mm} daqiqadan</b> keyin. KONTI o‘yinlar uchun beriladi; reklama — kuniga cheklangan.</p></div>
       ${p.demo ? '<div class="store-lock"><b>SKIN UCHUN AKKAUNT KERAK</b><span>Demo rejimda skin olib bo‘lmaydi.</span><button data-auth class="primary">KIRISH</button></div>' : ''}
-      <div class="store-cats">${Object.entries(CATS).map(([k, [n]]) => `<button data-cat="${k}" class="${k === cat ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="store-cats">${Object.entries(CATS).map(([k, [n, f]]) => { const c = shop.filter(o => f(o.w)).length; return c ? `<button data-cat="${k}" class="${k === cat ? 'on' : ''}">${n} <i>${c}</i></button>` : ''; }).join('')}</div>
       <div class="store-body"><div class="skin-grid">${offers.map(card).join('')}</div>${detail}</div></div>`;
     document.querySelector('#view-store [data-auth]')?.addEventListener('click', () => this.onAuth?.());
     document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { this.storeCat = b.dataset.cat; this.storeSel = null; this.onRefresh?.(); });

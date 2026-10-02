@@ -12,10 +12,12 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { buildArms, buildWeaponRigTP, poseArms } from './viewmodels.js';
+import { buildArms, buildWeaponRigTP, poseArms, weaponMaterials } from './viewmodels.js';
+import { applyFinish } from './finishes.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { models } from './models.js';
 import { textureSet } from './materials.js';
+import { AGENTS } from '../../shared/cosmetics.js';
 
 // ---------------------------------------------------------------------------------------------- skinned (real model) path
 const CLIPS = { lowready: /low.?ready/i, idle: /idle|stand/i, walk: /walk/i, run: /run|jog|sprint/i, crouch: /crouch.*idle|crouch(?!.*walk)|squat/i, crouch_walk: /crouch.*walk|sneak/i, jump: /jump/i, death: /death|die|dying/i };
@@ -107,6 +109,9 @@ const PALETTE = {
   },
 };
 
+/** Team palette with an agent's (character skin's) overrides on top. */
+const paletteOf = (team, agent) => { const a = AGENTS[agent]; return a && a.side === team ? { ...PALETTE[team], ...a.pal } : PALETTE[team]; };
+
 // ---- primitive builders (all indexed, Y-up, centred)
 const rbox = (w, h, d, r = 0.02, seg = 2) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4));
 const cap = (r, len, capSeg = 4, radial = 12) => new THREE.CapsuleGeometry(r, len, capSeg, radial);
@@ -175,8 +180,8 @@ function bake(parts) {
 }
 
 /** Detailed operator (LOD0): anatomical lathe-profiled body, team kit, gear. */
-function detailedParts(team, skin) {
-  const T = team === 'TERRORIST', C = PALETTE[team], P = [];
+function detailedParts(team, skin, agent) {
+  const T = team === 'TERRORIST', C = paletteOf(team, agent), P = [];
   const add = (bone, geo, color, surf, p, r, s) => P.push({ bone, geo, color, surf, p, r, s });
   const addRod = (bone, a, b, radius, color, surf) => { const o = rod(a, b, radius); add(bone, o.geo, color, surf, o.p, o.r); };
   // ---- pelvis + belt
@@ -305,8 +310,8 @@ function detailedParts(team, skin) {
 }
 
 /** Silhouette LOD (LOD1): same proportions and colours, ~1.5k triangles. */
-function lowParts(team, skin) {
-  const T = team === 'TERRORIST', C = PALETTE[team], P = [];
+function lowParts(team, skin, agent) {
+  const T = team === 'TERRORIST', C = paletteOf(team, agent), P = [];
   const add = (bone, geo, color, surf, p, r, s) => P.push({ bone, geo, color, surf, p, r, s });
   add('hip', rbox(0.34, 0.22, 0.23, 0.06, 1), C.pants, 'camo', [0, -0.02, 0]);
   add('spine', rbox(0.37, 0.5, 0.22, 0.08, 1), C.uniform, 'camo', [0, 0.25, 0]);
@@ -327,11 +332,11 @@ function lowParts(team, skin) {
 }
 
 const geoCache = new Map();
-function operatorGeometry(team, tone, lod) {
-  const key = `${team}:${tone}:${lod}`;
+function operatorGeometry(team, tone, lod, agent) {
+  const key = `${team}:${tone}:${lod}:${agent || ''}`;
   let g = geoCache.get(key);
   if (!g) {
-    g = bake((lod ? lowParts : detailedParts)(team, SKIN[tone]));
+    g = bake((lod ? lowParts : detailedParts)(team, SKIN[tone], agent));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.95, 0), 1.25);
     geoCache.set(key, g);
   }
@@ -376,10 +381,11 @@ function patchOperator(shader, uniforms) {
     #endif`);
 }
 const matCache = new Map();
-export function operatorMaterial(team) {
-  let m = matCache.get(team);
+export function operatorMaterial(team, agent) {
+  const key = `${team}:${agent || ''}`;
+  let m = matCache.get(key);
   if (m) return m;
-  const tex = textureSet('ripstop', { size: 256, normalStrength: 3.2 }), pal = PALETTE[team];
+  const tex = textureSet('ripstop', { size: 256, normalStrength: 3.2 }), pal = paletteOf(team, agent);
   m = new THREE.MeshStandardMaterial({ name: `operator_${team}`, vertexColors: true, map: tex.map, normalMap: tex.normalMap, roughness: 1, metalness: 1, envMapIntensity: 0.85 });
   m.normalScale.set(0.9, 0.9);
   const uniforms = { camoA: { value: new THREE.Color(pal.camo[0]) }, camoB: { value: new THREE.Color(pal.camo[1]) }, camoC: { value: new THREE.Color(pal.camo[2]) } };
@@ -387,7 +393,7 @@ export function operatorMaterial(team) {
   // WorldEngine.prepareMaterial re-chains userData.shaderPatch after CSM; standalone renderers (viewer) use these directly
   m.userData = { shared: true, shaderPatch: patch, shaderPatchKey: 'operator-v1' };
   m.onBeforeCompile = patch; m.customProgramCacheKey = () => 'kontir-plain-operator-v1-0';
-  matCache.set(team, m);
+  matCache.set(key, m);
   return m;
 }
 
@@ -397,7 +403,7 @@ export function prebuildOperators() {
   for (const team of ['TERRORIST', 'COUNTER_TERRORIST']) { operatorMaterial(team); for (let t = 0; t < SKIN.length; t++) { operatorGeometry(team, t, 0); operatorGeometry(team, t, 1); } }
 }
 
-export function buildOperator(team, seed = 0) {
+export function buildOperator(team, seed = 0, agent) {
   const model = models.character(team);
   if (model) return buildSkinned(team, model);
   if (!PALETTE[team]) team = 'TERRORIST';
@@ -405,16 +411,17 @@ export function buildOperator(team, seed = 0) {
   for (const [name, parent, p] of BONES) { const b = new THREE.Bone(); b.name = name; b.position.set(...p); (parent ? bones[parent] : root).add(b); bones[name] = b; }
   root.updateMatrixWorld(true);
   const skeleton = new THREE.Skeleton(BONES.map(([n]) => bones[n]));
-  const tone = Math.abs(seed | 0) % SKIN.length, mat = operatorMaterial(team), lods = [];
+  if (agent && AGENTS[agent]?.side !== team) agent = undefined;
+  const tone = Math.abs(seed | 0) % SKIN.length, mat = operatorMaterial(team, agent), lods = [];
   for (const lod of [0, 1]) {
-    const mesh = new THREE.SkinnedMesh(operatorGeometry(team, tone, lod), mat);
+    const mesh = new THREE.SkinnedMesh(operatorGeometry(team, tone, lod, agent), mat);
     mesh.name = `operator_lod${lod}`; mesh.castShadow = true; mesh.receiveShadow = true; mesh.visible = lod === 0;
     mesh.boundingSphere = mesh.geometry.boundingSphere.clone();
     root.add(mesh); mesh.bind(skeleton, mesh.matrixWorld); lods.push(mesh);
   }
   const legs = [{ thigh: bones.thighL, knee: bones.kneeL, side: -1 }, { thigh: bones.thighR, knee: bones.kneeR, side: 1 }];
   root.userData = { hip: bones.hip, spine: bones.spine, head: bones.head, legs, shoulderR: bones.shoulderR, shoulderL: bones.shoulderL, elbowR: bones.elbowR, elbowL: bones.elbowL,
-    skeleton, lods, lod: 0, weapon: null, weaponId: null, rigs: new Map(), phase: Math.random() * 6, fall: 0, team };
+    skeleton, lods, lod: 0, weapon: null, weaponId: null, rigs: new Map(), phase: Math.random() * 6, fall: 0, team, agent: agent || null };
   // relaxed arms until a weapon is put in the hands
   bones.shoulderR.rotation.set(-0.15, 0, -0.08); bones.shoulderL.rotation.set(-0.15, 0, 0.08); bones.elbowR.rotation.x = bones.elbowL.rotation.x = -0.35;
   return root;
@@ -442,7 +449,7 @@ const HOLD = {
   grenade: { p: [0.13, 0.3, -0.22], r: [0.1, 0, 0], s: 1 },
   c4: { p: [0.02, 0.24, -0.26], r: [0.3, 0, 0], s: 1 },
 };
-const holdStyle = id => (['glock', 'usp', 'deagle', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'].includes(id) ? 'pistol' : ['knife'].includes(id) ? 'knife' : ['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'].includes(id) ? 'grenade' : id === 'c4' ? 'c4' : 'rifle');
+const holdStyle = id => (['glock', 'usp', 'deagle', 'p250', 'fiveseven', 'tec9', 'cz75', 'r8'].includes(id) ? 'pistol' : String(id).startsWith('knife') ? 'knife' : ['he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'].includes(id) ? 'grenade' : id === 'c4' ? 'c4' : 'rifle');
 
 // alternative holds (lobby showcase): 'low' = low-ready, muzzle down and across the body
 const POSES = {
@@ -458,17 +465,20 @@ export function setHoldPose(actor, pose = null) {
   rig.group.position.set(...o.p); rig.group.rotation.set(...o.r);
 }
 
-/** Puts the requested weapon in the operator's hands (hands are placed on the weapon's grips; arms are solved by IK each frame). */
-export function holdWeapon(actor, weaponId) {
-  const u = actor.userData;
-  if (u.weaponId === weaponId) return;
+/** Puts the requested weapon in the operator's hands. `weaponId` may be a knife model (knife_karambit); `skin` =
+ *  { f: finish, w: wear } repaints the third-person rig (what other players see you holding). */
+export function holdWeapon(actor, weaponId, skin) {
+  const u = actor.userData, key = skin ? `${skin.f}:${skin.w ?? 0}` : '';
+  if (u.weaponId === weaponId) { if (u.weapon && u.weapon.userData.skinKey !== key) { applyFinish(u.weapon, skin?.f, weaponMaterials(), skin?.w || 0); u.weapon.userData.skinKey = key; } return; }
   if (u.weapon) u.weapon.visible = false;
   u.weaponId = weaponId; u.arms = null;
   if (!weaponId) { u.weapon = null; return; }
   if (u.skinned) {
     let rig = u.rigs.get(weaponId);
     if (!rig) { rig = buildWeaponRigTP(weaponId); u.socket.add(rig.group); u.rigs.set(weaponId, rig); }
-    u.weapon = rig.group; rig.group.visible = true; return;
+    u.weapon = rig.group; rig.group.visible = true;
+    if (rig.group.userData.skinKey !== key) { applyFinish(rig.group, skin?.f, weaponMaterials(), skin?.w || 0); rig.group.userData.skinKey = key; }
+    return;
   }
   let rig = u.rigs.get(weaponId);
   if (!rig) {
@@ -481,6 +491,7 @@ export function holdWeapon(actor, weaponId) {
     u.spine.add(rig.group); u.rigs.set(weaponId, rig);
   }
   u.weapon = rig.group; u.arms = rig.arms; rig.group.visible = true;
+  if (rig.group.userData.skinKey !== key) { applyFinish(rig.group, skin?.f, weaponMaterials(), skin?.w || 0); rig.group.userData.skinKey = key; }
   if (u.pose) setHoldPose(actor, u.pose);
 }
 

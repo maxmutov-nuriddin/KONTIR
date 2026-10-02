@@ -72,7 +72,7 @@ export class WeaponManager {
     if (team === this.team) return;
     this.team = team; disposeTree(this.arms); this.arms = buildArms(team); this.inventory.team = team; this.setActive(this.activeId, true);
     // skins are equipped per side: repaint the gloves and every rig for the new team
-    this.refreshFinish('gloves'); for (const [id, r] of this.rigs) this.paint(r, id);
+    this.refreshFinish('gloves'); for (const r of this.rigs.values()) this.paint(r, r.id);
   }
   /** Mouse wheel: cycle to the next / previous owned slot. Returns the slot to request, or 0. */
   wheelSlot(dir) {
@@ -85,13 +85,22 @@ export class WeaponManager {
   // ----------------------------------------------------------------------------------------- state sync
   /** Replace predicted state with the authoritative inventory (snapshot). */
   load(json) {
-    this.inventory.load(json); this.setActive(this.inventory.weaponId());
-    for (const [id, r] of this.rigs) if (r.skinKey !== this.skinKey(id)) this.paint(r, id);   // picked up / dropped: re-skin
+    this.inventory.load(json);
+    // the knife model can change (equip / picked-up knife): switch rigs when the build differs
+    const active = this.inventory.weaponId(), swap = this.activeRig && active === this.activeId && this.activeRig.buildId !== this.buildId(active);
+    this.setActive(active, swap);
+    for (const r of this.rigs.values()) if (r.skinKey !== this.skinKey(r.id)) this.paint(r, r.id);   // picked up / dropped: re-skin
   }
   /** Skin shown on weapon `id`: a picked-up gun keeps its owner's (inventory.skins), else the player's own for this side. */
   skinOf(id) {
     const carried = this.inventory.skins?.[id];
     return carried ? [carried.finish, carried.wear || 0] : [this.finishFor?.(id), this.wearFor?.(id) || 0];
+  }
+  /** Which model to build for weapon `id`: the knife slot shows the equipped (or picked-up) knife model. */
+  buildId(id) {
+    if (id !== 'knife') return id;
+    const carried = this.inventory.skins?.knife, model = carried ? carried.model : this.modelFor?.('knife');
+    return model ? `knife_${model}` : 'knife';
   }
   skinKey(id) { const [f, w] = this.skinOf(id); return `${f || 'standard'}:${w}`; }
   paint(r, id) { const [f, w] = this.skinOf(id); applyFinish(r.group, f, weaponMaterials(), w); r.skinKey = this.skinKey(id); }
@@ -121,18 +130,21 @@ export class WeaponManager {
   }
 
   rig(id) {
-    let r = this.rigs.get(id);
+    const key = this.buildId(id);
+    let r = this.rigs.get(key);
     if (!r) {
-      r = buildWeaponRig(id); r.group.visible = false; r.group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
+      r = buildWeaponRig(key); r.group.visible = false; r.group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
+      r.buildId = key; r.id = id;                     // animations / reload key off the gameplay weapon id
       this.paint(r, id);
-      this.root.add(r.group); this.rigs.set(id, r);
+      this.root.add(r.group); this.rigs.set(key, r);
     }
     return r;
   }
   /** Re-applies the profile's finish after it changed in the inventory. */
   refreshFinish(id) {
     if (id === 'gloves') return applyGloveFinish(this.arms, this.finishFor?.('gloves'), this.wearFor?.('gloves') || 0);
-    const r = this.rigs.get(id); if (r) this.paint(r, id);
+    if (id === 'knife' && this.activeId === 'knife' && this.activeRig?.buildId !== this.buildId('knife')) return this.setActive('knife', true);
+    const r = this.rigs.get(this.buildId(id)); if (r) this.paint(r, id);
   }
   /** Toggle mesh visibility: activeWeaponMesh.visible = true, every other rig hidden. */
   setActive(id, force = false) {

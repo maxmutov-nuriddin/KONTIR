@@ -74,7 +74,7 @@ export class Inventory {
     } else {
       displaced = this.slots[w.slot] && this.slots[w.slot] !== id ? this.slots[w.slot] : null;
       this.slots[w.slot] = id;
-      if (skin) this.skins[id] = { finish: skin.finish, wear: skin.wear }; else delete this.skins[id];
+      if (skin) this.skins[id] = skin.model ? { finish: skin.finish, wear: skin.wear, model: skin.model } : { finish: skin.finish, wear: skin.wear }; else delete this.skins[id];
       if (displaced) delete this.skins[displaced];
       if (w.kind === 'gun') this.ammo[id] = ammo ? { mag: ammo.mag, reserve: ammo.reserve } : { mag: w.mag, reserve: w.reserve };
     }

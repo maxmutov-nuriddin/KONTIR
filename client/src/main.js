@@ -57,6 +57,7 @@ const weapons = new WeaponManager(world.viewScene);
 const ctSide = () => weapons.team === 'COUNTER_TERRORIST';
 weapons.finishFor = id => (ctSide() ? profile.finishesCT : profile.finishes)?.[id];
 weapons.wearFor = id => (ctSide() ? profile.wearsCT : profile.wears)?.[id] || 0;
+weapons.modelFor = id => (ctSide() ? profile.modelsCT : profile.models)?.[id];
 const readJSON = (k, d) => { try { return JSON.parse(store.get(k, '') || 'null') ?? d; } catch { return d; } };
 controller.setBinds(readJSON('binds', DEFAULT_BINDS));
 controller.setMouse({ ...DEFAULT_MOUSE, sensitivity: Number(store.get('sens', 0.6)), ...readJSON('mouse', {}) });
@@ -273,8 +274,13 @@ async function join(options) {
       // offline practice: the room runs in this browser on the already-loaded collision map (ping 0, no account rewards)
       await loadMapById(request.mapId, true);
       if (my !== generation) return;
-      const side = (f = {}, w = {}) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, { finish: v, wear: w[k] || 0 }]));
-      result = network.startLocal(world.map, { ...request, skins: { TERRORIST: side(profile.finishes, profile.wears), COUNTER_TERRORIST: side(profile.finishesCT, profile.wearsCT) } });
+      // own per-side skins for the local room (the server derives them from the account instead): knife model + agent
+      const side = (f = {}, w = {}, m = {}) => {
+        const out = {};
+        for (const [k, v] of Object.entries(f)) if (k === 'agent_t' || k === 'agent_ct') out.agent = { finish: v }; else out[k] = m[k] ? { finish: v, wear: w[k] || 0, model: m[k] } : { finish: v, wear: w[k] || 0 };
+        return out;
+      };
+      result = network.startLocal(world.map, { ...request, skins: { TERRORIST: side(profile.finishes, profile.wears, profile.models), COUNTER_TERRORIST: side(profile.finishesCT, profile.wearsCT, profile.modelsCT) } });
     } else result = await network.join(request);
     if (my !== generation) { network.leave(); return; }
     await enter(result, my);
@@ -421,7 +427,7 @@ function refreshLobby() {
   ui.loadoutM4 = profile.loadout.m4;
   if (ui.view === 'loadout') ui.renderLoadout(profile, icon, (key, wid) => { profile.loadout[key] = wid; saveChoices(); refreshLobby(); updateShowcase(); });
   const ctx = { icon: skinIcon, finishes: FINISHES, eco, market, now: marketNow + (performance.now() - marketAt) };
-  if (ui.view === 'inventory') ui.renderInventory(profile, { ...ctx, weapons: ['knife', ...INVENTORY_WEAPONS], onEquip: equip, onSell: sell });
+  if (ui.view === 'inventory') ui.renderInventory(profile, { ...ctx, weapons: ['agent_t', 'agent_ct', 'knife', ...INVENTORY_WEAPONS], onEquip: equip, onSell: sell });
   if (ui.view === 'store') ui.renderStore(profile, { ...ctx, onBuy: buySkin });
   if (ui.view === 'news') ui.renderNews(newsFor());
 }
@@ -436,13 +442,21 @@ friends.viewProfile = async name => {
   } catch (e) { ui.toast(e.message === 'nouser' ? 'O‘yinchi topilmadi.' : 'Profilni ochib bo‘lmadi.'); }
 };
 async function loadMarket() { try { const r = await network.request('market'); market = r.market || {}; marketNow = r.now || Date.now(); marketAt = performance.now(); } catch { /* offline: base prices */ } }
-const skinIcon = (w, f, wear = 0) => w === 'gloves'
+const hex = n => `#${(n >>> 0).toString(16).padStart(6, '0')}`;
+/** Agent thumbnail: operator silhouette in the agent's uniform colours over its camo. */
+const agentIcon = id => {
+  const a = eco.AGENTS[id] || { pal: { uniform: 0x6f6650, camo: [0x5a5240, 0x8a8066, 0x403a2e], gear: 0x3a382e } };   // standard kit
+  const c = a.pal.camo || [a.pal.uniform, a.pal.uniform, a.pal.uniform];
+  return `<span class="agent-ico" style="background:radial-gradient(circle at 30% 25%, ${hex(c[1])} 0 18%, transparent 19%), radial-gradient(circle at 70% 60%, ${hex(c[0])} 0 22%, transparent 23%), radial-gradient(circle at 40% 80%, ${hex(c[2])} 0 16%, transparent 17%), ${hex(a.pal.uniform)}">
+    <svg viewBox="0 0 64 64"><path d="M32 6 a9 9 0 1 1 0 18 a9 9 0 1 1 0-18 Z M16 60 L18 34 Q20 26 32 26 Q44 26 46 34 L48 60 Z" fill="${hex(a.pal.gear ?? a.pal.uniform)}" stroke="#000a" stroke-width="2"/></svg></span>`;
+};
+const skinIcon = (w, f, wear = 0) => eco.isAgentWeapon(w) ? agentIcon(f) : w === 'gloves'
   ? `<span class="glove-ico" data-swatch="${swatchKey(f, wear)}" style="background-image:url(${finishSwatch(f, wear)})"><svg viewBox="0 0 64 64"><path d="M14 60 V30 L10 14 a4 4 0 0 1 8-2 L22 26 V8 a4 4 0 0 1 8 0 V24 V6 a4 4 0 0 1 8 0 V24 V9 a4 4 0 0 1 8 0 V28 l4-8 a4 4 0 0 1 7 4 L50 44 V60 Z" fill="none" stroke="#0009" stroke-width="2.5"/></svg></span>`
   : `<img alt="" data-icon="${w}:${f || 'standard'}" src="${iconSrc(w, f || 'standard')}">`;
-const ERR = { coins: 'KONTI yetarli emas.', item: 'Bu skin mavjud emas.', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
+const ERR = { coins: 'KONTI yetarli emas.', item: 'Bu skin mavjud emas.', shop: 'Bu taklif bugungi do‘konda yo‘q (do‘kon yangilandi).', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
 function syncSkins() {
   const ct = eco.equippedView(profile.items, profile.equippedCT || {});
-  Object.assign(profile, eco.equippedView(profile.items, profile.equipped), { finishesCT: ct.finishes, wearsCT: ct.wears }); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
+  Object.assign(profile, eco.equippedView(profile.items, profile.equipped), { finishesCT: ct.finishes, wearsCT: ct.wears, modelsCT: ct.models }); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
 async function buySkin(req) {
   if (profile.demo) { ui.toast('Skin olish uchun akkaunt kerak.'); return openAuth(); }
   try { const r = await network.request('account:buy', req); adopt(profile, r.profile); audio.click(); syncSkins(); await loadMarket();
@@ -473,7 +487,7 @@ function updateShowcase() {
   if (playing || !world.map) return;
   const side = team, rifle = side === 'TERRORIST' ? 'ak47' : profile.loadout.m4;
   const ct = side === 'COUNTER_TERRORIST', fin = (ct ? profile.finishesCT : profile.finishes) || {}, wr = (ct ? profile.wearsCT : profile.wears) || {};
-  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => { applyFinish(g, fin[rifle], weaponMaterials(), wr[rifle] || 0); applyGloveFinish(g, fin.gloves, wr.gloves || 0); } });
+  world.setShowcase({ team: side, weapon: rifle, agent: fin[ct ? 'agent_ct' : 'agent_t'], applyFinish: g => { applyFinish(g, fin[rifle], weaponMaterials(), wr[rifle] || 0); applyGloveFinish(g, fin.gloves, wr.gloves || 0); } });
 }
 {
   const nameEl = document.querySelector('#lobby-name');

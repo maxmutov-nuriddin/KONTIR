@@ -5,7 +5,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { WeaponManager } from '../WeaponManager.js';
 import { ViewmodelDynamics } from '../PlayerController.js';
 import { animateOperator, buildOperator, holdWeapon, setHoldPose } from './characters.js';
-import { buildWeaponRig } from './viewmodels.js';
+import { buildWeaponRig, weaponMaterials } from './viewmodels.js';
+import { applyFinish } from './finishes.js';
 import { WEAPONS } from '../../shared/weapons.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
@@ -51,6 +52,7 @@ if (mode === 'gun') {
   vs.add(new THREE.HemisphereLight(0xdfe8f2, 0x6b5c48, 0.6)); const key = new THREE.DirectionalLight(0xfff1dc, 3.2); key.position.set(1.5, 2.5, 1); vs.add(key);
   const rim = new THREE.DirectionalLight(0xcfe0ff, 1.6); rim.position.set(-1.5, 1, -2); vs.add(rim);
   const rig = buildWeaponRig(id); vs.add(rig.group);
+  if (q.get('finish')) applyFinish(rig.group, q.get('finish'), weaponMaterials());
   const box = new THREE.Box3().setFromObject(rig.group), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
   camera = new THREE.PerspectiveCamera(24, innerWidth / innerHeight, 0.01, 20);
   const [ax, ay, az] = (q.get('dir') || '1,0.12,0.18').split(',').map(Number), d = Math.max(size.z, size.y * 1.6) * 2.5;
@@ -73,14 +75,16 @@ if (mode === 'gun') {
   const light = new THREE.DirectionalLight(0xffe1b0, 3.5); light.position.set(-1.5, 3, 2); viewScene.add(light);
   const rim = new THREE.DirectionalLight(0xcfe0ff, 1.4); rim.position.set(1.2, 1.4, -3); viewScene.add(rim); viewScene.environmentIntensity = 0.9;
   camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.01, 8);
-  const wm = new WeaponManager(viewScene, team); wm.inventory.give(id, { select: true }); wm.inventory.drawUntil = 0; wm.setActive(id);
+  // knife models (knife_karambit…) are shown the way the game does: the 'knife' weapon with that model equipped
+  const km = id.startsWith('knife_') ? id.slice(6) : null, wid = km ? 'knife' : id;
+  const wm = new WeaponManager(viewScene, team); if (km) wm.modelFor = () => km; wm.inventory.give(wid, { select: true }); if (km) wm.inventory.select(3, { force: true }); wm.inventory.drawUntil = 0; wm.setActive(wid);
   const dyn = new ViewmodelDynamics(); const grid = new THREE.GridHelper(4, 16, 0x556, 0x445); grid.position.set(0, -0.6, -1); if (q.get('grid')) viewScene.add(grid);
   window.__wm = wm;
   forceReload(wm);
   tick = dt => { wm.update(dt, dyn); renderer.clear(); renderer.render(viewScene, camera); };
 } else {
   camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 100);
-  const actor = buildOperator(team, Number(q.get('seed') || 1)); scene.add(actor);
+  const actor = buildOperator(team, Number(q.get('seed') || 1), q.get('agent') || undefined); scene.add(actor);
   actor.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   const crouch = Number(q.get('crouch') || 0), pitch = Number(q.get('pitch') || 0), yaw = Number(q.get('yaw') || 0.6), speed = Number(q.get('speed') || 0);
   holdWeapon(actor, id); if (q.get('pose')) setHoldPose(actor, q.get('pose'));

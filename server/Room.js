@@ -7,6 +7,7 @@ import { BUY_ITEMS, GRENADES, SLOT, WEAPONS, computeDamage, loadSpeedMul, inaccu
 import { LagCompensator } from './LagCompensator.js';
 import { PENETRATION } from '../shared/collision.js';
 import { BotBrain } from './Bots.js';
+import { agentsFor } from '../shared/cosmetics.js';
 
 const CMD_BUFFER_TARGET = 2;    // commands kept queued before draining two per tick (absorbs ~30 ms of send jitter)
 const CMD_BUDGET_CAP = 32;      // max ticks of catch-up after a stall (~500 ms)
@@ -93,7 +94,14 @@ export class Room {
     return p;
   }
   nextIndex() { const used = new Set([...this.players.values()].map(p => p.index)); let i = 0; while (used.has(i)) i++; return i; }
-  addBot(team) { const id = `bot-${Math.random().toString(16).slice(2, 8)}`; const used = new Set([...this.players.values()].map(q => q.name)); const name = BOT_NAMES.find(n => !used.has(n)) || BOT_NAMES[this.players.size % BOT_NAMES.length]; return this.add(id, name, team, true); }
+  addBot(team) {
+    const id = `bot-${Math.random().toString(16).slice(2, 8)}`; const used = new Set([...this.players.values()].map(q => q.name)); const name = BOT_NAMES.find(n => !used.has(n)) || BOT_NAMES[this.players.size % BOT_NAMES.length];
+    const bot = this.add(id, name, team, true);
+    // bots wear a random agent per side (a mixed, lively lobby); some keep the default kit
+    const pickAgent = side => { const list = agentsFor(side); const k = Math.floor(Math.random() * (list.length + 2)); return k < list.length ? { finish: list[k] } : undefined; };
+    if (bot) bot.skins = { TERRORIST: { agent: pickAgent('TERRORIST') }, COUNTER_TERRORIST: { agent: pickAgent('COUNTER_TERRORIST') } };
+    return bot;
+  }
   /** Fills each side with bots up to `counts[team]` (default 5 per side). */
   fillBots(counts = null) { for (const team of TEAM_IDS) { const want = Math.min(RULES.perTeam, counts?.[team] ?? RULES.perTeam); while (this.count(team) < want) if (!this.addBot(team)) break; } }
 
@@ -365,6 +373,7 @@ export class Room {
   }
 
   // ------------------------------------------------------------------------------------ dropped weapons
+  compactSkin(p) { const id = p.inv.weaponId(), sk = id && this.skinOf(p, id); return sk && sk.finish !== 'standard' ? { f: sk.finish, w: +(sk.wear || 0).toFixed(2), ...(sk.model ? { m: sk.model } : {}) } : (sk?.model ? { f: 'standard', m: sk.model } : undefined); }
   /** Skin of the weapon `p` holds: one picked up keeps its owner's, otherwise the holder's own equipped skin. */
   skinOf(p, weapon) { return p.inv.skins?.[weapon] || p.skins?.[p.team]?.[weapon] || null; }
   spawnDrop(p, weapon, ammo, speed = 4.2, skin = null) {
@@ -840,7 +849,9 @@ export class Room {
         const hidden = !mine && !mate && viewer && p.alive && this.phase !== 'warmup' && !this.canSee(viewer, p) && this.tick - (p.seenBy.get(viewer.id) ?? -1e9) > 26;
         const base = { id: p.id, name: p.name, team: p.team, bot: p.bot, alive: p.alive, life: p.life, kills: p.kills, deaths: p.deaths, assists: p.assists, ack: p.ack,
           damage: p.damage, hsKills: p.hsKills, mvps: p.mvps, hidden: hidden || undefined,
-          char: hidden ? null : mine ? { ...p.char, x: +p.char.x.toFixed(4), y: +p.char.y.toFixed(4), z: +p.char.z.toFixed(4) } : this.compactChar(p.char), weapon: hidden ? null : p.inv.weaponId(), money: mate || mine ? p.money : undefined,
+          char: hidden ? null : mine ? { ...p.char, x: +p.char.x.toFixed(4), y: +p.char.y.toFixed(4), z: +p.char.z.toFixed(4) } : this.compactChar(p.char), weapon: hidden ? null : p.inv.weaponId(),
+          // cosmetics others see: agent (character skin for the current side) and the held weapon's skin / knife model
+          agent: p.skins?.[p.team]?.agent?.finish, wskin: hidden || mine ? undefined : this.compactSkin(p), money: mate || mine ? p.money : undefined,
           health: mate || mine || !p.alive ? p.health : undefined, armor: mine ? p.armor : undefined, flashed: p.flashUntil > this.tick, rtt: Math.round(p.rtt) };
         if (mine) Object.assign(base, { inv: p.inv.toJSON(), helmet: p.helmet, kit: p.kit, action: p.action, flashLeft: Math.max(0, (p.flashUntil - this.tick) / TICK_RATE) });
         return base;

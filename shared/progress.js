@@ -1,6 +1,6 @@
 // Progression rules shared by the client (demo profile) and the server (real accounts): XP / coins / rating per match,
 // skin wear per match and loadout validation (skin prices live in economy.js). The server is authoritative for accounts; the demo profile uses the same math.
-import { FINISH_RARITY, validSkin, matchWear } from './economy.js';
+import { FINISH_RARITY, validSkin, matchWear, slotOf, isAgentWeapon } from './economy.js';
 export const LOADOUT_CHOICES = Object.freeze({ t: ['glock', 'p250'], ct: ['usp', 'p250'], m4: ['m4a4', 'm4a1s'] });
 export const levelOf = xp => 1 + Math.floor(xp / 1000);
 
@@ -35,7 +35,7 @@ export function applyMatch(p, { won, draw = false, kills = 0, deaths = 0, assist
   p.matches++; if (won) p.wins++; p.kills += kills; p.deaths += deaths;
   // equipped skins wear down with use (floats only go up)
   const used = new Set([...Object.values(p.equipped || {}), ...Object.values(p.equippedCT || {})]), dw = matchWear(kills);
-  for (const it of p.items || []) if (used.has(it.id)) it.wear = Math.min(1, +(it.wear + dw).toFixed(4));
+  for (const it of p.items || []) if (used.has(it.id) && !isAgentWeapon(it.weapon)) it.wear = Math.min(1, +(it.wear + dw).toFixed(4));
   return { xp, coins, rating, levelUp: levelOf(p.xp) > before };
 }
 
@@ -43,12 +43,13 @@ export function applyMatch(p, { won, draw = false, kills = 0, deaths = 0, assist
 export function cleanChoices(p, { loadout, equipped, equippedCT, privateProfile } = {}) {
   if (typeof privateProfile === 'boolean') p.privateProfile = privateProfile;   // hides inventory and stats from other players
   if (loadout && typeof loadout === 'object') for (const [k, ok] of Object.entries(LOADOUT_CHOICES)) if (ok.includes(loadout[k])) p.loadout[k] = loadout[k];
-  const clean = map => {
+  // an item goes in its slot (every knife model in 'knife'); agents only on their own side
+  const clean = (map, wrongAgent) => {
     const next = {};
-    for (const [w, id] of Object.entries(map).slice(0, 64)) { const it = (p.items || []).find(i => i.id === id); if (it && it.weapon === w) next[w] = id; }
+    for (const [w, id] of Object.entries(map).slice(0, 64)) { const it = (p.items || []).find(i => i.id === id); if (it && slotOf(it.weapon) === w && w !== wrongAgent) next[w] = id; }
     return next;
   };
-  if (equipped && typeof equipped === 'object') p.equipped = clean(equipped);
-  if (equippedCT && typeof equippedCT === 'object') p.equippedCT = clean(equippedCT);
+  if (equipped && typeof equipped === 'object') p.equipped = clean(equipped, 'agent_ct');
+  if (equippedCT && typeof equippedCT === 'object') p.equippedCT = clean(equippedCT, 'agent_t');
   return p;
 }

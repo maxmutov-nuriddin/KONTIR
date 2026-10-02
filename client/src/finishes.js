@@ -17,9 +17,32 @@ export const FINISHES = {
   gold: { name: 'Oltin', pattern: 'solid', colors: ['#d4a73a'], metal: 1, rough: 0.2 },
   ruby: { name: 'Yoqut', pattern: 'fade', colors: ['#5a0610', '#c4142c', '#ff4d5e', '#7a0a18'], metal: 0.95, rough: 0.16 },
   sapphire: { name: 'Safir', pattern: 'fade', colors: ['#06205a', '#1450c4', '#4da3ff', '#0a2a7a'], metal: 0.95, rough: 0.16 },
+  vanilla: { name: 'Vanilla' },                                                   // knives only: bare steel, no paint
+  sand_dune: { name: 'Qum barxan', pattern: 'stripes', colors: ['#c8b07e', '#a88f5e', '#e0cc9e'] },
+  safari_mesh: { name: 'Safari to‘ri', pattern: 'hex', colors: ['#8a7a58', '#5e5238'] },
+  boreal: { name: 'Shimol o‘rmoni', pattern: 'camo', colors: ['#5a5236', '#3a4a2c', '#7a6a48', '#2a2a1e'] },
+  night_ops: { name: 'Tungi amaliyot', pattern: 'digital', colors: ['#24272c', '#14161a', '#3a3e46', '#0c0d10'] },
+  storm: { name: 'Bo‘ron', pattern: 'marble', colors: ['#5c646c', '#9aa2aa', '#2e3338'] },
+  tide: { name: 'To‘lqin', pattern: 'wave', colors: ['#1a4a6a', '#2f7fa8', '#9fd6ef'] },
+  neon_grid: { name: 'Neon to‘r', pattern: 'circuit', colors: ['#0b1418', '#19e0d0'], rough: 0.4 },
+  lime: { name: 'Laym anodlash', pattern: 'solid', colors: ['#6fbf2a'], metal: 0.85, rough: 0.28 },
+  zebra: { name: 'Zebra', pattern: 'zigzag', colors: ['#e8e8e8', '#141414'] },
+  copper: { name: 'Mis', pattern: 'solid', colors: ['#b8673a'], metal: 1, rough: 0.3 },
+  hex_red: { name: 'Qizil asal ari', pattern: 'hex', colors: ['#8a1c1c', '#1a0a0a'] },
+  cyber: { name: 'Kiber', pattern: 'circuit', colors: ['#1a0c2a', '#c040ff'], rough: 0.35 },
+  jade: { name: 'Nefrit marmar', pattern: 'marble', colors: ['#1f6a4e', '#7fd6a8', '#0e3a28'], metal: 0.3, rough: 0.25 },
+  pop_dots: { name: 'Pop-art', pattern: 'dots', colors: ['#f2d02a', '#e0306a', '#1a1a1a'] },
+  damascus: { name: 'Damashq po‘lati', pattern: 'damascus', colors: ['#5e646a', '#b8bec4', '#2a2e32'], metal: 1, rough: 0.25 },
+  splatter: { name: 'Bo‘yoq sachrami', pattern: 'splatter', colors: ['#1c1c1c', '#e04a2a', '#f2c14e', '#2ab0e0'] },
+  doppler: { name: 'Doppler', pattern: 'doppler', colors: ['#2a0a3a', '#c02a8a', '#ff7ad0', '#5a1a7a'], metal: 0.95, rough: 0.14 },
+  aqua_wave: { name: 'Akva', pattern: 'wave', colors: ['#06303a', '#10a8b8', '#a8f2f0'], metal: 0.7, rough: 0.22 },
+  emerald_doppler: { name: 'Zumrad Doppler', pattern: 'doppler', colors: ['#022a12', '#0a9a4a', '#6af0a0', '#05401e'], metal: 0.95, rough: 0.12 },
+  gold_damascus: { name: 'Oltin Damashq', pattern: 'damascus', colors: ['#8a6a20', '#f2d27a', '#4a3410'], metal: 1, rough: 0.2 },
+  inferno: { name: 'Do‘zax olovi', pattern: 'splatter', colors: ['#2a0602', '#e83a0a', '#ffb02a', '#ff5a1a'], rough: 0.3 },
+  galaxy: { name: 'Galaktika', pattern: 'dots', colors: ['#0a0620', '#5a2ab0', '#e8e0ff'], metal: 0.6, rough: 0.2 },
 };
 
-const painted = new Set(['darkMetal', 'blackSteel', 'polymer', 'olivePoly', 'tanPoly', 'silver', 'wood']);
+const painted = new Set(['darkMetal', 'blackSteel', 'polymer', 'olivePoly', 'tanPoly', 'silver', 'wood', 'blade']);
 const texCache = new Map(), matCache = new Map();
 
 function paint(id) {
@@ -46,6 +69,48 @@ function paint(id) {
     for (let r = 30; r < 380; r += 42) wrap(() => { g.beginPath(); for (let i = 0; i <= 16; i++) { const a = i / 16 * Math.PI * 2, rr = r * (i % 2 ? 0.88 : 1); g.lineTo(256 + Math.cos(a) * rr, 256 + Math.sin(a) * rr); } g.stroke(); });
   } else if (f.pattern === 'fade') {
     const gr = g.createLinearGradient(0, 0, 512, 512); col.forEach((cc, i) => gr.addColorStop(i / (col.length - 1), cc)); g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  } else if (f.pattern === 'stripes') for (let i = 0; i < 14; i++) {
+    const y = rnd() * 512, h = 8 + rnd() * 30;
+    g.fillStyle = col[1 + (i % (col.length - 1))]; wrap(() => { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= 512; x += 16) g.lineTo(x, y + Math.sin(x / 512 * Math.PI * 2 * 2 + i) * 14); for (let x = 512; x >= 0; x -= 16) g.lineTo(x, y + h + Math.sin(x / 512 * Math.PI * 2 * 2 + i) * 14); g.closePath(); g.fill(); });
+  } else if (f.pattern === 'hex') {
+    const r = 22, w = r * Math.sqrt(3); g.strokeStyle = col[1]; g.lineWidth = 3.5;
+    for (let row = -1; row < 512 / (r * 1.5) + 1; row++) for (let c = -1; c < 512 / w + 1; c++) {
+      const cx = c * w + (row % 2 ? w / 2 : 0), cy = row * r * 1.5;
+      g.beginPath(); for (let k = 0; k <= 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.stroke();
+    }
+  } else if (f.pattern === 'marble') {
+    for (let i = 0; i < 70; i++) {
+      const x0 = rnd() * 512, y0 = rnd() * 512; g.strokeStyle = col[1 + (i % (col.length - 1))]; g.globalAlpha = 0.25 + rnd() * 0.5; g.lineWidth = 1 + rnd() * 5;
+      wrap(() => { g.beginPath(); g.moveTo(x0, y0); let x = x0, y = y0; for (let k = 0; k < 18; k++) { x += (rnd() - 0.3) * 40; y += (rnd() - 0.5) * 40; g.lineTo(x, y); } g.stroke(); });
+    }
+    g.globalAlpha = 1;
+  } else if (f.pattern === 'wave') for (let i = 0; i < 26; i++) {
+    const y = i * 20; g.strokeStyle = col[1 + (i % (col.length - 1))]; g.lineWidth = 6 + (i % 3) * 3;
+    wrap(() => { g.beginPath(); for (let x = 0; x <= 512; x += 8) g.lineTo(x, y + Math.sin(x / 512 * Math.PI * 2 * 3 + i * 0.7) * 12); g.stroke(); });
+  } else if (f.pattern === 'circuit') {
+    g.strokeStyle = col[1]; g.fillStyle = col[1]; g.lineWidth = 2.5;
+    for (let i = 0; i < 90; i++) {
+      let x = Math.floor(rnd() * 32) * 16, y = Math.floor(rnd() * 32) * 16;
+      wrap(() => { g.beginPath(); g.moveTo(x, y); let px = x, py = y; for (let k = 0; k < 5; k++) { if (rnd() < 0.5) px += (rnd() < 0.5 ? -1 : 1) * 32; else py += (rnd() < 0.5 ? -1 : 1) * 32; g.lineTo(px, py); } g.stroke(); g.beginPath(); g.arc(px, py, 4, 0, Math.PI * 2); g.fill(); });
+    }
+  } else if (f.pattern === 'zigzag') for (let i = 0; i < 18; i++) {
+    const y = i * 30 + rnd() * 10; g.fillStyle = col[1];
+    wrap(() => { g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + ((x / 32) % 2 ? 14 : -6) + rnd() * 6); for (let x = 512; x >= 0; x -= 32) g.lineTo(x, y + 10 + ((x / 32) % 2 ? 14 : -6)); g.closePath(); g.fill(); });
+  } else if (f.pattern === 'dots') for (let i = 0; i < 260; i++) {
+    const x = rnd() * 512, y = rnd() * 512, r = 2 + rnd() * (col.length > 2 ? 10 : 6);
+    g.fillStyle = col[1 + Math.floor(rnd() * (col.length - 1))]; g.globalAlpha = 0.6 + rnd() * 0.4; wrap(() => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
+    g.globalAlpha = 1;
+  } else if (f.pattern === 'damascus') for (let i = 0; i < 60; i++) {
+    const y = i * 9; g.strokeStyle = col[1 + (i % (col.length - 1))]; g.lineWidth = 2 + (i % 4);
+    wrap(() => { g.beginPath(); for (let x = 0; x <= 512; x += 6) g.lineTo(x, y + Math.sin(x / 512 * Math.PI * 2 * 2 + i * 0.35) * 22 + Math.sin(x / 512 * Math.PI * 2 * 7 + i) * 5); g.stroke(); });
+  } else if (f.pattern === 'splatter') for (let i = 0; i < 120; i++) {
+    const x = rnd() * 512, y = rnd() * 512, r = 4 + rnd() * 26; g.fillStyle = col[1 + Math.floor(rnd() * (col.length - 1))];
+    wrap(() => { g.beginPath(); for (let k = 0; k < 11; k++) { const a = k / 11 * Math.PI * 2, rr = r * (0.5 + rnd() * 0.8); g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); g.fill();
+      for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(x + (rnd() - 0.5) * r * 3, y + (rnd() - 0.5) * r * 3, 1 + rnd() * 3, 0, Math.PI * 2); g.fill(); } });
+  } else if (f.pattern === 'doppler') {
+    const gr = g.createLinearGradient(0, 0, 512, 512); col.forEach((cc, i) => gr.addColorStop(i / (col.length - 1), cc)); g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 160; i++) { const x = rnd() * 512, y = rnd() * 512, r = 6 + rnd() * 40; g.fillStyle = col[Math.floor(rnd() * col.length)]; g.globalAlpha = 0.18 + rnd() * 0.3; wrap(() => { g.beginPath(); g.ellipse(x, y, r, r * (0.3 + rnd() * 0.6), rnd() * Math.PI, 0, Math.PI * 2); g.fill(); }); }
+    g.globalAlpha = 1;
   } else if (f.pattern === 'carbon') for (let y = 0; y < 512; y += 16) for (let x = 0; x < 512; x += 16) {
     const lit = ((x + y) / 16) % 2 === 0, gr = lit ? g.createLinearGradient(x, y, x + 16, y) : g.createLinearGradient(x, y, x, y + 16);
     gr.addColorStop(0, col[0]); gr.addColorStop(0.5, col[1]); gr.addColorStop(1, col[0]); g.fillStyle = gr; g.fillRect(x, y, 16, 16);
@@ -128,7 +193,7 @@ export function applyFinish(root, id, baseMaterials, wear = 0) {
     const base = o.userData.baseMaterial, name = names.get(base.uuid);
     // procedural rigs: known painted materials; real models: materials named paint / body / receiver / frame / stock / furniture
     const paintable = painted.has(name) || /paint|body|receiver|frame|stock|furniture|skin/i.test(base.name || '');
-    o.material = id && id !== 'standard' && FINISHES[id] && paintable ? finishMaterial(base, id, wear) : base;
+    o.material = id && FINISHES[id]?.pattern && paintable ? finishMaterial(base, id, wear) : base;
   });
 }
 
@@ -138,6 +203,6 @@ export function applyGloveFinish(arms, id, wear = 0) {
     if (!o.isMesh) return;
     o.userData.baseMaterial ??= o.material; const base = o.userData.baseMaterial;
     if (!base.userData?.glove) return;
-    o.material = id && id !== 'standard' && FINISHES[id] ? finishMaterial(base, id, wear) : base;
+    o.material = id && FINISHES[id]?.pattern ? finishMaterial(base, id, wear) : base;
   });
 }
