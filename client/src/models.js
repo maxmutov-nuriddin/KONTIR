@@ -25,8 +25,9 @@ export const models = {
     return this.cache.get(path).promise;
   },
   /** Loads every weapon and character model up front so rigs can be built synchronously. */
-  async preload(progress = () => {}) {
-    const paths = [...Object.values(this.manifest.weapons), ...Object.values(this.manifest.characters)];
+  /** Loads `ids` (weapon ids; default every model). Missing / still-loading models fall back to the procedural rig. */
+  async preload(progress = () => {}, ids = null) {
+    const paths = ids ? ids.map(id => this.manifest.weapons[id]).filter(Boolean) : [...Object.values(this.manifest.weapons), ...Object.values(this.manifest.characters)];
     let done = 0;
     await Promise.all(paths.map(p => this.load(p).then(() => progress(++done / paths.length))));
   },

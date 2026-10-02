@@ -6,7 +6,14 @@
   <meta name="theme-color" content="#171b1b" />
   <meta name="description" content="KONTIR — brauzerdagi 5v5 server-authoritative taktik FPS: Source harakati, MR12, lag compensation, PBR grafika." />
   <title>KONTIR — Tactical Operations</title>
-  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23171b1b'/%3E%3Cpath d='M4 3h3v4l4-4h2l-4.5 5L13 13h-2l-4-4v4H4z' fill='%23e9b64f'/%3E%3C/svg%3E" />
+  <style>
+    /* shown before any JS / CSS arrives, so a slow connection or an old browser never leaves a blank white page */
+    html, body { margin: 0; height: 100%; background: #0b1012; color: #cfd8d4; font: 14px system-ui, sans-serif; }
+    #boot { position: fixed; inset: 0; display: grid; place-content: center; gap: 10px; text-align: center; z-index: 0; }
+    #boot b { color: #e9b64f; letter-spacing: 4px; font-size: 22px; }
+    #boot small { opacity: .7; } #boot pre { max-width: 90vw; white-space: pre-wrap; color: #ff8a7a; font-size: 12px; }
+  </style>
   <!-- Yandex Games SDK: only inside the platform iframe (standalone hosting would throw "No parent to post message") -->
   <script>
     (function () {
@@ -20,5 +27,13 @@
     })();
   </script>
 </head>
-<body><canvas id="scene"></canvas><main id="app"></main><script type="module" src="/src/main.js"></script></body>
+<body><div id="boot"><b>◩ KONTIR</b><small>Yuklanmoqda… / Загрузка…</small></div>
+<script>
+  // a script error before the game UI exists would otherwise leave an empty page: show it instead
+  function kontirFail(msg) { var b = document.getElementById('boot'); if (b && !window.__KONTIR__) b.innerHTML = '<b>◩ KONTIR</b><small>O‘yin ishga tushmadi. Brauzerni yangilang (Chrome / Edge / Firefox) va grafik tezlashtirishni yoqing.</small><pre>' + String(msg).replace(/</g, '&lt;') + '</pre>'; }
+  window.addEventListener('error', function (e) { kontirFail(e.message || e); });
+  window.addEventListener('unhandledrejection', function (e) { kontirFail(e.reason && e.reason.message || e.reason); });
+  setTimeout(function () { if (!window.__KONTIR__) kontirFail('90 s ichida yuklanmadi — internet sekin yoki server uyg‘onmoqda. Sahifani yangilang.'); }, 90000);
+</script>
+<canvas id="scene"></canvas><main id="app"></main><script type="module" src="/src/main.js"></script></body>
 </html>

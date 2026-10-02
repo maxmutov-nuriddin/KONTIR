@@ -666,8 +666,14 @@ world.renderer.setAnimationLoop(frame);
 (async () => {
   try {
     await models.init(world.gltf);
-    if (models.count()) { ui.setLoading(0.05, '3D modellar'); await models.preload(f => ui.setLoading(0.05 + f * 0.3, '3D modellar')); }
-    ui.setLoading(0.36, 'Teksturalar'); await loadPhotoTextures('./textures/', world.maxAniso);
+    // only the weapons you can hold right away block the menu; scanned textures load in parallel and are skipped on
+    // TEZKOR (weak laptops: ~25 MB less to download and much less GPU memory)
+    const START = ['knife', 'glock', 'usp', 'p250', 'ak47', 'm4a4', 'm4a1s', 'c4'];
+    ui.setLoading(0.05, '3D modellar');
+    await Promise.all([
+      models.count() ? models.preload(f => ui.setLoading(0.05 + f * 0.3, '3D modellar'), START) : null,
+      world.qualityName === 'low' ? null : loadPhotoTextures('./textures/', world.maxAniso),
+    ]);
     const manifest = await (await fetch('./maps/manifest.json')).json();
     maps = manifest.maps.filter(m => m.valid !== false); selectedMap = maps.find(m => m.id === selectedMap)?.id || maps[0].id;
     for (const id of [...pool]) if (!maps.some(m => m.id === id)) pool.delete(id);
@@ -675,7 +681,9 @@ world.renderer.setAnimationLoop(frame);
     ui.setMaps(maps, selectedMap, async mapId => { selectedMap = mapId; try { await loadMapById(mapId); } catch (e) { ui.toast(e.message); } }, pool);
     await loadMapById(selectedMap, true);
   } catch (error) { ui.toast(`Xaritalarni yuklab bo‘lmadi: ${error.message}`); }
-  ui.ready();
+  ui.ready(); document.getElementById('boot')?.remove();
+  // the rest of the weapon models stream in after the menu is up; a rig built from the procedural fallback is rebuilt
+  if (models.count()) setTimeout(() => models.preload(() => {}, Object.keys(models.manifest.weapons)).then(() => { for (const [wid, r] of weapons.rigs) if (!r.fromModel && models.weapon(wid) && !r.group.visible) { r.group.removeFromParent(); weapons.rigs.delete(wid); } }), 500);
   yandexSDK.init({ audio, controller }).then(sdk => {
     const ylang = sdk?.environment?.i18n?.lang || yandexSDK.getLanguage();
     if (ylang) window.applyYandexLanguage?.(ylang);
