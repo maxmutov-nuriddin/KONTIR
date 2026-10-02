@@ -39,7 +39,7 @@ export class UI {
         <header class="topbar">
           <div class="tb-left"><button id="nav-home" class="tb-icon" title="Bosh sahifa" aria-label="Bosh sahifa">⌂</button><button id="settings" class="tb-icon" title="Sozlamalar" aria-label="Sozlamalar">⚙</button><button id="fullscreen" class="tb-icon" title="To‘liq ekran" aria-label="To‘liq ekran">⛶</button></div>
           <nav class="tb-nav"><button data-view="inventory">INVENTAR</button><button data-view="loadout">LOADOUT</button><button data-view="play" id="play-nav" class="tb-play">O‘YNASH</button><button data-view="store">DO‘KON</button><button data-view="news">YANGILIKLAR</button></nav>
-          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="Demo tangalar — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><button id="btn-free-coins" class="tb-bonus-btn" title="Reklama ko‘rib bepul tanga olish (kuniga cheklangan)">🎬 +50 ◈</button><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
+          <div class="tb-right"><select id="lang" class="tb-lang" aria-label="Til"><option value="uz">UZ</option><option value="ru">RU</option><option value="en">EN</option></select><button id="account-btn" class="tb-account" title="Akkaunt">KIRISH</button><span class="coins" title="KONTI — o‘ynab yig‘iladi">◈ <b id="coins">0</b></span><button id="btn-free-coins" class="tb-bonus-btn" title="Reklama ko‘rib bepul KONTI olish (kuniga cheklangan)">🎬 +50 ◈</button><a class="brand" href="#"><b>◩</b> KONTIR</a></div>
         </header>
         <aside class="rail">
           <div class="rail-me"><div class="avatar" id="rail-avatar">O</div><span class="rail-level" id="rail-level">1</span></div>
@@ -217,22 +217,39 @@ export class UI {
     const { icon, finishes, eco, market, now, onEquip, onSell } = ctx, W = this.weaponsTable;
     const items = [...(p.items || [])].sort((a, b) => eco.skinPrice(b.weapon, b.finish, b.wear, market, now) - eco.skinPrice(a.weapon, a.finish, a.wear, market, now));
     const wname = w => w === 'gloves' ? '★ Qo‘lqop' : w === 'knife' ? '★ Pichoq' : W[w]?.name || w.toUpperCase();
+    // skins are worn per side: `equipped` = T, `equippedCT` = CT. Team-only weapons have one side; the rest offer T / CT / both.
+    const sideOf = w => (W[w]?.team === 'TERRORIST' ? 't' : W[w]?.team === 'COUNTER_TERRORIST' ? 'ct' : null);
+    const onT = (w, id) => p.equipped?.[w] === id, onCT = (w, id) => (p.equippedCT || {})[w] === id;
+    const tags = (t, ct) => `${t ? '<i class="side-tag t">T</i>' : ''}${ct ? '<i class="side-tag ct">CT</i>' : ''}`;
+    const equipButtons = (w, id, t, ct) => {
+      const only = sideOf(w);
+      if (only) { const on = only === 't' ? t : ct; return `<button data-eq="${id ?? ''}" data-w="${w}" data-side="${only}" data-on="${on ? 1 : 0}" class="${on ? 'secondary' : 'primary'}">${on ? (id ? 'YECHISH' : 'KIYILGAN') : 'KIYISH'}</button>`; }
+      const b = (side, label, on) => `<button data-eq="${id ?? ''}" data-w="${w}" data-side="${side}" data-on="${on ? 1 : 0}" class="side-btn ${on ? 'secondary' : 'primary'}" title="${on ? 'Yechish' : 'Kiyish'}: ${label}">${label}</button>`;
+      return `<div class="side-pick">${b('t', 'T', t)}${b('ct', 'CT', ct)}${b('both', 'IKKALASI', t && ct)}</div>`;
+    };
     const card = it => {
-      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = p.equipped?.[it.weapon] === it.id;
+      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), t = onT(it.weapon, it.id), ct = onCT(it.weapon, it.id);
       const value = eco.skinPrice(it.weapon, it.finish, it.wear, market, now), sell = Math.floor(value * eco.SELL_RATE);
-      return `<div class="skin-card ${on ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}</div>
+      return `<div class="skin-card ${t || ct ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}${tags(t, ct)}</div>
         <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}</small>
         <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div><div class="wear-bar"><i style="left:${(it.wear * 100).toFixed(1)}%"></i></div>
-        <div class="skin-actions"><button data-eq="${it.id}" class="${on ? 'secondary' : 'primary'}">${on ? 'YECHISH' : 'KIYISH'}</button><button data-sell="${it.id}" class="text-button" title="Bozor narxi ◈ ${value}">SOTISH ◈ ${sell}</button></div></div>`;
+        <div class="skin-actions">${equipButtons(it.weapon, it.id, t, ct)}<button data-sell="${it.id}" class="text-button" title="Bozor narxi ◈ ${value}">SOTISH ◈ ${sell}</button></div></div>`;
     };
-    // every weapon also has its standard (skinless) version, equipped whenever no skin is
-    const stock = card => `<div class="skin-card ${!p.equipped?.[card] ? 'on' : ''}" style="--rar:#6b7a80"><div class="skin-pic">${icon(card, 'standard', 0)}</div>
-        <b>${esc(wname(card))}</b><small class="rar">Standart</small><div class="wear-row"><span>Skinsiz</span><span>—</span></div>
-        <div class="skin-actions">${p.equipped?.[card] ? `<button data-stock="${card}" class="primary">KIYISH</button>` : '<button class="secondary" disabled>KIYILGAN</button>'}</div></div>`;
+    // every weapon also has its standard (skinless) version, worn on a side whenever no skin is
+    const stock = w => {
+      const t = !p.equipped?.[w], ct = !(p.equippedCT || {})[w];
+      return `<div class="skin-card ${t || ct ? 'on' : ''}" style="--rar:#6b7a80"><div class="skin-pic">${icon(w, 'standard', 0)}${tags(t && sideOf(w) !== 'ct', ct && sideOf(w) !== 't')}</div>
+        <b>${esc(wname(w))}</b><small class="rar">Standart</small><div class="wear-row"><span>Skinsiz</span><span>—</span></div>
+        <div class="skin-actions">${equipButtons(w, null, t, ct)}</div></div>`;
+    };
     $('#view-inventory').innerHTML = `<div class="page inv"><div class="page-head"><small>INVENTAR</small><h2>Qurollaringiz</h2><p>Kiyilgan skin har o‘yinda biroz eskiradi (float oshadi) va qiymati tushadi. Sotganda bozor narxining ${Math.round(eco.SELL_RATE * 100)}% qaytadi.</p></div>
       ${items.length ? `<div class="section-label">SKINLAR · ${items.length}</div>` : ''}<div class="skin-grid">${items.map(card).join('')}<div class="grid-break">STANDART QUROLLAR</div>${ctx.weapons.map(stock).join('')}</div></div>`;
-    document.querySelectorAll('[data-stock]').forEach(b => b.onclick = () => onEquip(b.dataset.stock, null));
-    document.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { const it = items.find(i => i.id === b.dataset.eq); onEquip(it.weapon, p.equipped?.[it.weapon] === it.id ? null : it.id); });
+    // a skin button toggles it on that side; the standard card's button puts the stock weapon back on that side
+    document.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => {
+      const id = b.dataset.eq || null, on = b.dataset.on === '1';
+      if (!id && on) return;                                      // standard already worn there
+      onEquip(b.dataset.w, id && on ? null : id, b.dataset.side);
+    });
     document.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => { if (b.dataset.armed) return onSell(b.dataset.sell); b.dataset.armed = '1'; b.textContent = 'TASDIQLANG?'; setTimeout(() => { delete b.dataset.armed; this.onRefresh?.(); }, 2500); });
   }
   /** Another player's card (Friends → name): level, stats and inventory, or a lock when the profile is private. */
@@ -246,7 +263,7 @@ export class UI {
     const kd = u.deaths ? (u.kills / u.deaths).toFixed(2) : String(u.kills || 0), hs = u.kills ? Math.round((u.headshots || 0) / u.kills * 100) : 0;
     const stat = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
     const card = it => {
-      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = u.equipped?.[it.weapon] === it.id;
+      const r = eco.RARITY[eco.rarityOf(it.weapon, it.finish)], wr = eco.wearOf(it.wear), on = u.equipped?.[it.weapon] === it.id || u.equippedCT?.[it.weapon] === it.id;
       return `<div class="skin-card ${on ? 'on' : ''}" style="--rar:${r.color}"><div class="skin-pic">${icon(it.weapon, it.finish, it.wear)}</div>
         <b>${esc(wname(it.weapon))} | ${esc(finishes[it.finish]?.name || it.finish)}</b><small class="rar">${esc(r.name)}${on ? ' · KIYILGAN' : ''}</small>
         <div class="wear-row"><span>${esc(wr.name)}</span><span>${it.wear.toFixed(4)}</span></div></div>`;
@@ -274,7 +291,7 @@ export class UI {
       return `<div class="store-detail" style="--rar:${r.color}"><div class="skin-pic big">${icon(sel.w, sel.f, 0)}</div><h3>${esc(wname(sel.w))} | ${esc(finishes[sel.f]?.name || sel.f)}</h3><small class="rar">${esc(r.name)} ${trend(sel.w, sel.f)}</small>
         <div class="tiers">${eco.WEAR.map(t => { const price = eco.skinPrice(sel.w, sel.f, t.lo, market, now); return `<button data-tier="${t.id}" ${p.demo || p.coins < price ? 'disabled' : ''}><span>${esc(t.name)} <i>${t.short}</i></span><strong>◈ ${price}</strong></button>`; }).join('')}</div>
         <p class="note">Float tanlangan daraja ichida tasodifan chiqadi. Ko‘p sotib olingan skinlar qimmatlashadi, sotilganlari arzonlashadi.</p></div>`; })();
-    $('#view-store').innerHTML = `<div class="page store"><div class="page-head"><small>BOZOR</small><h2>Skinlar</h2><p>Balans <b>◈ ${p.coins}</b>. Tangalar o‘yinlar uchun beriladi (qatnashish, o‘ldirish, g‘alaba); reklama — kuniga cheklangan.</p></div>
+    $('#view-store').innerHTML = `<div class="page store"><div class="page-head"><small>BOZOR</small><h2>Skinlar</h2><p>Balans <b>◈ ${p.coins}</b>. KONTI o‘yinlar uchun beriladi (qatnashish, o‘ldirish, g‘alaba); reklama — kuniga cheklangan.</p></div>
       ${p.demo ? '<div class="store-lock"><b>SKIN UCHUN AKKAUNT KERAK</b><span>Demo rejimda skin olib bo‘lmaydi.</span><button data-auth class="primary">KIRISH</button></div>' : ''}
       <div class="store-cats">${Object.entries(CATS).map(([k, [n]]) => `<button data-cat="${k}" class="${k === cat ? 'on' : ''}">${n}</button>`).join('')}</div>
       <div class="store-body"><div class="skin-grid">${offers.map(card).join('')}</div>${detail}</div></div>`;
@@ -285,7 +302,7 @@ export class UI {
   }
   /** Sign in / register / demo. onSubmit(mode, username, password) resolves to an error message or null. */
   auth({ canClose, onSubmit, onDemo }) {
-    this.dialog(`<div class="auth-brand"><b>◩</b> KONTIR</div><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
+    this.dialog(`<div class="auth-brand"><b>◩</b> KONTIR</div><h2>KONTIRga xush kelibsiz</h2><p>Akkauntda XP, reyting, KONTI va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi va skin olib bo‘lmaydi.</p>
       <div class="auth-tabs"><button data-am="login" class="on">KIRISH</button><button data-am="register">RO‘YXATDAN O‘TISH</button></div>
       <form id="auth-form"><label for="auth-user">Foydalanuvchi nomi</label><input id="auth-user" maxlength="16" autocomplete="username" spellcheck="false" required>
         <label for="auth-pass">Parol</label><div class="pw"><input id="auth-pass" type="password" maxlength="64" autocomplete="current-password" required><button type="button" class="pw-eye" data-eye="auth-pass" title="Parolni ko‘rsatish" aria-label="Parolni ko‘rsatish">👁</button></div>
@@ -361,7 +378,7 @@ export class UI {
         <div class="setting"><span>Ruxsat</span><div class="seg" id="dpr-seg">${[[null, 'AUTO'], [1, '1x'], [1.5, '1.5x'], [2, '2x']].map(([v, l]) => `<button data-dpr="${v ?? 'auto'}" class="${v === (o.dprCap ?? null) ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <p class="note">Ruxsat past bo‘lsa video karta kamroq ishlaydi: noutbuk kamroq qiziydi, FPS barqaror bo‘ladi. AUTO — grafika sifatiga qarab.</p>
         <div class="setting"><span>Botlar bilan mashq</span><div class="seg" id="lp-seg">${[[true, 'LOKAL · PING 0'], [false, 'SERVER']].map(([v, l]) => `<button data-lp="${v ? 1 : 0}" class="${v === o.localPractice ? 'on' : ''}">${l}</button>`).join('')}</div></div>
-        <p class="note">LOKAL: o‘yin brauzeringizda ishlaydi — ping 0, internet kerak emas, lekin mashq uchun XP / tanga berilmaydi. SERVER: mukofotli, lekin ping bor.</p>
+        <p class="note">LOKAL: o‘yin brauzeringizda ishlaydi — ping 0, internet kerak emas, lekin mashq uchun XP / KONTI berilmaydi. SERVER: mukofotli, lekin ping bor.</p>
         ${o.account ? `<div class="setting"><span>Profil</span><div class="seg" id="priv-seg">${[[false, 'OCHIQ'], [true, 'YOPIQ']].map(([v, l]) => `<button data-priv="${v ? 1 : 0}" class="${v === o.privateProfile ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <p class="note">OCHIQ: boshqa o‘yinchilar inventaringiz va statistikangizni ko‘ra oladi. YOPIQ: faqat nomingiz ko‘rinadi.</p>` : ''}
         <label for="volume">OVOZ</label><input id="volume" type="range" min="0" max="1" step="0.05" value="${o.volume}">
@@ -451,7 +468,7 @@ export class UI {
       <div class="final-scores"><span>T <b>${state.scores.TERRORIST}</b></span><span>CT <b>${state.scores.COUNTER_TERRORIST}</b></span></div>
       <div class="teams"><div><h4>T · K / A / D</h4><div class="roster">${rows('TERRORIST')}</div></div><div><h4>CT · K / A / D</h4><div class="roster">${rows('COUNTER_TERRORIST')}</div></div></div>
       ${gains ? `<div class="gains" id="results-gains"><span>+${gains.xp} XP</span><span id="results-coins">◈ +${gains.coins}</span><span>${gains.rating >= 0 ? '+' : ''}${gains.rating} REYTING</span>${gains.levelUp ? '<span class="up">YANGI DARAJA!</span>' : ''}</div>` : ''}
-      ${canDouble ? `<button id="btn-double-reward" class="secondary full reward-btn">🎬 2x TANGALAR (+${gains.coins} ◈ REKLAMA)</button>` : ''}
+      ${canDouble ? `<button id="btn-double-reward" class="secondary full reward-btn">🎬 2x KONTI (+${gains.coins} ◈ REKLAMA)</button>` : ''}
       <button id="results-exit" class="primary full">BOSH MENYU ${arrow}</button>`, true);
     $('#results-exit').onclick = onExit;
     if (canDouble) {

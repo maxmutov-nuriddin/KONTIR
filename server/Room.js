@@ -344,7 +344,7 @@ export class Room {
     victim.alive = false; victim.carry = null; victim.deaths++; victim.action = null; victim.respawnTick = this.tick + secondsToTick(2);
     if (this.bomb.carrier === victim.id) this.dropBomb(victim);
     const gun = victim.inv.weaponId(SLOT.PRIMARY) || victim.inv.weaponId(SLOT.SECONDARY);
-    if (gun && this.phase !== 'warmup') { const ammo = { ...victim.inv.ammoOf(gun) }; victim.inv.slots[WEAPONS[gun].slot] = null; delete victim.inv.ammo[gun]; this.spawnDrop(victim, gun, ammo, 1.2); }
+    if (gun && this.phase !== 'warmup') { const ammo = { ...victim.inv.ammoOf(gun) }, skin = this.skinOf(victim, gun); victim.inv.slots[WEAPONS[gun].slot] = null; delete victim.inv.ammo[gun]; delete victim.inv.skins[gun]; this.spawnDrop(victim, gun, ammo, 1.2, skin); }
     let killer = null;
     if (attacker && attacker !== victim && attacker.team !== victim.team) {
       attacker.kills++; attacker.roundKills++; if (head) attacker.hsKills++; killer = attacker;
@@ -365,13 +365,15 @@ export class Room {
   }
 
   // ------------------------------------------------------------------------------------ dropped weapons
-  spawnDrop(p, weapon, ammo, speed = 4.2) {
+  /** Skin of the weapon `p` holds: one picked up keeps its owner's, otherwise the holder's own equipped skin. */
+  skinOf(p, weapon) { return p.inv.skins?.[weapon] || p.skins?.[p.team]?.[weapon] || null; }
+  spawnDrop(p, weapon, ammo, speed = 4.2, skin = null) {
     const c = p.char, v = this.throwVector(c, speed), eye = this.eye(p);
     // start in front of the eye unless a wall is right there
     const len = Math.hypot(v.x, v.z) || 1, dx = v.x / len, dz = v.z / len;
     const clear = this.collider.wallDistance(eye.x, eye.y - 0.3, eye.z, dx, 0, dz, 0.6);
     const off = Math.max(0, Math.min(0.45, clear - 0.2));
-    const d = { id: this.nextGrenade++, weapon, ammo, x: eye.x + dx * off, y: eye.y - 0.3, z: eye.z + dz * off, vx: v.x, vy: v.y, vz: v.z, yaw: c.yaw + Math.PI / 2, rest: 0,
+    const d = { id: this.nextGrenade++, weapon, ammo, skin, x: eye.x + dx * off, y: eye.y - 0.3, z: eye.z + dz * off, vx: v.x, vy: v.y, vz: v.z, yaw: c.yaw + Math.PI / 2, rest: 0,
       owner: p.id, pickupAfter: this.tick + secondsToTick(0.9),   // only the thrower waits before re-collecting it
  expires: this.tick + secondsToTick(90) };
     this.drops.push(d);
@@ -427,10 +429,11 @@ export class Room {
   }
   pickUp(p, d) {
     const w = WEAPONS[d.weapon], held = p.inv.slots[w.slot];
-    if (held) { const ammo = { ...p.inv.ammoOf(held) }; p.inv.slots[w.slot] = null; delete p.inv.ammo[held]; this.spawnDrop(p, held, ammo, 2.2); }
+    if (held) { const ammo = { ...p.inv.ammoOf(held) }, skin = this.skinOf(p, held); p.inv.slots[w.slot] = null; delete p.inv.ammo[held]; delete p.inv.skins[held]; this.spawnDrop(p, held, ammo, 2.2, skin); }
     this.drops = this.drops.filter(q => q !== d);
     const select = !!held || p.inv.current === w.slot || (w.slot === SLOT.PRIMARY && !p.inv.weaponId(SLOT.PRIMARY));
-    p.inv.give(d.weapon, { ammo: d.ammo, select: select && !p.inv.pin });
+    // the weapon keeps the skin it had (a skinless one stays standard instead of taking the picker's skin)
+    p.inv.give(d.weapon, { ammo: d.ammo, select: select && !p.inv.pin, skin: d.skin || { finish: 'standard', wear: 0 } });
     this.emit('pickup', { who: p.id, weapon: d.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
   }
 
@@ -745,7 +748,7 @@ export class Room {
       if (e.type === 'shot') this.fireShot(p, e, cmd);
       else if (e.type === 'melee') this.melee(p, e, cmd);
       else if (e.type === 'throw') this.throwGrenade(p, e);
-      else if (e.type === 'drop') { if (e.weapon === 'c4') { if (this.bomb.carrier === p.id) this.dropBomb(p, 3.5); } else this.spawnDrop(p, e.weapon, e.ammo); }
+      else if (e.type === 'drop') { if (e.weapon === 'c4') { if (this.bomb.carrier === p.id) this.dropBomb(p, 3.5); } else this.spawnDrop(p, e.weapon, e.ammo, 4.2, e.skin || p.skins?.[p.team]?.[e.weapon] || null); }
       else if (e.type === 'reloadStart' || e.type === 'select' || e.type === 'quick' || e.type === 'dryfire' || e.type === 'reloaded' || e.type === 'silencer') this.emit('weaponSound', { who: p.id, kind: e.type, weapon: e.weapon, x: p.char.x, y: p.char.y, z: p.char.z });
     }
     if (cmd.interact && !p.lastInteract && !p.action) { const d = this.aimedDrop(p); if (d) this.pickUp(p, d); }
@@ -826,7 +829,7 @@ export class Room {
       scores: this.scores, side: this.side, half: this.round > RULES.halfRounds ? 2 : 1, result: this.result, practice: this.practice,
       bomb: { state: this.bomb.state, carrier: this.bomb.carrier, x: this.bomb.x, y: this.bomb.y, z: this.bomb.z, site: this.bomb.site, remaining: this.bomb.state === 'planted' ? Math.max(0, (this.bomb.explodeTick - this.tick) / TICK_RATE) : 0 },
       grenades: this.grenades.map(g => ({ id: g.id, type: g.type, x: +g.x.toFixed(2), y: +g.y.toFixed(2), z: +g.z.toFixed(2) })),
-      drops: this.drops.map(d => ({ id: d.id, weapon: d.weapon, x: +d.x.toFixed(2), y: +d.y.toFixed(2), z: +d.z.toFixed(2), yaw: +d.yaw.toFixed(2) })),
+      drops: this.drops.map(d => ({ id: d.id, weapon: d.weapon, skin: d.skin || undefined, x: +d.x.toFixed(2), y: +d.y.toFixed(2), z: +d.z.toFixed(2), yaw: +d.yaw.toFixed(2) })),
       fires: this.fires.map(f => ({ id: f.id, type: f.type, x: f.x, y: f.y, z: f.z, radius: f.radius, age: (this.tick - f.start) / TICK_RATE, left: (f.end - this.tick) / TICK_RATE })),
       smokes: this.smokes.map(s => ({ id: s.id, x: s.x, y: s.y, z: s.z, radius: s.radius, age: (this.tick - s.start) / TICK_RATE, left: (s.end - this.tick) / TICK_RATE })),
       events,

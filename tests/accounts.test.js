@@ -106,3 +106,16 @@ test('profiles: public card shows inventory and stats, a private one only the na
   a.update('alice', { privateProfile: 'yes' }); assert.equal(a.users.alice.privateProfile, true, 'only booleans change the flag');
   assert.throws(() => a.view('bob', 'nobody'), /nouser/);
 });
+
+test('skins are equipped per side; legacy accounts wear the same skin on both; sold items leave both sides', async () => {
+  const a = await fresh();
+  await a.register('carol', 'secret3'); const u = a.users.carol;
+  u.items.push({ id: 'i1', weapon: 'awp', finish: 'tiger', wear: 0.1, seed: 1 }, { id: 'i2', weapon: 'awp', finish: 'gold', wear: 0.2, seed: 2 });
+  a.update('carol', { equipped: { awp: 'i1' }, equippedCT: { awp: 'i2' } });
+  assert.deepEqual(a.skinsOf('carol'), { TERRORIST: { awp: { finish: 'tiger', wear: 0.1 } }, COUNTER_TERRORIST: { awp: { finish: 'gold', wear: 0.2 } } });
+  const pub = a.public(u); assert.equal(pub.finishes.awp, 'tiger'); assert.equal(pub.finishesCT.awp, 'gold');
+  a.update('carol', { equippedCT: { awp: 'nope' } }); assert.deepEqual(u.equippedCT, {}, 'unowned items are dropped');
+  delete u.equippedCT; u.equipped = { awp: 'i2' };
+  assert.equal(a.skinsOf('carol').COUNTER_TERRORIST.awp.finish, 'gold', 'legacy: CT copies the old single equip');
+  a.sell('carol', 'i2'); assert.equal(u.equipped.awp, undefined); assert.equal(u.equippedCT.awp, undefined);
+});

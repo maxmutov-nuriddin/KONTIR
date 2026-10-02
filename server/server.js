@@ -269,6 +269,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
         const player = room.add(socket.id, name, normalizeTeam(request?.team));
         if (!player) return ack({ error: 'Tanlangan jamoa to‘la.' });
         applyLoadout(room, player, request?.loadout);
+        if (socket.data.account) player.skins = accounts.skinsOf(socket.data.account);   // skins travel with dropped / picked-up guns
         if (practice) {
           const n = v => (Number.isInteger(v) && v >= 0 && v <= 5 ? v : 5);
           const counts = request?.bots && typeof request.bots === 'object' ? { TERRORIST: n(request.bots.t), COUNTER_TERRORIST: n(request.bots.ct) } : null;
@@ -441,6 +442,7 @@ export async function createGameServer({ port = Number(process.env.PORT || 3101)
       const player = room.add(s.id, e, i % 2 ? 'COUNTER_TERRORIST' : 'TERRORIST');
       if (!player) return;
       applyLoadout(room, player, s.data.loadout);
+      if (s.data.account) player.skins = accounts.skinsOf(s.data.account);
       s.data.room = room.code; s.data.queued = false; s.join(room.code); presence(s); partyFollow(s, room, player.team);
     });
     room.fillBots(); room.start();

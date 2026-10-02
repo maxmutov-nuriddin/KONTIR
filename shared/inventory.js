@@ -26,6 +26,9 @@ export class Inventory {
     this.pin = 0; this.pinStrength = 1; this.lastFire = false; this.lastFire2 = false; this.lastReload = false; this.lastDrop = false;
     this.shots = 0; this.lastShot = -1e9; this.burst = 0; this.drawTicks = 1; this.reloadTicks = 1;
     this.silencerOff ||= {};                         // weapon id -> true when the player took the silencer off (kept between rounds)
+    // weapon id -> { finish, wear } of a weapon picked up from someone else: it keeps its owner's skin.
+    // No entry = the holder's own equipped skin (bought / spawned weapons).
+    this.skins = {};
   }
   /** Silenced right now? (USP-S / M4A1-S unless the silencer was removed). */
   isSilenced(id) { const w = WEAPONS[id]; return !!w?.suppressed && !(w.detachable && this.silencerOff[id]); }
@@ -60,7 +63,7 @@ export class Inventory {
   /** Adds a weapon. Returns the id it displaced (primary / secondary), or null. */
   /** New round: every carried gun starts with a full magazine and full reserve. */
   refillAmmo() { for (const id of Object.keys(this.ammo)) { const w = WEAPONS[id]; if (w?.kind === 'gun' && Object.values(this.slots).includes(id)) this.ammo[id] = { mag: w.mag, reserve: w.reserve }; } }
-  give(id, { select = false, ammo = null } = {}) {
+  give(id, { select = false, ammo = null, skin } = {}) {
     const w = WEAPONS[id];
     if (!w) return null;
     let displaced = null;
@@ -71,6 +74,8 @@ export class Inventory {
     } else {
       displaced = this.slots[w.slot] && this.slots[w.slot] !== id ? this.slots[w.slot] : null;
       this.slots[w.slot] = id;
+      if (skin) this.skins[id] = { finish: skin.finish, wear: skin.wear }; else delete this.skins[id];
+      if (displaced) delete this.skins[displaced];
       if (w.kind === 'gun') this.ammo[id] = ammo ? { mag: ammo.mag, reserve: ammo.reserve } : { mag: w.mag, reserve: w.reserve };
     }
     if (select) this.select(w.slot, { force: true });
@@ -81,17 +86,17 @@ export class Inventory {
     const w = WEAPONS[id];
     if (!w) return;
     if (w.kind === 'grenade') { this.grenades[id] = Math.max(0, this.grenades[id] - 1); if (this.grenades[id] === 0) this.util = GRENADES.find(g => this.grenades[g] > 0) || null; }
-    else if (this.slots[w.slot] === id) this.slots[w.slot] = w.slot === SLOT.MELEE ? id : null;
+    else if (this.slots[w.slot] === id) { this.slots[w.slot] = w.slot === SLOT.MELEE ? id : null; if (w.slot !== SLOT.MELEE) delete this.skins[id]; }
     if (!this.has(this.current) || (this.weaponId() === null)) this.select(this.fallbackSlot(), { force: true });
   }
   /** 'G': throws the held gun (with its ammo) or the C4. Knife and grenades stay. Returns the event or null. */
   drop() {
     const id = this.weaponId(), w = id ? WEAPONS[id] : null;
     if (!w || (w.kind !== 'gun' && w.kind !== 'objective') || this.pin) return null;
-    const ammo = w.kind === 'gun' ? { ...this.ammoOf(id) } : null;
-    this.slots[w.slot] = null; delete this.ammo[id]; this.reloading = false;
+    const ammo = w.kind === 'gun' ? { ...this.ammoOf(id) } : null, skin = this.skins[id] || null;
+    this.slots[w.slot] = null; delete this.ammo[id]; delete this.skins[id]; this.reloading = false;
     this.select(this.fallbackSlot(), { force: true });
-    return { type: 'drop', weapon: id, ammo };
+    return { type: 'drop', weapon: id, ammo, skin };
   }
   fallbackSlot() {
     if (this.previous !== this.current && this.has(this.previous)) return this.previous;
@@ -224,7 +229,7 @@ export class Inventory {
       team: this.team, slots: { ...this.slots }, ammo: JSON.parse(JSON.stringify(this.ammo)), grenades: { ...this.grenades }, util: this.util,
       current: this.current, previous: this.previous, time: this.time, drawUntil: this.drawUntil, drawTicks: this.drawTicks || 1, nextFire: this.nextFire,
       reloadUntil: this.reloadUntil, reloadTicks: this.reloadTicks || 1, reloading: this.reloading, pin: this.pin, pinStrength: this.pinStrength,
-      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom, silencerOff: { ...(this.silencerOff || {}) },
+      lastFire: this.lastFire, lastFire2: this.lastFire2, lastReload: this.lastReload, lastDrop: !!this.lastDrop, shots: this.shots, lastShot: this.lastShot, burst: this.burst, zoom: this.zoom, silencerOff: { ...(this.silencerOff || {}) }, skins: JSON.parse(JSON.stringify(this.skins || {})),
     };
   }
   load(json) { const preferred = this.preferred; Object.assign(this, JSON.parse(JSON.stringify(json))); if (preferred) this.preferred = preferred; return this; }

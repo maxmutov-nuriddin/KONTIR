@@ -71,6 +71,8 @@ export class WeaponManager {
   setTeam(team) {
     if (team === this.team) return;
     this.team = team; disposeTree(this.arms); this.arms = buildArms(team); this.inventory.team = team; this.setActive(this.activeId, true);
+    // skins are equipped per side: repaint the gloves and every rig for the new team
+    this.refreshFinish('gloves'); for (const [id, r] of this.rigs) this.paint(r, id);
   }
   /** Mouse wheel: cycle to the next / previous owned slot. Returns the slot to request, or 0. */
   wheelSlot(dir) {
@@ -82,7 +84,17 @@ export class WeaponManager {
 
   // ----------------------------------------------------------------------------------------- state sync
   /** Replace predicted state with the authoritative inventory (snapshot). */
-  load(json) { this.inventory.load(json); this.setActive(this.inventory.weaponId()); }
+  load(json) {
+    this.inventory.load(json); this.setActive(this.inventory.weaponId());
+    for (const [id, r] of this.rigs) if (r.skinKey !== this.skinKey(id)) this.paint(r, id);   // picked up / dropped: re-skin
+  }
+  /** Skin shown on weapon `id`: a picked-up gun keeps its owner's (inventory.skins), else the player's own for this side. */
+  skinOf(id) {
+    const carried = this.inventory.skins?.[id];
+    return carried ? [carried.finish, carried.wear || 0] : [this.finishFor?.(id), this.wearFor?.(id) || 0];
+  }
+  skinKey(id) { const [f, w] = this.skinOf(id); return `${f || 'standard'}:${w}`; }
+  paint(r, id) { const [f, w] = this.skinOf(id); applyFinish(r.group, f, weaponMaterials(), w); r.skinKey = this.skinKey(id); }
   /** Runs one command through the shared state machine. `silent` suppresses animations during reconciliation replays. */
   predict(cmd, ctx, silent = false) {
     const before = this.inventory.weaponId();
@@ -112,7 +124,7 @@ export class WeaponManager {
     let r = this.rigs.get(id);
     if (!r) {
       r = buildWeaponRig(id); r.group.visible = false; r.group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
-      applyFinish(r.group, this.finishFor?.(id), weaponMaterials(), this.wearFor?.(id) || 0);
+      this.paint(r, id);
       this.root.add(r.group); this.rigs.set(id, r);
     }
     return r;
@@ -120,7 +132,7 @@ export class WeaponManager {
   /** Re-applies the profile's finish after it changed in the inventory. */
   refreshFinish(id) {
     if (id === 'gloves') return applyGloveFinish(this.arms, this.finishFor?.('gloves'), this.wearFor?.('gloves') || 0);
-    const r = this.rigs.get(id); if (r) applyFinish(r.group, this.finishFor?.(id), weaponMaterials(), this.wearFor?.(id) || 0);
+    const r = this.rigs.get(id); if (r) this.paint(r, id);
   }
   /** Toggle mesh visibility: activeWeaponMesh.visible = true, every other rig hidden. */
   setActive(id, force = false) {

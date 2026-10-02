@@ -140,7 +140,16 @@ export class Accounts {
       this.db = null;
     }
   }
-  public(u) { migrateSkins(u); const { salt, hash, friends, requests, lastGains, ...rest } = u; return { ...rest, ...equippedView(u.items, u.equipped), demo: false }; }
+  public(u) {
+    migrateSkins(u); const { salt, hash, friends, requests, lastGains, ...rest } = u, ct = equippedView(u.items, u.equippedCT);
+    return { ...rest, ...equippedView(u.items, u.equipped), finishesCT: ct.finishes, wearsCT: ct.wears, demo: false };
+  }
+  /** Equipped skins per side for the match server: { TERRORIST: { weapon: { finish, wear } }, COUNTER_TERRORIST: ... }. */
+  skinsOf(key) {
+    const u = this.users[key]; if (!u) return null; migrateSkins(u);
+    const side = map => { const v = equippedView(u.items, map), out = {}; for (const [w, finish] of Object.entries(v.finishes)) out[w] = { finish, wear: v.wears[w] }; return out; };
+    return { TERRORIST: side(u.equipped || {}), COUNTER_TERRORIST: side(u.equippedCT || {}) };
+  }
   issue(key) { const token = randomBytes(32).toString('hex'); this.tokens[sha(token)] = { user: key, exp: this.now() + TOKEN_TTL }; this.save(); return token; }
 
   async register(username, password) {
@@ -174,7 +183,7 @@ export class Accounts {
     migrateSkins(u);
     const items = (u.items || []).map(({ id, weapon, finish, wear, seed }) => ({ id, weapon, finish, wear, seed }));
     return { profile: { name: u.name, hue: u.hue, created: u.created, xp: u.xp, rating: u.rating, matches: u.matches, wins: u.wins, kills: u.kills, deaths: u.deaths, headshots: u.headshots,
-      items, equipped: { ...(u.equipped || {}) }, private: !!u.privateProfile, online: false } };
+      items, equipped: { ...(u.equipped || {}) }, equippedCT: { ...(u.equippedCT || {}) }, private: !!u.privateProfile, online: false } };
   }
   update(key, choices) { const u = this.users[key]; if (!u) return null; cleanChoices(u, choices); this.save(); return this.public(u); }
   /** Buys a skin from the market: weapon + finish + wear tier (the exact float is rolled inside the tier). */
@@ -197,7 +206,7 @@ export class Accounts {
     const u = this.users[key]; if (!u) throw new Error('item'); migrateSkins(u);
     const it = u.items.find(i => i.id === itemId); if (!it) throw new Error('item');
     const coins = Math.floor(skinPrice(it.weapon, it.finish, it.wear, this.market, this.now()) * SELL_RATE);
-    u.items = u.items.filter(i => i !== it); for (const [w, id] of Object.entries(u.equipped)) if (id === it.id) delete u.equipped[w];
+    u.items = u.items.filter(i => i !== it); for (const map of [u.equipped, u.equippedCT]) for (const [w, id] of Object.entries(map || {})) if (id === it.id) delete map[w];
     u.coins += coins; marketTrade(this.market, marketKey(it.weapon, it.finish), false, this.now());
     this.save(); return { profile: this.public(u), coins };
   }

@@ -20,6 +20,7 @@ export class LocalRoom {
     const name = String(request.name ?? 'Operator').trim().replace(/[<>&"]/g, '').slice(0, 18) || 'Operator';
     const player = this.room.add(LOCAL_ID, name, team);
     player.rtt = 0;                                          // same process: no network round trip
+    if (request.skins && typeof request.skins === 'object') player.skins = request.skins;   // dropped / picked-up guns keep their skin
     // pistol loadout (same rule as the server's applyLoadout)
     const pick = (v, ok) => (ok.includes(v) ? v : undefined), lo = request.loadout || {};
     player.loadout = { TERRORIST: pick(lo.t, ['glock', 'p250']), COUNTER_TERRORIST: pick(lo.ct, ['usp', 'p250']) };

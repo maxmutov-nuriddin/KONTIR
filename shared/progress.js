@@ -5,12 +5,13 @@ export const LOADOUT_CHOICES = Object.freeze({ t: ['glock', 'p250'], ct: ['usp',
 export const levelOf = xp => 1 + Math.floor(xp / 1000);
 
 export function newStats() {
-  return { xp: 0, rating: 1000, coins: 500, matches: 0, wins: 0, kills: 0, deaths: 0, headshots: 0, loadout: { t: 'glock', ct: 'usp', m4: 'm4a4' }, items: [], equipped: {}, ads: {}, seq: 0 };
+  return { xp: 0, rating: 1000, coins: 500, matches: 0, wins: 0, kills: 0, deaths: 0, headshots: 0, loadout: { t: 'glock', ct: 'usp', m4: 'm4a4' }, items: [], equipped: {}, equippedCT: {}, ads: {}, seq: 0 };
 }
 
 /** Old accounts owned finish *patterns*; each becomes one Minimal Wear item on the weapon it was shown on (AK otherwise). */
 export function migrateSkins(p) {
-  if (Array.isArray(p.items)) return p;
+  // skins are equipped per side: `equipped` = T, `equippedCT` = CT; accounts from before the split wear the same on both
+  if (Array.isArray(p.items)) { if (!p.equippedCT || typeof p.equippedCT !== 'object') p.equippedCT = { ...(p.equipped || {}) }; return p; }
   p.items = []; p.equipped = {}; p.seq = 0; p.ads ||= {};
   const on = Object.entries(p.finishes || {});
   for (const fin of (p.owned || []).filter(f => f !== 'standard' && FINISH_RARITY[f])) {
@@ -18,7 +19,7 @@ export function migrateSkins(p) {
     const item = { id: `i${++p.seq}`, weapon: validSkin(w, fin) ? w : 'ak47', finish: fin, wear: 0.1, seed: p.seq * 97 % 1000 };
     p.items.push(item); if (!p.equipped[item.weapon]) p.equipped[item.weapon] = item.id;
   }
-  delete p.owned; delete p.finishes;
+  delete p.owned; delete p.finishes; p.equippedCT = { ...p.equipped };
   return p;
 }
 
@@ -33,19 +34,21 @@ export function applyMatch(p, { won, draw = false, kills = 0, deaths = 0, assist
   p.xp += xp; p.coins += coins; p.rating = Math.max(700, p.rating + rating);
   p.matches++; if (won) p.wins++; p.kills += kills; p.deaths += deaths;
   // equipped skins wear down with use (floats only go up)
-  const used = new Set(Object.values(p.equipped || {})), dw = matchWear(kills);
+  const used = new Set([...Object.values(p.equipped || {}), ...Object.values(p.equippedCT || {})]), dw = matchWear(kills);
   for (const it of p.items || []) if (used.has(it.id)) it.wear = Math.min(1, +(it.wear + dw).toFixed(4));
   return { xp, coins, rating, levelUp: levelOf(p.xp) > before };
 }
 
 /** Keeps only valid loadout / equip choices (an equipped item must be owned and belong to that weapon). */
-export function cleanChoices(p, { loadout, equipped, privateProfile } = {}) {
+export function cleanChoices(p, { loadout, equipped, equippedCT, privateProfile } = {}) {
   if (typeof privateProfile === 'boolean') p.privateProfile = privateProfile;   // hides inventory and stats from other players
   if (loadout && typeof loadout === 'object') for (const [k, ok] of Object.entries(LOADOUT_CHOICES)) if (ok.includes(loadout[k])) p.loadout[k] = loadout[k];
-  if (equipped && typeof equipped === 'object') {
+  const clean = map => {
     const next = {};
-    for (const [w, id] of Object.entries(equipped).slice(0, 64)) { const it = (p.items || []).find(i => i.id === id); if (it && it.weapon === w) next[w] = id; }
-    p.equipped = next;
-  }
+    for (const [w, id] of Object.entries(map).slice(0, 64)) { const it = (p.items || []).find(i => i.id === id); if (it && it.weapon === w) next[w] = id; }
+    return next;
+  };
+  if (equipped && typeof equipped === 'object') p.equipped = clean(equipped);
+  if (equippedCT && typeof equippedCT === 'object') p.equippedCT = clean(equippedCT);
   return p;
 }

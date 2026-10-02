@@ -19,7 +19,7 @@ function live(room) { room.start(); while (room.phase !== 'live') room.step(); }
 test('inventory: G drops the held gun with its ammo, never the knife', () => {
   const inv = new Inventory('TERRORIST'); inv.give('ak47', { select: true }); inv.time = inv.drawUntil + 1; inv.ammo.ak47.mag = 17;
   const ev = inv.step({ ...neutralInput(), drop: true }, { canFire: true }).find(e => e.type === 'drop');
-  assert.deepEqual(ev, { type: 'drop', weapon: 'ak47', ammo: { mag: 17, reserve: 90 } });
+  assert.deepEqual(ev, { type: 'drop', weapon: 'ak47', ammo: { mag: 17, reserve: 90 }, skin: null });
   assert.equal(inv.slots[1], null); assert.equal(inv.current, 2, 'falls back to the pistol');
   inv.step({ ...neutralInput(), drop: true }); inv.step({ ...neutralInput() });
   inv.step({ ...neutralInput(), slot: 3 }); const k = inv.step({ ...neutralInput(), drop: true });
@@ -75,4 +75,26 @@ test('loadout preference: starting pistol per side survives resets and snapshot 
   assert.equal(inv.slots[2], 'p250');
   inv.load(new Inventory('COUNTER_TERRORIST').toJSON()); inv.reset('COUNTER_TERRORIST'); assert.equal(inv.slots[2], 'p250');
   inv.preferred = { COUNTER_TERRORIST: 'deagle' }; inv.reset('COUNTER_TERRORIST'); assert.equal(inv.slots[2], 'usp', 'only legal starting pistols');
+});
+
+test('a picked-up gun keeps its owner\'s skin; a skinless one stays standard for the picker', () => {
+  const room = mk(); const a = room.add('a', 'A'), b = room.add('b', 'B', 'TERRORIST'); room.add('c', 'C', 'COUNTER_TERRORIST'); live(room);
+  a.skins = { TERRORIST: { awp: { finish: 'tiger', wear: 0.2 } }, COUNTER_TERRORIST: { awp: { finish: 'tiger', wear: 0.2 } } };
+  b.skins = { TERRORIST: { awp: { finish: 'gold', wear: 0.05 } }, COUNTER_TERRORIST: { awp: { finish: 'gold', wear: 0.05 } } };
+  a.inv.give('awp', { select: true });
+  const d = room.spawnDrop(a, 'awp', { mag: 30, reserve: 90 }, 0, room.skinOf(a, 'awp'));
+  assert.deepEqual(d.skin, { finish: 'tiger', wear: 0.2 });
+  room.pickUp(b, d);
+  assert.deepEqual(b.inv.skins.awp, { finish: 'tiger', wear: 0.2 }, 'B shows A\'s skin, not their own gold');
+  assert.deepEqual(room.skinOf(b, 'awp'), { finish: 'tiger', wear: 0.2 });
+  // dropping it again passes the same skin on
+  const again = room.spawnDrop(b, 'awp', { mag: 30, reserve: 90 }, 0, room.skinOf(b, 'awp'));
+  assert.equal(again.skin.finish, 'tiger');
+  // a skinless gun (bot / guest) stays standard instead of taking the picker's skin
+  const plain = room.spawnDrop(room.players.get('c'), 'awp', { mag: 30, reserve: 90 }, 0, null);
+  delete b.inv.skins.awp; b.inv.slots[SLOT.PRIMARY] = null; room.pickUp(b, plain);
+  assert.equal(b.inv.skins.awp.finish, 'standard');
+  // a weapon B buys is their own again
+  b.inv.slots[SLOT.PRIMARY] = null; b.money = 10000; room.buyUntil = room.tick + 100; assert.equal(room.buy('b', 'awp').error, undefined);
+  assert.equal(b.inv.skins.awp, undefined); assert.equal(room.skinOf(b, 'awp').finish, 'gold');
 });

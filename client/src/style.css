@@ -528,3 +528,10 @@ button.skin-card:hover { border-color: var(--rar); }
 .pp-stats b { font: 800 22px 'Barlow Condensed', sans-serif; }
 .pp-grid { max-height: 52vh; }
 @media (max-width: 700px) { .pp-stats { grid-template-columns: repeat(3, 1fr); } }
+/* per-side skins (T / CT) */
+.skin-pic { position: relative; }
+.side-tag { position: absolute; top: 4px; font: 800 10px 'DM Sans', sans-serif; font-style: normal; letter-spacing: 1px; padding: 2px 5px; border-radius: 3px; }
+.side-tag.t { left: 4px; background: #e5b96a; color: #1a1408; }
+.side-tag.ct { right: 4px; background: #7fb6ea; color: #08131c; }
+.side-pick { display: flex; gap: 4px; flex: 1; }
+.side-pick .side-btn { flex: 1; padding: 6px 4px; font-size: 11px; min-width: 0; }

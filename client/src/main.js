@@ -53,8 +53,10 @@ world.renderer.domElement.addEventListener('webglcontextlost', () => ui.toast('G
 world.renderer.domElement.addEventListener('webglcontextrestored', () => ui.toast('Grafika tiklandi.'));
 const controller = new PlayerController(world.camera, document.body);
 const weapons = new WeaponManager(world.viewScene);
-weapons.finishFor = id => profile.finishes?.[id];
-weapons.wearFor = id => profile.wears?.[id] || 0;
+// skins are equipped per side (T / CT): the viewmodel follows the team being played
+const ctSide = () => weapons.team === 'COUNTER_TERRORIST';
+weapons.finishFor = id => (ctSide() ? profile.finishesCT : profile.finishes)?.[id];
+weapons.wearFor = id => (ctSide() ? profile.wearsCT : profile.wears)?.[id] || 0;
 const readJSON = (k, d) => { try { return JSON.parse(store.get(k, '') || 'null') ?? d; } catch { return d; } };
 controller.setBinds(readJSON('binds', DEFAULT_BINDS));
 controller.setMouse({ ...DEFAULT_MOUSE, sensitivity: Number(store.get('sens', 0.6)), ...readJSON('mouse', {}) });
@@ -100,7 +102,7 @@ function openAuth(canClose = true) {
 /** Account choices go to the server (it validates ownership); demo choices stay in this session. */
 function saveChoices() {
   if (profile.demo) return saveProfile(profile);
-  network.request('account:update', { loadout: profile.loadout, equipped: profile.equipped }).then(r => { adopt(profile, r.profile); refreshLobby(); }).catch(() => {});
+  network.request('account:update', { loadout: profile.loadout, equipped: profile.equipped, equippedCT: profile.equippedCT }).then(r => { adopt(profile, r.profile); refreshLobby(); }).catch(() => {});
 }
 
 // ---- hero weapon shown behind the menu
@@ -157,10 +159,10 @@ function receive(next) {
             bonusCoins = gains.coins; profile.coins += bonusCoins; (profile.doubled ||= {})[state?.code + ':' + state?.round] = true; saveProfile(profile);
           }
           refreshLobby();
-          ui.toast(`2x mukofot olindi! +${bonusCoins} ◈ tanga berildi.`);
+          ui.toast(`2x mukofot olindi! +${bonusCoins} ◈ KONTI berildi.`);
           const coinsEl = document.querySelector('#results-coins');
           if (coinsEl && gains) coinsEl.textContent = `◈ +${gains.coins * 2} (2x MUKOFOT)`;
-          btn.textContent = '✓ 2x TANGALAR OLINDI';
+          btn.textContent = '✓ 2x KONTI OLINDI';
         },
         onError: () => {
           btn.disabled = false;
@@ -271,7 +273,8 @@ async function join(options) {
       // offline practice: the room runs in this browser on the already-loaded collision map (ping 0, no account rewards)
       await loadMapById(request.mapId, true);
       if (my !== generation) return;
-      result = network.startLocal(world.map, request);
+      const side = (f = {}, w = {}) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, { finish: v, wear: w[k] || 0 }]));
+      result = network.startLocal(world.map, { ...request, skins: { TERRORIST: side(profile.finishes, profile.wears), COUNTER_TERRORIST: side(profile.finishesCT, profile.wearsCT) } });
     } else result = await network.join(request);
     if (my !== generation) { network.leave(); return; }
     await enter(result, my);
@@ -407,7 +410,7 @@ const INVENTORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'awp', 'deagle', 'usp', 'glo
 // news in all three languages (the i18n observer only knows fixed UI phrases)
 const NEWS = [
   { tag: ['YANGILANISH', 'ОБНОВЛЕНИЕ', 'UPDATE'], title: ['Do‘stlar, partiya va ovozli chat', 'Друзья, пати и голосовой чат', 'Friends, party and voice chat'], text: ['Do‘stlarni qidiring, partiyaga taklif qiling va bitta jamoada o‘ynang. Shaxsiy xabarlar va ovozli qo‘ng‘iroq (o‘yinda V — gapirish).', 'Ищите друзей, приглашайте в пати и играйте в одной команде. Личные сообщения и голосовые звонки (в игре V — говорить).', 'Find friends, invite them to your party and play on one team. Direct messages and voice calls (V to talk in a match).'] },
-  { tag: ['AKKAUNT', 'АККАУНТ', 'ACCOUNT'], title: ['Login va parol', 'Логин и пароль', 'Username and password'], text: ['XP, reyting, tangalar va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi.', 'XP, рейтинг, монеты и скины хранятся на сервере. В демо прогресс не сохраняется.', 'XP, rating, coins and skins are stored on the server. Demo progress is not saved.'] },
+  { tag: ['AKKAUNT', 'АККАУНТ', 'ACCOUNT'], title: ['Login va parol', 'Логин и пароль', 'Username and password'], text: ['XP, reyting, KONTI va skinlar serverda saqlanadi. Demo rejimda progress saqlanmaydi.', 'XP, рейтинг, KONTI и скины хранятся на сервере. В демо прогресс не сохраняется.', 'XP, rating, KONTI and skins are stored on the server. Demo progress is not saved.'] },
   { tag: ['SOZLAMALAR', 'НАСТРОЙКИ', 'SETTINGS'], title: ['Tugmalar va sichqoncha', 'Клавиши и мышь', 'Keys and mouse'], text: ['Har bir amal uchun tugmani o‘zingiz tanlang; sezgirlik, scope sezgirligi, Y teskari, raw input.', 'Назначайте клавиши на любое действие; чувствительность, прицел, инверсия Y, raw input.', 'Rebind every action; sensitivity, scoped sensitivity, invert Y, raw input.'] },
   { tag: ['BOTLAR', 'БОТЫ', 'BOTS'], title: ['Botlarga qarshi rejim', 'Режим против ботов', 'Versus bots'], text: ['Har tomonda 0–5 bot va 4 qiyinlik darajasi. Botlar granata otadi va ovozga buriladi.', 'До 5 ботов с каждой стороны и 4 уровня сложности. Боты бросают гранаты и реагируют на звук.', '0–5 bots per side and 4 difficulty levels. Bots throw grenades and react to sound.'] },
   { tag: ['XARITALAR', 'КАРТЫ', 'MAPS'], title: ['Sarob, Changtepa, Qishloq, Ombor', 'Sarob, Changtepa, Qishloq, Ombor', 'Sarob, Changtepa, Qishloq, Ombor'], text: ['Klassik layoutlar: palace, long A, banana, A main va boshqalar.', 'Классические планировки: palace, long A, banana, A main и другие.', 'Classic layouts: palace, long A, banana, A main and more.'] },
@@ -436,8 +439,10 @@ async function loadMarket() { try { const r = await network.request('market'); m
 const skinIcon = (w, f, wear = 0) => w === 'gloves'
   ? `<span class="glove-ico" data-swatch="${swatchKey(f, wear)}" style="background-image:url(${finishSwatch(f, wear)})"><svg viewBox="0 0 64 64"><path d="M14 60 V30 L10 14 a4 4 0 0 1 8-2 L22 26 V8 a4 4 0 0 1 8 0 V24 V6 a4 4 0 0 1 8 0 V24 V9 a4 4 0 0 1 8 0 V28 l4-8 a4 4 0 0 1 7 4 L50 44 V60 Z" fill="none" stroke="#0009" stroke-width="2.5"/></svg></span>`
   : `<img alt="" data-icon="${w}:${f || 'standard'}" src="${iconSrc(w, f || 'standard')}">`;
-const ERR = { coins: 'Tanga yetarli emas.', item: 'Bu skin mavjud emas.', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
-function syncSkins() { Object.assign(profile, eco.equippedView(profile.items, profile.equipped)); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
+const ERR = { coins: 'KONTI yetarli emas.', item: 'Bu skin mavjud emas.', full: 'Inventar to‘lgan (200 ta).', slow: 'Juda tez — biroz kuting.', auth: 'Akkauntga kiring.' };
+function syncSkins() {
+  const ct = eco.equippedView(profile.items, profile.equippedCT || {});
+  Object.assign(profile, eco.equippedView(profile.items, profile.equipped), { finishesCT: ct.finishes, wearsCT: ct.wears }); for (const w of [...INVENTORY_WEAPONS, 'knife', 'gloves']) weapons.refreshFinish?.(w); updateShowcase(); }
 async function buySkin(req) {
   if (profile.demo) { ui.toast('Skin olish uchun akkaunt kerak.'); return openAuth(); }
   try { const r = await network.request('account:buy', req); adopt(profile, r.profile); audio.click(); syncSkins(); await loadMarket();
@@ -450,8 +455,13 @@ async function sell(itemId) {
   catch (e) { ui.toast(ERR[e.message] || 'Server xatosi.'); }
   refreshLobby();
 }
-function equip(weapon, itemId) {
-  profile.equipped ||= {}; if (itemId) profile.equipped[weapon] = itemId; else delete profile.equipped[weapon];
+/** side: 't' | 'ct' | 'both' — a skin can be worn on one side only (as in CS2). */
+function equip(weapon, itemId, side = 'both') {
+  profile.equipped ||= {}; profile.equippedCT ||= {};
+  for (const [s, map] of [['t', profile.equipped], ['ct', profile.equippedCT]]) {
+    if (side !== 'both' && side !== s) continue;
+    if (itemId) map[weapon] = itemId; else delete map[weapon];
+  }
   syncSkins(); saveChoices(); refreshLobby();
 }
 ui.onRefresh = () => refreshLobby();
@@ -462,7 +472,8 @@ clearInterval(marketTimer); marketTimer = setInterval(() => { if (ui.view === 's
 function updateShowcase() {
   if (playing || !world.map) return;
   const side = team, rifle = side === 'TERRORIST' ? 'ak47' : profile.loadout.m4;
-  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => { applyFinish(g, profile.finishes?.[rifle], weaponMaterials(), profile.wears?.[rifle] || 0); applyGloveFinish(g, profile.finishes?.gloves, profile.wears?.gloves || 0); } });
+  const ct = side === 'COUNTER_TERRORIST', fin = (ct ? profile.finishesCT : profile.finishes) || {}, wr = (ct ? profile.wearsCT : profile.wears) || {};
+  world.setShowcase({ team: side, weapon: rifle, applyFinish: g => { applyFinish(g, fin[rifle], weaponMaterials(), wr[rifle] || 0); applyGloveFinish(g, fin.gloves, wr.gloves || 0); } });
 }
 {
   const nameEl = document.querySelector('#lobby-name');
@@ -472,7 +483,7 @@ function updateShowcase() {
     // check the cooldown / daily cap BEFORE showing an ad (the server enforces the same rules)
     const probe = structuredClone(profile.ads || {}), err = eco.claimAd(probe, Date.now());
     if (err === 'daily') return ui.toast(`Bugungi reklama limiti tugadi (${eco.AD_DAILY_MAX} ta). Ertaga qayta urinib ko‘ring.`);
-    if (err === 'cooldown') return ui.toast(`Keyingi bepul tanga ${Math.ceil((eco.AD_COOLDOWN_MS - (Date.now() - (profile.ads?.last || 0))) / 60000)} daqiqadan keyin.`);
+    if (err === 'cooldown') return ui.toast(`Keyingi bepul KONTI ${Math.ceil((eco.AD_COOLDOWN_MS - (Date.now() - (profile.ads?.last || 0))) / 60000)} daqiqadan keyin.`);
     yandexSDK.showRewardedAd({
       onRewarded: async () => {
         let got = 0;
@@ -481,7 +492,7 @@ function updateShowcase() {
           catch (e) { return ui.toast(e.message === 'daily' ? 'Bugungi limit tugadi.' : e.message === 'cooldown' ? 'Biroz kuting.' : 'Server xatosi.'); }
         } else { profile.ads ||= {}; if (eco.claimAd(profile.ads, Date.now())) return; profile.coins += eco.AD_REWARD; got = eco.AD_REWARD; saveProfile(profile); }
         refreshLobby();
-        ui.toast(`+${got} ◈ tanga berildi.`);
+        ui.toast(`+${got} ◈ KONTI berildi.`);
       },
       onError: () => {
         ui.toast('Reklama yuklanmadi yoki internet aloqasi yo‘q.');
