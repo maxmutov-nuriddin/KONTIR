@@ -127,7 +127,8 @@ function receive(next) {
   state = next;
   const reset = prediction.reconcile(state, id);
   if (reset) controller.setAim(prediction.char.yaw, 0);
-  if (!['buy', 'warmup'].includes(state.phase) && ui.modal.querySelector('.buy-cols')) ui.modal.close();
+  // the buy window stays open for buyAfterLive seconds into the live phase; close the menu only once the server says so
+  if (!state.buyOpen && !['buy', 'warmup'].includes(state.phase) && ui.modal.open && ui.modal.querySelector('.buy-cols')) ui.modal.close();
   const me = state.players.find(p => p.id === id);
   for (const event of state.events) if (event.id > lastEvent) { lastEvent = event.id; handleEvent(event, me); ui.event(event, id, state.players); }
   world.effects.syncSmokes?.(state.smokes);
